@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../lifecycle/client_sync_state.dart';
+import '../models/ws_envelope.dart';
 import '../network/device_id_store.dart';
 import '../network/discovery/mdns_browser.dart';
 import '../network/game_socket_client.dart';
@@ -45,4 +47,29 @@ final gameSocketClientProvider = Provider<GameSocketClient?>((ref) {
     link.close();
   });
   return client;
+});
+
+class ClientSyncNotifier extends StateNotifier<ClientSyncState> {
+  ClientSyncNotifier() : super(const ClientSyncState());
+
+  void onPaused() {
+    state = state.onBackground();
+  }
+
+  void onResumed() {
+    state = state.onForeground();
+  }
+
+  void applyEnvelope(WsEnvelope envelope) {
+    state = state.applyEnvelope(envelope);
+  }
+
+  void reset() {
+    state = const ClientSyncState();
+  }
+}
+
+final clientSyncProvider =
+    StateNotifierProvider<ClientSyncNotifier, ClientSyncState>((ref) {
+  return ClientSyncNotifier();
 });

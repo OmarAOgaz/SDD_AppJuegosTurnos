@@ -14,6 +14,4 @@ This repo uses **Spec-Driven Development** (Gentle AI / OpenSpec + Engram).
 
 ## Status
 
-**PR1 + PR2 applied.** Run [`scripts/bootstrap_flutter.ps1`](scripts/bootstrap_flutter.ps1), then `flutter test`. E2E: host on phone A, join from phone B (mDNS or manual IP), PING on spike client.
-
-Next: **PR3** (lifecycle, FGS, tests).
+**PR1–PR3 applied.** Lifecycle, FGS (Android), iOS banner, client resync. Run `flutter test` locally; complete manual E2E in [`verify-notes.md`](openspec/changes/mvp-lan-turn-timer/verify-notes.md). Next: **`/sdd-verify`**.

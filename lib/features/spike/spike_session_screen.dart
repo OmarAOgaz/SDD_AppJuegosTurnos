@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/message_types.dart';
+import '../../core/lifecycle/session_lifecycle_listener.dart';
+import '../../core/models/spike_room_stub.dart';
 import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 
-/// Spike session — host controls or client PING / message log.
+/// Spike session — host controls or client PING / lifecycle resync.
 class SpikeSessionScreen extends ConsumerStatefulWidget {
   const SpikeSessionScreen({
     super.key,
@@ -43,9 +46,13 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
 
   @override
   void dispose() {
+    if (!_isClient) {
+      ref.read(hostRoomControllerProvider).hideHostKeepOpenBanner(context);
+    }
     unawaited(_messageSub?.cancel());
     unawaited(_stateSub?.cancel());
     if (_isClient) {
+      ref.read(clientSyncProvider.notifier).reset();
       unawaited(_client?.disconnect());
     }
     super.dispose();
@@ -78,12 +85,46 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
 
   void _onMessage(WsEnvelope envelope) {
     _appendLog('← ${envelope.type} ${envelope.payload}');
+    if (_isClient) {
+      ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
+    }
     if (envelope.type == MessageTypes.handshake) {
       final roomId = envelope.payload['roomId'];
       if (roomId is String) {
         _appendLog('Handshake roomId: $roomId');
       }
     }
+    if (envelope.type == MessageTypes.gameState) {
+      final serverNow = envelope.payload['serverNow'];
+      _appendLog('Applied GAME_STATE serverNow=$serverNow (no replay)');
+    }
+  }
+
+  void _onClientResumed() {
+    final client = _client;
+    if (client == null || client.state != SocketClientState.connected) {
+      return;
+    }
+    ref.read(clientSyncProvider.notifier).onResumed();
+    client.sendSyncRequest();
+    _appendLog('→ SYNC_REQUEST (resumed)');
+  }
+
+  void _onClientPaused() {
+    ref.read(clientSyncProvider.notifier).onPaused();
+    _appendLog('Background — timer interpolation paused');
+  }
+
+  Future<void> _startGameHost() async {
+    final hostController = ref.read(hostRoomControllerProvider);
+    await hostController.startGame();
+    hostController.showHostKeepOpenBannerIfNeeded(context);
+  }
+
+  Future<void> _endGameHost() async {
+    final hostController = ref.read(hostRoomControllerProvider);
+    await hostController.endGame();
+    hostController.hideHostKeepOpenBanner(context);
   }
 
   void _appendLog(String line) {
@@ -101,7 +142,13 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isClient) {
-      return _buildClient(context);
+      return SessionLifecycleListener(
+        isSessionActive: () =>
+            _client?.state == SocketClientState.connected,
+        onResumed: _onClientResumed,
+        onPaused: _onClientPaused,
+        child: _buildClient(context),
+      );
     }
     return _buildHost(context);
   }
@@ -109,6 +156,9 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
   Widget _buildHost(BuildContext context) {
     final controller = ref.watch(hostRoomControllerProvider);
     final room = controller.room;
+    final fgsHint = Platform.isAndroid && room?.gamePhase == GamePhase.inGame
+        ? 'FGS activo (Android)'
+        : null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Spike — host')),
@@ -126,14 +176,15 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
                   Text(
                     'Endpoint: ${controller.hostLanIp ?? "?"}:${controller.port}',
                   ),
+                  if (fgsHint != null) Text(fgsHint),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: controller.startGame,
+                    onPressed: _startGameHost,
                     child: const Text('START_GAME'),
                   ),
                   const SizedBox(height: 8),
                   OutlinedButton(
-                    onPressed: controller.endGame,
+                    onPressed: _endGameHost,
                     child: const Text('END_GAME'),
                   ),
                 ],
@@ -144,6 +195,7 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
 
   Widget _buildClient(BuildContext context) {
     final client = ref.watch(gameSocketClientProvider);
+    final sync = ref.watch(clientSyncProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Spike — client')),
@@ -156,7 +208,9 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
                 Expanded(
                   child: Text(
                     'Target: ${widget.host}:${widget.port}\n'
-                    'State: ${client?.state.name ?? "—"}',
+                    'State: ${client?.state.name ?? "—"}\n'
+                    'Interpolation: ${sync.allowTimerInterpolation}\n'
+                    'serverNow: ${sync.serverNow ?? "—"}',
                   ),
                 ),
                 FilledButton(

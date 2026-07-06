@@ -60,20 +60,20 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Lifecycle and MVP+ Background (app-lifecycle-sync)
 
-- [ ] 5.1 Create `lib/core/lifecycle/app_lifecycle_sync.dart` — `WidgetsBindingObserver`; on `resumed` send `SYNC_REQUEST`
-- [ ] 5.2 Create `lib/core/lifecycle/foreground_service_bridge.dart` — start/stop FGS when host + `IN_GAME` (Android only)
-- [ ] 5.3 Add `HostKeepOpenBanner` on spike screen when iOS host + `IN_GAME`
-- [ ] 5.4 Pause client timer interpolation flag on `paused`; apply `GAME_STATE` on resume without replaying alerts
+- [x] 5.1 Create `lib/core/lifecycle/app_lifecycle_sync.dart` — `WidgetsBindingObserver`; on `resumed` send `SYNC_REQUEST`
+- [x] 5.2 Create `lib/core/lifecycle/foreground_service_bridge.dart` — start/stop FGS when host + `IN_GAME` (Android only)
+- [x] 5.3 Add `HostKeepOpenBanner` on spike screen when iOS host + `IN_GAME`
+- [x] 5.4 Pause client timer interpolation flag on `paused`; apply `GAME_STATE` on resume without replaying alerts
 
 ## Phase 6: Testing and Sign-off
 
-- [ ] 6.1 Unit test `WsEnvelope` round-trip and invalid JSON handling (`test/core/ws_envelope_test.dart`)
-- [ ] 6.2 Unit test heartbeat timeout marks session disconnected (`test/server/host_room_controller_test.dart`)
-- [ ] 6.3 Run `dart analyze` and `flutter test` — zero errors
+- [x] 6.1 Unit test `WsEnvelope` round-trip and invalid JSON handling (`test/core/ws_envelope_test.dart`)
+- [x] 6.2 Unit test heartbeat timeout marks session disconnected (`test/server/host_room_controller_test.dart`)
+- [ ] 6.3 Run `dart analyze` and `flutter test` — zero errors (run locally)
 - [ ] 6.4 **Manual E2E (2 phones):** discover or manual IP → HANDSHAKE → PING/PONG → heartbeat stable 60s
 - [ ] 6.5 **Manual E2E:** Android host backgrounds app → notification visible → client still connected
 - [ ] 6.6 **Manual E2E:** client backgrounds → `resumed` → `SYNC_REQUEST` → `GAME_STATE` with `serverNow`
-- [ ] 6.7 Document results in `openspec/changes/mvp-lan-turn-timer/verify-notes.md` (create during apply/verify)
+- [x] 6.7 Document results in `openspec/changes/mvp-lan-turn-timer/verify-notes.md` (create during apply/verify)
 
 ## Apply Order
 

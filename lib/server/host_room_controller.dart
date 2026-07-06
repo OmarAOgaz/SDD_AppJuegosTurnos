@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
 import '../core/constants/message_types.dart';
 import '../core/constants/network_constants.dart';
+import '../core/lifecycle/foreground_service_bridge.dart';
+import '../core/lifecycle/host_keep_open_banner.dart';
 import '../core/models/spike_room_stub.dart';
 import '../core/models/ws_envelope.dart';
 import '../core/network/discovery/mdns_advertiser.dart';
@@ -22,18 +26,22 @@ class HostSession {
   bool disconnected = false;
 }
 
-/// Orchestrates host room stub, WebSocket server, mDNS, and session heartbeats.
+/// Orchestrates host room stub, WebSocket server, mDNS, FGS, and heartbeats.
 class HostRoomController {
   HostRoomController({
     WebSocketHostServer? server,
     MdnsAdvertiser? mdnsAdvertiser,
+    ForegroundServiceBridge? foregroundServiceBridge,
     Uuid? uuid,
   })  : _server = server ?? WebSocketHostServer(),
         _mdnsAdvertiser = mdnsAdvertiser ?? MdnsAdvertiser(),
+        _foregroundServiceBridge =
+            foregroundServiceBridge ?? ForegroundServiceBridge(),
         _uuid = uuid ?? const Uuid();
 
   final WebSocketHostServer _server;
   final MdnsAdvertiser _mdnsAdvertiser;
+  final ForegroundServiceBridge _foregroundServiceBridge;
   final Uuid _uuid;
 
   SpikeRoomStub? _room;
@@ -76,6 +84,7 @@ class HostRoomController {
   }
 
   Future<void> stopRoom() async {
+    await _foregroundServiceBridge.stopGameSession();
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = null;
     _sessions.clear();
@@ -85,22 +94,39 @@ class HostRoomController {
     _hostLanIp = null;
   }
 
-  void startGame() {
+  Future<void> startGame() async {
     final room = _room;
     if (room == null) {
       return;
     }
     room.gamePhase = GamePhase.inGame;
     _server.broadcast(_buildGameState());
+    await _foregroundServiceBridge.startGameSession();
   }
 
-  void endGame() {
+  Future<void> endGame() async {
     final room = _room;
     if (room == null) {
       return;
     }
     room.gamePhase = GamePhase.ended;
     _server.broadcast(_buildGameState());
+    await _foregroundServiceBridge.stopGameSession();
+  }
+
+  /// Shows iOS host keep-open banner when game is IN_GAME.
+  void showHostKeepOpenBannerIfNeeded(BuildContext context) {
+    final room = _room;
+    if (room == null || room.gamePhase != GamePhase.inGame || !Platform.isIOS) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(const HostKeepOpenBanner());
+  }
+
+  void hideHostKeepOpenBanner(BuildContext context) {
+    ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
   }
 
   void _handleMessage(
@@ -156,11 +182,11 @@ class HostRoomController {
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = Timer.periodic(
       const Duration(milliseconds: kHeartbeatIntervalMs),
-      (_) => _checkHeartbeats(),
+      (_) => checkHeartbeats(),
     );
   }
 
-  void _checkHeartbeats() {
+  void checkHeartbeats() {
     final now = DateTime.now();
     final timeout = Duration(milliseconds: kHeartbeatTimeoutMs);
 
@@ -173,6 +199,25 @@ class HostRoomController {
         _server.closeSession(session.sessionId);
       }
     }
+  }
+
+  @visibleForTesting
+  void debugRegisterSession(
+    String sessionId, {
+    DateTime? lastHeartbeatAt,
+    bool disconnected = false,
+  }) {
+    final session = HostSession(sessionId: sessionId)
+      ..disconnected = disconnected;
+    if (lastHeartbeatAt != null) {
+      session.lastHeartbeatAt = lastHeartbeatAt;
+    }
+    _sessions[sessionId] = session;
+  }
+
+  @visibleForTesting
+  bool debugIsSessionDisconnected(String sessionId) {
+    return _sessions[sessionId]?.disconnected ?? false;
   }
 
   void dispose() {

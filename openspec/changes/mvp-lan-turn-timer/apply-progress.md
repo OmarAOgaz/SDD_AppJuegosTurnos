@@ -6,28 +6,27 @@
 
 ## PR1 — complete
 
-Tasks 1.1–2.5: scaffold + WebSocket host server
+Tasks 1.1–2.5
 
 ## PR2 — complete
 
-Tasks 3.1–4.4: mDNS advertise/browse, manual IP, `GameSocketClient`, Home + spike client/host UI
+Tasks 3.1–4.4
 
-### PR2 highlights
+## PR3 — complete (code + unit tests)
 
-- `MdnsAdvertiser` + `MdnsBrowser` (Bonsoir `_turnos._tcp`)
-- `ManualEndpointStore`, `RoomListMerger`, `DeviceIdStore`
-- `GameSocketClient`: connect, heartbeat, PING, reconnect ~30s
-- Home: merged room list, host LAN IP:port, join → spike client
-- Spike: host START/END_GAME; client PING + message log
+Tasks 5.1–5.4, 6.1, 6.2, 6.7
 
-## Remaining — PR3
+### PR3 highlights
 
-Phase 5 (lifecycle/FGS) + Phase 6 (tests + manual E2E)
+- `AppLifecycleSync` + `SessionLifecycleListener` → `SYNC_REQUEST` on client `resumed`
+- `ForegroundServiceBridge` + `flutter_foreground_task` init (Android FGS on `IN_GAME`)
+- `HostKeepOpenBanner` (iOS host)
+- `ClientSyncState` — pause interpolation in background, apply `GAME_STATE` on resume
+- Tests: `host_room_controller_test`, `client_sync_state_test`
+- `verify-notes.md` — manual E2E checklist (6.4–6.6 pending on devices)
 
-## Local verification
+## Pending
 
-```powershell
-.\scripts\bootstrap_flutter.ps1
-flutter test
-# E2E: phone A host → phone B tap room or manual IP → PING → see PONG in log
-```
+- 6.3 — run `flutter test` / `dart analyze` locally
+- 6.4–6.6 — manual E2E on 2 phones
+- `/sdd-verify` after manual sign-off
