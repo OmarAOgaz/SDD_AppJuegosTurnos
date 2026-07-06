@@ -1,0 +1,15 @@
+# SDD local agent cache
+.atl/
+
+# Flutter / Dart (anticipated)
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.vscode/
+pubspec.lock
+
+# OS
+.DS_Store
+Thumbs.db

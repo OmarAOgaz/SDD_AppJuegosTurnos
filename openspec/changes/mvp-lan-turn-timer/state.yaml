@@ -1,0 +1,12 @@
+change: mvp-lan-turn-timer
+status: proposed
+created: 2026-07-06
+phases:
+  explore: complete
+  propose: complete
+  spec: complete
+  design: complete
+  tasks: complete
+  apply: in_progress
+  verify: pending
+  archive: pending

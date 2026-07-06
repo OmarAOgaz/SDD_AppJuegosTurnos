@@ -1,0 +1,64 @@
+schema: spec-driven
+
+context: |
+  Product: Turnos Juegos de mesa — LAN multiplayer turn timer (Flutter Android + iOS).
+  Stack: Flutter (greenfield; pubspec not created yet), host WebSocket server on device, mDNS discovery.
+  Architecture: Host-authoritative game state; clients sync via WebSocket; local SharedPreferences for LocalPlayerProfile.
+  Background MVP+: Android FGS for host in-game; iOS host foreground policy + client resync via SYNC_REQUEST; serverNow in GAME_STATE.
+  Locales: es + en (MVP). Master product plan: unified in Cursor plan app_juegos_turnos_b75a1482.
+  Repo state: SDD initialized; no application code yet.
+
+strict_tdd: false
+
+testing:
+  strict_tdd: false
+  detected: "2026-07-06"
+  runner:
+    command: null
+    framework: null
+    note: "No test runner yet — Flutter project not scaffolded."
+  layers:
+    unit: { available: false, tool: "—" }
+    integration: { available: false, tool: "—" }
+    e2e: { available: false, tool: "—" }
+  coverage:
+    available: false
+    command: null
+  quality:
+    linter: { available: false, command: null }
+    type_checker: { available: false, command: null }
+    formatter: { available: false, command: null }
+  planned:
+    unit: flutter test
+    widget: flutter test (integration_test when added)
+    analysis: dart analyze
+    format: dart format
+
+rules:
+  proposal:
+    - Align with unified master plan (lobby-only pre-game config, per-turn timer, round increment).
+    - Include rollback plan for LAN/host migration risks.
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Document WebSocket message contracts and timer state machine
+    - Document MVP+ lifecycle: FGS Android host, SYNC_REQUEST, serverNow
+    - Define 8 player colors (vivid palette) and 8 sound assets
+  tasks:
+    - Group by implementation slice (profile, host server, LAN, lobby, timer sync, summary, reconnect)
+    - Keep tasks completable in one session
+  apply:
+    - Follow Flutter/Jetpack-style feature folders under lib/features/
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: ""
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
+
+persistence:
+  mode: hybrid
+  engram_project: ssd_app_juegos_turnos
