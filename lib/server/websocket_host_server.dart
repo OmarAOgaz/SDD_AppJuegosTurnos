@@ -36,7 +36,7 @@ class WebSocketHostServer {
       return _server!.port;
     }
 
-    final wsHandler = webSocketHandler((WebSocketChannel channel) {
+    final wsHandler = webSocketHandler((WebSocketChannel channel, _) {
       final sessionId = 'session-${++_sessionCounter}';
       _channels[sessionId] = channel;
 
@@ -66,12 +66,12 @@ class WebSocketHostServer {
       );
     });
 
-    Handler handler = (Request request) {
+    FutureOr<Response> handler(Request request) {
       if (request.url.path != kWsPath.substring(1)) {
         return Response.notFound('Not found');
       }
       return wsHandler(request);
-    };
+    }
 
     _server = await shelf_io.serve(
       handler,
@@ -82,12 +82,20 @@ class WebSocketHostServer {
   }
 
   Future<void> stop() async {
-    for (final channel in _channels.values) {
-      await channel.sink.close();
-    }
+    final channels = List<WebSocketChannel>.from(_channels.values);
     _channels.clear();
-    await _server?.close(force: true);
+    // Never block forever on peer close handshake — force-drop sockets.
+    for (final channel in channels) {
+      unawaited(
+        channel.sink.close().catchError((Object _) {}),
+      );
+    }
+
+    final server = _server;
     _server = null;
+    if (server != null) {
+      await server.close(force: true);
+    }
   }
 
   void broadcast(WsEnvelope envelope) {

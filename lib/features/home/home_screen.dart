@@ -16,6 +16,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _statusMessage;
+  bool _stoppingHost = false;
   List<DiscoveredRoom> _mdnsRooms = [];
   List<ManualEndpoint> _manualEndpoints = [];
 
@@ -175,17 +176,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             Text('Phase: ${room.gamePhase.wireValue}'),
             const SizedBox(height: 8),
             OutlinedButton(
-              onPressed: () => context.push('/spike?role=host'),
+              onPressed: _stoppingHost
+                  ? null
+                  : () => context.push('/spike?role=host'),
               child: const Text('Open spike session (host)'),
             ),
             TextButton(
-              onPressed: () async {
-                await controller.stopRoom();
-                if (mounted) {
-                  setState(() => _statusMessage = 'Host stopped');
-                }
-              },
-              child: const Text('Stop host'),
+              onPressed: _stoppingHost
+                  ? null
+                  : () async {
+                      setState(() {
+                        _stoppingHost = true;
+                        _statusMessage = 'Stopping host…';
+                      });
+                      // stopRoom clears `_room` before awaiting teardown, so
+                      // refresh UI immediately once that sync work runs.
+                      final stopFuture = controller.stopRoom();
+                      if (mounted) {
+                        setState(() {});
+                      }
+                      try {
+                        await stopFuture;
+                      } finally {
+                        if (mounted) {
+                          setState(() {
+                            _stoppingHost = false;
+                            _statusMessage = 'Host stopped';
+                          });
+                        }
+                      }
+                    },
+              child: Text(_stoppingHost ? 'Stopping…' : 'Stop host'),
             ),
           ],
           const SizedBox(height: 24),

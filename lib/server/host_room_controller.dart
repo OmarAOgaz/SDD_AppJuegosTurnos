@@ -84,14 +84,29 @@ class HostRoomController {
   }
 
   Future<void> stopRoom() async {
-    await _foregroundServiceBridge.stopGameSession();
+    // Clear room first so UI / handlers stop accepting traffic immediately,
+    // even if network teardown is slow or hangs.
+    _room = null;
+    _hostLanIp = null;
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = null;
     _sessions.clear();
-    await _mdnsAdvertiser.stop();
-    await _server.stop();
-    _room = null;
-    _hostLanIp = null;
+
+    try {
+      await _foregroundServiceBridge.stopGameSession();
+    } catch (_) {
+      // Best-effort teardown.
+    }
+    try {
+      await _mdnsAdvertiser.stop();
+    } catch (_) {
+      // Best-effort teardown.
+    }
+    try {
+      await _server.stop();
+    } catch (_) {
+      // Best-effort teardown.
+    }
   }
 
   Future<void> startGame() async {
@@ -122,7 +137,11 @@ class HostRoomController {
     }
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearMaterialBanners();
-    messenger.showMaterialBanner(const HostKeepOpenBanner());
+    messenger.showMaterialBanner(
+      HostKeepOpenBanner.materialBanner(
+        onDismiss: messenger.hideCurrentMaterialBanner,
+      ),
+    );
   }
 
   void hideHostKeepOpenBanner(BuildContext context) {
@@ -188,7 +207,7 @@ class HostRoomController {
 
   void checkHeartbeats() {
     final now = DateTime.now();
-    final timeout = Duration(milliseconds: kHeartbeatTimeoutMs);
+    final timeout = const Duration(milliseconds: kHeartbeatTimeoutMs);
 
     for (final session in _sessions.values) {
       if (session.disconnected) {
