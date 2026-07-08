@@ -25,8 +25,9 @@ Tasks 5.1–5.4, 6.1, 6.2, 6.7
 - Tests: `host_room_controller_test`, `client_sync_state_test`
 - `verify-notes.md` — manual E2E checklist (6.4–6.6 pending on devices)
 
-## Pending
+## Pending / verify follow-up
 
-- 6.3 — run `flutter test` / `dart analyze` locally
-- 6.4–6.6 — manual E2E on 2 phones
-- `/sdd-verify` after manual sign-off
+- 6.3–6.6 — complete (automated + manual; 6.6 retest PASS 2026-07-08)
+- First `/sdd-verify` 2026-07-08: **FAIL** (6.6 open)
+- After 6.6 evidence: re-verify / amend report → then `/sdd-archive`
+

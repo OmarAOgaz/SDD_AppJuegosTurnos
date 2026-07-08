@@ -69,10 +69,11 @@ Chain strategy: stacked-to-main
 
 - [x] 6.1 Unit test `WsEnvelope` round-trip and invalid JSON handling (`test/core/ws_envelope_test.dart`)
 - [x] 6.2 Unit test heartbeat timeout marks session disconnected (`test/server/host_room_controller_test.dart`)
-- [ ] 6.3 Run `dart analyze` and `flutter test` — zero errors (run locally)
-- [ ] 6.4 **Manual E2E (2 phones):** discover or manual IP → HANDSHAKE → PING/PONG → heartbeat stable 60s
-- [ ] 6.5 **Manual E2E:** Android host backgrounds app → notification visible → client still connected
-- [ ] 6.6 **Manual E2E:** client backgrounds → `resumed` → `SYNC_REQUEST` → `GAME_STATE` with `serverNow`
+- [x] 6.3 Run `dart analyze` and `flutter test` — zero errors (run locally) — verified 2026-07-08: `flutter test` 8/8, `dart analyze` clean
+- [x] 6.4 **Manual E2E (2 phones):** discover or manual IP → HANDSHAKE → PING/PONG → heartbeat stable 60s — PASS 2026-07-08 (A505G + X210)
+- [x] 6.5 **Manual E2E:** Android host backgrounds app → notification visible → client still connected — PASS 2026-07-08 (FGS «Partida activa»)
+- [x] 6.6 **Manual E2E:** client backgrounds → `resumed` → `SYNC_REQUEST` → `GAME_STATE` with `serverNow` — PASS 2026-07-08 retest (Spike log: Background paused → SYNC_REQUEST → GAME_STATE IN_GAME + serverNow; heartbeats continued)
+
 - [x] 6.7 Document results in `openspec/changes/mvp-lan-turn-timer/verify-notes.md` (create during apply/verify)
 
 ## Apply Order

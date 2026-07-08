@@ -1,0 +1,20 @@
+change: mvp-lan-turn-timer
+status: proposed
+created: 2026-07-06
+phases:
+  explore: complete
+  propose: complete
+  spec: complete
+  design: complete
+  tasks: complete
+  apply: complete
+  verify: complete
+  archive: complete
+verify:
+  verdict: PASS WITH WARNINGS
+  date: 2026-07-08
+  report: verify-report.md
+  notes: >
+    Automated green (flutter test 8/8, dart analyze clean). Manual 6.4/6.5/6.6 PASS.
+    6.6 retest confirmed SYNC_REQUEST → GAME_STATE + serverNow with socket connected.
+    Warnings: iOS device gaps, kEnableMdns=false, END_GAME FGS dismiss untested.

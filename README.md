@@ -14,4 +14,4 @@ This repo uses **Spec-Driven Development** (Gentle AI / OpenSpec + Engram).
 
 ## Status
 
-**PR1–PR3 applied.** Lifecycle, FGS (Android), iOS banner, client resync. Run `flutter test` locally; complete manual E2E in [`verify-notes.md`](openspec/changes/mvp-lan-turn-timer/verify-notes.md). Next: **`/sdd-verify`**.
+**`mvp-lan-turn-timer` archived** (2026-07-08, PASS WITH WARNINGS). Main specs: [`openspec/specs/`](openspec/specs/). Audit trail: [`openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/`](openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/).
