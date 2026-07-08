@@ -235,12 +235,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             TextButton(
               onPressed: _stoppingHost
                   ? null
-                  : () => context.push('/spike?role=host'),
-              child: const Text('Open spike session (debug)'),
-            ),
-            TextButton(
-              onPressed: _stoppingHost
-                  ? null
                   : () async {
                       setState(() {
                         _stoppingHost = true;
