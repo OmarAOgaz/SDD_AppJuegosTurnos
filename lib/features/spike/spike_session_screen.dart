@@ -10,6 +10,7 @@ import '../../core/models/spike_room_stub.dart';
 import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
+import '../../server/host_room_controller.dart';
 
 /// Spike session — host controls or client PING / lifecycle resync.
 class SpikeSessionScreen extends ConsumerStatefulWidget {
@@ -34,25 +35,38 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
   StreamSubscription<SocketClientState>? _stateSub;
   GameSocketClient? _client;
 
+  /// Cached before dispose — Riverpod forbids using [ref] while unmounting.
+  ClientSyncNotifier? _clientSync;
+  HostRoomController? _hostController;
+  ScaffoldMessengerState? _scaffoldMessenger;
+
   bool get _isClient => widget.role == 'client';
 
   @override
   void initState() {
     super.initState();
     if (_isClient) {
+      _clientSync = ref.read(clientSyncProvider.notifier);
       WidgetsBinding.instance.addPostFrameCallback((_) => _connectClient());
+    } else {
+      _hostController = ref.read(hostRoomControllerProvider);
     }
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+  }
+
+  @override
   void dispose() {
-    if (!_isClient) {
-      ref.read(hostRoomControllerProvider).hideHostKeepOpenBanner(context);
-    }
+    // Do not use [ref] or [context] here — both are unsafe during unmount.
+    _scaffoldMessenger?.hideCurrentMaterialBanner();
     unawaited(_messageSub?.cancel());
     unawaited(_stateSub?.cancel());
     if (_isClient) {
-      ref.read(clientSyncProvider.notifier).reset();
+      _clientSync?.reset();
       unawaited(_client?.disconnect());
     }
     super.dispose();
@@ -86,7 +100,7 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
   void _onMessage(WsEnvelope envelope) {
     _appendLog('← ${envelope.type} ${envelope.payload}');
     if (_isClient) {
-      ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
+      _clientSync?.applyEnvelope(envelope);
     }
     if (envelope.type == MessageTypes.handshake) {
       final roomId = envelope.payload['roomId'];
@@ -105,25 +119,37 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
     if (client == null || client.state != SocketClientState.connected) {
       return;
     }
-    ref.read(clientSyncProvider.notifier).onResumed();
+    _clientSync?.onResumed();
     client.sendSyncRequest();
     _appendLog('→ SYNC_REQUEST (resumed)');
   }
 
   void _onClientPaused() {
-    ref.read(clientSyncProvider.notifier).onPaused();
+    _clientSync?.onPaused();
     _appendLog('Background — timer interpolation paused');
   }
 
   Future<void> _startGameHost() async {
-    final hostController = ref.read(hostRoomControllerProvider);
+    final hostController = _hostController;
+    if (hostController == null) {
+      return;
+    }
     await hostController.startGame();
+    if (!mounted) {
+      return;
+    }
     hostController.showHostKeepOpenBannerIfNeeded(context);
   }
 
   Future<void> _endGameHost() async {
-    final hostController = ref.read(hostRoomControllerProvider);
+    final hostController = _hostController;
+    if (hostController == null) {
+      return;
+    }
     await hostController.endGame();
+    if (!mounted) {
+      return;
+    }
     hostController.hideHostKeepOpenBanner(context);
   }
 
@@ -214,7 +240,7 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
                   ),
                 ),
                 FilledButton(
-                  onPressed: client == null ? null : client.sendPing,
+                  onPressed: client?.sendPing,
                   child: const Text('PING'),
                 ),
               ],
