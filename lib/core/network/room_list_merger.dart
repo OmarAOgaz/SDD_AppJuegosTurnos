@@ -1,5 +1,5 @@
-import '../../constants/network_constants.dart';
-import '../../models/discovered_room.dart';
+import '../constants/network_constants.dart';
+import '../models/discovered_room.dart';
 import 'manual_endpoint_store.dart';
 
 /// Merges mDNS and manual discovery sources with `roomId` deduplication.

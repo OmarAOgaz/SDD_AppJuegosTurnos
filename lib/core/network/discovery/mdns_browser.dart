@@ -32,7 +32,7 @@ class MdnsBrowser {
     _discovery = BonsoirDiscovery(
       type: kMdnsServiceType,
     );
-    await _discovery!.ready;
+    await _discovery!.initialize();
 
     _discovery!.eventStream!.listen(_onDiscoveryEvent);
     await _discovery!.start();
@@ -52,13 +52,13 @@ class MdnsBrowser {
   }
 
   void _onDiscoveryEvent(BonsoirDiscoveryEvent event) {
-    if (event is BonsoirDiscoveryServiceFoundEvent && event.service != null) {
-      event.service!.resolve(_discovery!.serviceResolver);
+    if (event is BonsoirDiscoveryServiceFoundEvent) {
+      event.service.resolve(_discovery!.serviceResolver);
       return;
     }
 
-    if (event is BonsoirDiscoveryServiceResolvedEvent && event.service != null) {
-      final room = _mapService(event.service!);
+    if (event is BonsoirDiscoveryServiceResolvedEvent) {
+      final room = _mapService(event.service);
       if (room != null) {
         _roomsById[room.roomId] = room;
         _emit();
@@ -66,8 +66,8 @@ class MdnsBrowser {
       return;
     }
 
-    if (event is BonsoirDiscoveryServiceLostEvent && event.service != null) {
-      final roomId = event.service!.attributes['roomId'];
+    if (event is BonsoirDiscoveryServiceLostEvent) {
+      final roomId = event.service.attributes['roomId'];
       if (roomId != null && roomId.isNotEmpty) {
         _roomsById.remove(roomId);
         _emit();
@@ -100,19 +100,22 @@ class MdnsBrowser {
   }
 
   String? _resolveHostIp(BonsoirService service) {
-    final host = service.host;
+    final host = service.hostAddress;
     if (host != null && host.isNotEmpty && !host.endsWith('.local')) {
       return host;
     }
 
-    final addresses = service.hostAddresses;
-    if (addresses != null) {
-      for (final address in addresses) {
-        if (address.isNotEmpty && !address.endsWith('.local')) {
-          return address;
-        }
+    for (final address in service.hostAddresses) {
+      if (address.isNotEmpty && !address.endsWith('.local')) {
+        return address;
       }
     }
+
+    final hostname = service.hostname;
+    if (hostname != null && hostname.isNotEmpty && !hostname.endsWith('.local')) {
+      return hostname;
+    }
+
     return null;
   }
 

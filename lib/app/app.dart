@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/home/home_screen.dart';
+import '../features/player_profile/personalize_screen.dart';
 import '../features/spike/spike_session_screen.dart';
 
 class TurnosApp extends ConsumerWidget {
@@ -13,6 +14,16 @@ class TurnosApp extends ConsumerWidget {
       GoRoute(
         path: '/',
         builder: (context, state) => const HomeScreen(),
+      ),
+      GoRoute(
+        path: '/personalize',
+        builder: (context, state) {
+          final query = state.uri.queryParameters;
+          return PersonalizeScreen(
+            returnHost: query['returnHost'],
+            returnPort: int.tryParse(query['returnPort'] ?? ''),
+          );
+        },
       ),
       GoRoute(
         path: '/spike',

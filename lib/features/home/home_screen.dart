@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/discovered_room.dart';
 import '../../core/network/manual_endpoint_store.dart';
 import '../../core/providers/network_providers.dart';
+import '../../core/providers/profile_providers.dart';
 
 /// Home screen — mDNS + manual room list, host and join actions.
 class HomeScreen extends ConsumerStatefulWidget {
@@ -139,7 +140,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await _reloadManualEndpoints();
   }
 
-  void _connectToRoom(DiscoveredRoom room) {
+  Future<void> _connectToRoom(DiscoveredRoom room) async {
+    final profile = await ref.read(localPlayerProfileProvider.future);
+    if (!profile.hasUsableDisplayName) {
+      if (!mounted) {
+        return;
+      }
+      final goPersonalize = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Nombre requerido'),
+          content: const Text(
+            'Ingresá tu nombre en Personalización antes de unirte '
+            'a una partida de otro host.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Ir a Personalización'),
+            ),
+          ],
+        ),
+      );
+      if (goPersonalize == true && mounted) {
+        context.push(
+          '/personalize?returnHost=${Uri.encodeComponent(room.hostIp)}'
+          '&returnPort=${room.port}',
+        );
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
     context.push(
       '/spike?role=client&host=${Uri.encodeComponent(room.hostIp)}&port=${room.port}',
     );
@@ -154,6 +191,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Turnos Juegos de mesa'),
+        actions: [
+          IconButton(
+            tooltip: 'Personalización',
+            onPressed: () => context.push('/personalize'),
+            icon: const Icon(Icons.person_outline),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

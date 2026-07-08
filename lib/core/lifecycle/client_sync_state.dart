@@ -1,5 +1,5 @@
-import '../../constants/message_types.dart';
-import '../../models/ws_envelope.dart';
+import '../constants/message_types.dart';
+import '../models/ws_envelope.dart';
 
 /// Client-side authoritative sync snapshot (stub timer fields later).
 class ClientSyncState {

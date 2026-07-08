@@ -33,7 +33,7 @@ class MdnsAdvertiser {
     );
 
     _broadcast = BonsoirBroadcast(service: service);
-    await _broadcast!.ready;
+    await _broadcast!.initialize();
     await _broadcast!.start();
   }
 

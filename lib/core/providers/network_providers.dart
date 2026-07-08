@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../lifecycle/client_sync_state.dart';
 import '../models/ws_envelope.dart';
@@ -35,7 +36,7 @@ final roomListMergerProvider = Provider<RoomListMerger>((ref) {
 });
 
 final gameSocketClientProvider = Provider<GameSocketClient?>((ref) {
-  final deviceId = ref.watch(deviceIdProvider).valueOrNull;
+  final deviceId = ref.watch(deviceIdProvider).asData?.value;
   if (deviceId == null) {
     return null;
   }

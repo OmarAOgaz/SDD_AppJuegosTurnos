@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 /// iOS host policy banner — keep app open during IN_GAME.
-class HostKeepOpenBanner extends StatelessWidget {
-  const HostKeepOpenBanner({super.key});
+class HostKeepOpenBanner {
+  HostKeepOpenBanner._();
 
-  @override
-  Widget build(BuildContext context) {
+  static MaterialBanner materialBanner({
+    required VoidCallback onDismiss,
+  }) {
     return MaterialBanner(
       content: const Text(
         'En iPhone, mantén la app abierta mientras seas host de la partida.',
@@ -13,9 +14,7 @@ class HostKeepOpenBanner extends StatelessWidget {
       leading: const Icon(Icons.info_outline),
       actions: [
         TextButton(
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
-          },
+          onPressed: onDismiss,
           child: const Text('OK'),
         ),
       ],

@@ -1,0 +1,79 @@
+name: mvp-lobby-turn-timer
+created: 2026-07-08
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-07-08
+    artifact: openspec/changes/mvp-lobby-turn-timer/exploration.md
+    engram_topic: sdd/mvp-lobby-turn-timer/explore
+  propose:
+    status: complete
+    completed_at: 2026-07-08
+    artifact: openspec/changes/mvp-lobby-turn-timer/proposal.md
+    engram_topic: sdd/mvp-lobby-turn-timer/proposal
+  spec:
+    status: complete
+    completed_at: 2026-07-08
+    artifact: openspec/changes/mvp-lobby-turn-timer/specs/
+    engram_topic: sdd/mvp-lobby-turn-timer/spec
+  design:
+    status: complete
+    completed_at: 2026-07-08
+    artifact: openspec/changes/mvp-lobby-turn-timer/design.md
+    engram_topic: sdd/mvp-lobby-turn-timer/design
+  tasks:
+    status: complete
+    completed_at: 2026-07-08
+    artifact: openspec/changes/mvp-lobby-turn-timer/tasks.md
+    engram_topic: sdd/mvp-lobby-turn-timer/tasks
+  apply:
+    status: in_progress
+    pr1_completed_at: 2026-07-08
+    chain_strategy: stacked-to-main
+  verify:
+    status: pending
+  archive:
+    status: pending
+
+context:
+  predecessor: openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/
+  recommended_approach: B
+  plan_slices: [2b, 3, 3b, 4]
+  deferred_slices: [5, 6]
+  capabilities:
+    new: [lobby, turn-timer]
+    modified: [lan-transport]
+  locked_assumptions:
+    - variable_turn_order_in_scope
+    - minimal_end_screen_not_summary
+    - profile_defaults_allowed
+    - host_may_pass_for_disconnected_active
+    - taken_colors_sounds_ui_filter_only
+    - no_UPDATE_PLAYER_REJECTED_required
+    - duplicate_display_names_allowed
+  out_of_scope:
+    - host migration
+    - RECONNECT_REQUEST
+    - full summary screen
+    - cloud
+    - pausa_partida_host (PAUSED phase)
+  next: sdd-apply
+  spec_counts:
+    lobby: { requirements: 10, scenarios: 16, type: new }
+    turn-timer: { requirements: 8, scenarios: 12, type: new }
+    lan-transport: { requirements: "1 added + 1 modified", scenarios: 4, type: delta }
+  design_delivery_hint: "chained PRs: profile → lobby → timer"
+  design_key_extracted:
+    - LobbyRules
+    - TurnEngine
+  tasks_forecast:
+    estimated_lines: "1400-2000"
+    budget_risk: High
+    chained_prs: true
+    decision_needed_before_apply: true
+    chain_strategy: stacked-to-main
+    delivery_strategy: stacked-to-main
+    suggested_split: "PR1 profile+domain → PR2 lobby → PR3 timer+game+E2E"
