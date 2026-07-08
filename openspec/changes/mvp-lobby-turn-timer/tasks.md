@@ -46,17 +46,17 @@ OUT: host migration, RECONNECT_REQUEST UI, Summary, pause, cloud. Locked: Approa
 
 ## Phase 3: Turn Engine + Game UI (PR3)
 
-- [ ] 3.1 Create pure `lib/core/domain/turn_engine.dart` — START_GAME freeze; PASS (active / host-for-disconnected); fixed round++; variable BETWEEN_ROUNDS + START_NEXT_ROUND; WARNING≤15 / EXCEEDED + excess
-- [ ] 3.2 Dispatch turn messages in `host_room_controller.dart` / `websocket_host_server.dart`; expand GAME_STATE; in-game disconnect → `connected=false`; END_GAME → ENDED + FGS stop/teardown
-- [ ] 3.3 Update `client_sync_state.dart` — interpolate remaining from `serverNow`+`turnStartedAt`; resume SYNC_REQUEST
-- [ ] 3.4 Create `lib/features/game/` — active/waiting, warning flash, exceeded, PASS; BETWEEN_ROUNDS host controls; minimal Ended → Home
-- [ ] 3.5 Demote spike (debug-gate or remove primary Home path); keep discovery/FGS wiring
-- [ ] 3.6 Unit tests: `test/core/domain/turn_engine_test.dart` (pass, host-pass disconnect, fixed/variable rounds, phases, excess)
+- [x] 3.1 Create pure `lib/core/domain/turn_engine.dart` — START_GAME freeze; PASS (active / host-for-disconnected); fixed round++; variable BETWEEN_ROUNDS + START_NEXT_ROUND; WARNING≤15 / EXCEEDED + excess
+- [x] 3.2 Dispatch turn messages in `host_room_controller.dart` / `websocket_host_server.dart`; expand GAME_STATE; in-game disconnect → `connected=false`; END_GAME → ENDED + FGS stop/teardown
+- [x] 3.3 Update `client_sync_state.dart` — interpolate remaining from `serverNow`+`turnStartedAt`; resume SYNC_REQUEST
+- [x] 3.4 Create `lib/features/game/` — active/waiting, warning flash, exceeded, PASS; BETWEEN_ROUNDS host controls; minimal Ended → Home
+- [x] 3.5 Demote spike (debug-gate or remove primary Home path); keep discovery/FGS wiring
+- [x] 3.6 Unit tests: `test/core/domain/turn_engine_test.dart` (pass, host-pass disconnect, fixed/variable rounds, phases, excess)
 
 ## Phase 4: Widget Smoke + Manual E2E
 
-- [ ] 4.1 Widget smoke: profile save; lobby picker omits taken; ended → Home (`test/features/*_smoke_test.dart`)
-- [ ] 4.2 `dart analyze` + `flutter test` clean
+- [x] 4.1 Widget smoke: profile save; lobby picker omits taken; ended → Home (`test/features/*_smoke_test.dart`)
+- [x] 4.2 `dart analyze` + `flutter test` clean
 - [ ] 4.3 **Manual E2E (2 devices):** create/join defaults → lobby config → START → PASS sync → END → Home/teardown
 - [ ] 4.4 **Manual E2E:** variable order BETWEEN_ROUNDS reorder + START_NEXT_ROUND; host PASS for disconnected active; Android FGS stops on END
 

@@ -236,7 +236,7 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
                     'Target: ${widget.host}:${widget.port}\n'
                     'State: ${client?.state.name ?? "—"}\n'
                     'Interpolation: ${sync.allowTimerInterpolation}\n'
-                    'serverNow: ${sync.serverNow ?? "—"}',
+                    'serverNow: ${sync.serverNowAtReceive ?? "—"}',
                   ),
                 ),
                 FilledButton(

@@ -135,12 +135,16 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       setState(() {});
     }
     if (envelope.type == MessageTypes.gameState) {
+      ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
       final phase = envelope.payload['gamePhase'];
       if (phase == GameRoomPhase.inGame.wireValue) {
         context.go(
-          '/spike?role=client&host=${Uri.encodeComponent(widget.host!)}'
+          '/game?role=client&host=${Uri.encodeComponent(widget.host!)}'
           '&port=${widget.port}',
         );
+      }
+      if (phase == GameRoomPhase.ended.wireValue) {
+        context.go('/ended');
       }
     }
   }
@@ -277,7 +281,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                     }
                     if (started) {
                       controller.showHostKeepOpenBannerIfNeeded(context);
-                      context.go('/spike?role=host');
+                      context.go('/game?role=host');
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(

@@ -3,6 +3,7 @@ import '../models/game_room.dart';
 import '../models/player.dart';
 import '../models/room_config.dart';
 import 'preference_assignment.dart';
+import 'turn_engine.dart';
 
 /// Result of a successful JOIN.
 class JoinResult {
@@ -294,19 +295,10 @@ class LobbyRules {
   }
 
   static bool tryStartGame(GameRoom room) {
-    if (!canStartGame(room)) {
-      return false;
-    }
-    room.gamePhase = GameRoomPhase.inGame;
-    room.turnState
-      ..currentRound = 1
-      ..baseTurnDurationSeconds = room.config.turnDurationSeconds
-      ..currentRoundDurationSeconds = room.config.turnDurationSeconds;
-    if (room.turnSequence.isNotEmpty) {
-      room.turnState.activePlayerId = room.turnSequence.first;
-      room.turnState.turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
-    }
-    return true;
+    return TurnEngine.startGame(
+      room,
+      DateTime.now().millisecondsSinceEpoch,
+    );
   }
 
   static Set<String> takenColorIds(GameRoom room) {

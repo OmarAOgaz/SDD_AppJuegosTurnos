@@ -31,5 +31,9 @@ class MessageTypes {
   static const roomDiscarded = 'ROOM_DISCARDED';
 
   static const startGame = 'START_GAME';
+  static const passTurn = 'PASS_TURN';
+  static const roundCompleted = 'ROUND_COMPLETED';
+  static const reorderTurnOrder = 'REORDER_TURN_ORDER';
+  static const startNextRound = 'START_NEXT_ROUND';
   static const endGame = 'END_GAME';
 }

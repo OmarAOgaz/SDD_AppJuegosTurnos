@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../core/constants/message_types.dart';
 import '../core/constants/network_constants.dart';
 import '../core/domain/lobby_rules.dart';
+import '../core/domain/turn_engine.dart';
 import '../core/lifecycle/foreground_service_bridge.dart';
 import '../core/lifecycle/host_keep_open_banner.dart';
 import '../core/models/game_phase.dart';
@@ -231,11 +232,58 @@ class HostRoomController {
     if (room == null) {
       return false;
     }
-    if (!LobbyRules.tryStartGame(room)) {
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    if (!TurnEngine.startGame(room, serverNow)) {
       return false;
     }
-    _server.broadcast(_buildGameState());
+    _server.broadcast(_buildGameState(serverNow));
     await _foregroundServiceBridge.startGameSession();
+    return true;
+  }
+
+  bool passTurn(String senderPlayerId) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    final passed = TurnEngine.tryPassTurn(
+      room: room,
+      senderPlayerId: senderPlayerId,
+      serverNowMs: serverNow,
+    );
+    if (!passed) {
+      return false;
+    }
+    if (room.gamePhase == GameRoomPhase.betweenRounds) {
+      _server.broadcast(_buildRoundCompleted(serverNow));
+    }
+    _server.broadcast(_buildGameState(serverNow));
+    return true;
+  }
+
+  bool startNextRound() {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    if (!TurnEngine.tryStartNextRound(room, serverNow)) {
+      return false;
+    }
+    _server.broadcast(_buildGameState(serverNow));
+    return true;
+  }
+
+  bool reorderTurnOrderBetweenRounds(List<String> orderedPlayerIds) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    if (!TurnEngine.tryReorderTurnOrder(room, orderedPlayerIds)) {
+      return false;
+    }
+    _server.broadcast(_buildGameState(DateTime.now().millisecondsSinceEpoch));
     return true;
   }
 
@@ -244,9 +292,11 @@ class HostRoomController {
     if (room == null) {
       return;
     }
-    room.gamePhase = GameRoomPhase.ended;
-    _server.broadcast(_buildGameState());
+    TurnEngine.endGame(room);
+    _server.broadcast(_buildGameState(DateTime.now().millisecondsSinceEpoch));
     await _foregroundServiceBridge.stopGameSession();
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await stopRoom(broadcastDiscarded: false);
   }
 
   void showHostKeepOpenBannerIfNeeded(BuildContext context) {
@@ -306,7 +356,7 @@ class HostRoomController {
         if (room.gamePhase == GameRoomPhase.lobby) {
           send(_buildLobbyState());
         } else {
-          send(_buildGameState());
+          send(_buildGameState(DateTime.now().millisecondsSinceEpoch));
         }
       case MessageTypes.join:
         _handleJoin(sessionId, envelope);
@@ -314,6 +364,8 @@ class HostRoomController {
         _handleLeave(session, envelope);
       case MessageTypes.updatePlayer:
         _handleUpdatePlayer(session, envelope);
+      case MessageTypes.passTurn:
+        _handlePassTurn(session, envelope);
       default:
         break;
     }
@@ -408,9 +460,18 @@ class HostRoomController {
     }
   }
 
+  void _handlePassTurn(HostSession session, WsEnvelope envelope) {
+    final senderId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
+    if (senderId == null) {
+      return;
+    }
+    passTurn(senderId);
+  }
+
   void _onSessionClosed(String sessionId) {
     final room = _room;
-    if (room == null || room.gamePhase != GameRoomPhase.lobby) {
+    if (room == null) {
       _sessions.remove(sessionId);
       return;
     }
@@ -421,12 +482,26 @@ class HostRoomController {
       return;
     }
 
-    final removed = LobbyRules.tryRemoveDisconnected(room, playerId);
-    if (removed == null) {
+    if (room.gamePhase == GameRoomPhase.lobby) {
+      final removed = LobbyRules.tryRemoveDisconnected(room, playerId);
+      if (removed == null) {
+        return;
+      }
+      _broadcastPlayerRemoved(removed);
+      _broadcastLobbyState();
       return;
     }
-    _broadcastPlayerRemoved(removed);
-    _broadcastLobbyState();
+
+    if (room.gamePhase == GameRoomPhase.inGame ||
+        room.gamePhase == GameRoomPhase.betweenRounds) {
+      final player = room.playersById[playerId];
+      if (player != null && player.connected) {
+        player.connected = false;
+        _server.broadcast(
+          _buildGameState(DateTime.now().millisecondsSinceEpoch),
+        );
+      }
+    }
   }
 
   void _broadcastLobbyState() {
@@ -463,13 +538,25 @@ class HostRoomController {
     );
   }
 
-  WsEnvelope _buildGameState() {
+  WsEnvelope _buildGameState(int serverNow) {
     final room = _room!;
+    TurnEngine.refreshPhase(room, serverNow);
     return WsEnvelope(
       type: MessageTypes.gameState,
-      payload: room.toGameStatePayload(
-        serverNow: DateTime.now().millisecondsSinceEpoch,
-      ),
+      payload: room.toGameStatePayload(serverNow: serverNow),
+    );
+  }
+
+  WsEnvelope _buildRoundCompleted(int serverNow) {
+    final room = _room!;
+    return WsEnvelope(
+      type: MessageTypes.roundCompleted,
+      payload: {
+        'currentRound': room.turnState.currentRound,
+        'nextRoundDurationSeconds':
+            TurnEngine.nextRoundDurationPreview(room),
+        'serverNow': serverNow,
+      },
     );
   }
 

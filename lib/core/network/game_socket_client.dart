@@ -29,6 +29,7 @@ class GameSocketClient {
   String? _lastHost;
   int? _lastPort;
   Map<String, dynamic>? _lastLobbyState;
+  Map<String, dynamic>? _lastGameState;
   String? _localPlayerId;
 
   Stream<WsEnvelope> get messages => _messagesController.stream;
@@ -36,6 +37,7 @@ class GameSocketClient {
   SocketClientState get state => _state;
   String? get handshakeRoomId => _handshakeRoomId;
   Map<String, dynamic>? get lastLobbyState => _lastLobbyState;
+  Map<String, dynamic>? get lastGameState => _lastGameState;
   String? get localPlayerId => _localPlayerId;
 
   Future<void> connect({
@@ -113,8 +115,18 @@ class GameSocketClient {
     _send(WsEnvelope(type: MessageTypes.updatePlayer, payload: payload));
   }
 
+  void sendPassTurn({required String playerId}) {
+    _send(
+      WsEnvelope(
+        type: MessageTypes.passTurn,
+        payload: {'playerId': playerId},
+      ),
+    );
+  }
+
   void clearLobbyCache() {
     _lastLobbyState = null;
+    _lastGameState = null;
     _localPlayerId = null;
   }
 
@@ -174,6 +186,9 @@ class GameSocketClient {
       }
       if (envelope.type == MessageTypes.lobbyState) {
         _lastLobbyState = Map<String, dynamic>.from(envelope.payload);
+      }
+      if (envelope.type == MessageTypes.gameState) {
+        _lastGameState = Map<String, dynamic>.from(envelope.payload);
       }
       _messagesController.add(envelope);
     } on FormatException {

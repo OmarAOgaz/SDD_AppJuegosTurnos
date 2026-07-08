@@ -101,6 +101,8 @@ class GameRoom {
       'currentRound': turnState.currentRound,
       'baseTurnDurationSeconds': turnState.baseTurnDurationSeconds,
       'currentRoundDurationSeconds': turnState.currentRoundDurationSeconds,
+      'currentRoundTurnDurationSeconds': turnState.currentRoundDurationSeconds,
+      'roundIncrementSeconds': config.roundIncrementSeconds,
       'phase': turnState.phase.wireValue,
       'variableTurnOrder': config.variableTurnOrder,
     };

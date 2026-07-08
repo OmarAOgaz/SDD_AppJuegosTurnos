@@ -24,6 +24,17 @@ Completed: 2026-07-08
 - `LobbyScreen` host config + client pickers; Home → `/lobby`
 - Tests: `lobby_rules_test.dart` (9 cases) + existing suite → 25 tests
 
+## PR3 — Turn Engine + Game UI ✅
+
+Completed: 2026-07-08
+
+- `TurnEngine` — pass, rounds (fixed/variable), phases, excess
+- Host dispatch PASS_TURN, in-game disconnect, END_GAME teardown
+- `ClientSyncState` timer interpolation
+- `GameScreen` + `EndedScreen`; spike demoted to debug route
+- Tests: 35 total (turn_engine + ended smoke)
+
 ## Next
 
-PR3: tasks 3.1–3.6, 4.1–4.4 (TurnEngine, Game/Ended UI, demote spike, E2E)
+- Manual E2E 4.3–4.4 on 2 devices
+- `/sdd-verify` → `/sdd-archive`

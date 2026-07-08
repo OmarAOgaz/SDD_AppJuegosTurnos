@@ -33,6 +33,7 @@ phases:
     status: in_progress
     pr1_completed_at: 2026-07-08
     pr2_completed_at: 2026-07-08
+    pr3_completed_at: 2026-07-08
     chain_strategy: stacked-to-main
   verify:
     status: pending
