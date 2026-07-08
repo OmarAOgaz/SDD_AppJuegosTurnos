@@ -13,6 +13,17 @@ Completed: 2026-07-08
 - UI: `PersonalizeScreen`, route `/personalize`, Home join gate + app bar link
 - Tests: preference assignment, eligible picker, profile repository (+ existing suite)
 
+## PR2 — Lobby Protocol + UI ✅
+
+Completed: 2026-07-08
+
+- `LobbyRules` pure domain (join/leave/compact/config/update/start)
+- Lobby message types in `message_types.dart`
+- `HostRoomController` → `GameRoom` + WS dispatch (JOIN_ACK unicast, LOBBY_STATE broadcast, discard/leave)
+- `GameSocketClient` lobby sends + LOBBY_STATE cache
+- `LobbyScreen` host config + client pickers; Home → `/lobby`
+- Tests: `lobby_rules_test.dart` (9 cases) + existing suite → 25 tests
+
 ## Next
 
-PR2: tasks 2.1–2.6 (LobbyRules, WS lobby, Lobby UI)
+PR3: tasks 3.1–3.6, 4.1–4.4 (TurnEngine, Game/Ended UI, demote spike, E2E)

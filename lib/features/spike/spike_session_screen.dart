@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/message_types.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
-import '../../core/models/spike_room_stub.dart';
+import '../../core/models/game_phase.dart';
 import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
@@ -182,7 +182,7 @@ class _SpikeSessionScreenState extends ConsumerState<SpikeSessionScreen> {
   Widget _buildHost(BuildContext context) {
     final controller = ref.watch(hostRoomControllerProvider);
     final room = controller.room;
-    final fgsHint = Platform.isAndroid && room?.gamePhase == GamePhase.inGame
+    final fgsHint = Platform.isAndroid && room?.gamePhase == GameRoomPhase.inGame
         ? 'FGS activo (Android)'
         : null;
 

@@ -28,11 +28,15 @@ class GameSocketClient {
   String? _handshakeRoomId;
   String? _lastHost;
   int? _lastPort;
+  Map<String, dynamic>? _lastLobbyState;
+  String? _localPlayerId;
 
   Stream<WsEnvelope> get messages => _messagesController.stream;
   Stream<SocketClientState> get stateChanges => _stateController.stream;
   SocketClientState get state => _state;
   String? get handshakeRoomId => _handshakeRoomId;
+  Map<String, dynamic>? get lastLobbyState => _lastLobbyState;
+  String? get localPlayerId => _localPlayerId;
 
   Future<void> connect({
     required String host,
@@ -46,6 +50,7 @@ class GameSocketClient {
   Future<void> disconnect() async {
     _disconnectStartedAt = null;
     _setState(SocketClientState.disconnected);
+    clearLobbyCache();
     await _closeSocket();
   }
 
@@ -60,6 +65,57 @@ class GameSocketClient {
         payload: {'deviceId': deviceId},
       ),
     );
+  }
+
+  void sendJoin({
+    required String displayName,
+    required List<String> preferredColorIds,
+    required List<String> preferredSoundIds,
+  }) {
+    _send(
+      WsEnvelope(
+        type: MessageTypes.join,
+        payload: {
+          'deviceId': deviceId,
+          'displayName': displayName,
+          'preferredColorIds': preferredColorIds,
+          'preferredSoundIds': preferredSoundIds,
+        },
+      ),
+    );
+  }
+
+  void sendLeave({required String playerId}) {
+    _send(
+      WsEnvelope(
+        type: MessageTypes.leave,
+        payload: {'playerId': playerId},
+      ),
+    );
+  }
+
+  void sendUpdatePlayer({
+    required String playerId,
+    String? displayName,
+    String? colorId,
+    String? soundId,
+  }) {
+    final payload = <String, dynamic>{'playerId': playerId};
+    if (displayName != null) {
+      payload['displayName'] = displayName;
+    }
+    if (colorId != null) {
+      payload['colorId'] = colorId;
+    }
+    if (soundId != null) {
+      payload['soundId'] = soundId;
+    }
+    _send(WsEnvelope(type: MessageTypes.updatePlayer, payload: payload));
+  }
+
+  void clearLobbyCache() {
+    _lastLobbyState = null;
+    _localPlayerId = null;
   }
 
   void dispose() {
@@ -109,6 +165,15 @@ class GameSocketClient {
         if (roomId is String) {
           _handshakeRoomId = roomId;
         }
+      }
+      if (envelope.type == MessageTypes.joinAck) {
+        final playerId = envelope.payload['playerId'];
+        if (playerId is String) {
+          _localPlayerId = playerId;
+        }
+      }
+      if (envelope.type == MessageTypes.lobbyState) {
+        _lastLobbyState = Map<String, dynamic>.from(envelope.payload);
       }
       _messagesController.add(envelope);
     } on FormatException {

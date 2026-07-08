@@ -57,8 +57,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _createHostRoom() async {
     setState(() => _statusMessage = 'Starting host…');
     try {
+      final deviceId = await ref.read(deviceIdProvider.future);
+      final profile = await ref.read(localPlayerProfileProvider.future);
       final controller = ref.read(hostRoomControllerProvider);
-      final room = await controller.startRoom();
+      final room = await controller.startRoom(
+        hostDeviceId: deviceId,
+        profile: profile,
+        displayName: profile.defaultDisplayName,
+      );
       if (!mounted) {
         return;
       }
@@ -67,6 +73,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         () => _statusMessage =
             'Hosting "${room.displayName}" at $ip:${controller.port}',
       );
+      context.push('/lobby?role=host');
     } catch (error) {
       if (!mounted) {
         return;
@@ -178,7 +185,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     context.push(
-      '/spike?role=client&host=${Uri.encodeComponent(room.hostIp)}&port=${room.port}',
+      '/lobby?role=client&host=${Uri.encodeComponent(room.hostIp)}&port=${room.port}',
     );
   }
 
@@ -222,8 +229,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             OutlinedButton(
               onPressed: _stoppingHost
                   ? null
+                  : () => context.push('/lobby?role=host'),
+              child: const Text('Open lobby (host)'),
+            ),
+            TextButton(
+              onPressed: _stoppingHost
+                  ? null
                   : () => context.push('/spike?role=host'),
-              child: const Text('Open spike session (host)'),
+              child: const Text('Open spike session (debug)'),
             ),
             TextButton(
               onPressed: _stoppingHost

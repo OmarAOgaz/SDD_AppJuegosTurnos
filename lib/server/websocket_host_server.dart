@@ -16,6 +16,8 @@ typedef WsMessageHandler = void Function(
   void Function(WsEnvelope) send,
 );
 
+typedef WsSessionClosedHandler = void Function(String sessionId);
+
 /// Embedded Shelf WebSocket server bound to all IPv4 interfaces.
 class WebSocketHostServer {
   WebSocketHostServer();
@@ -31,6 +33,7 @@ class WebSocketHostServer {
   Future<int> start({
     required WsMessageHandler onMessage,
     required WsEnvelope Function() handshakeFactory,
+    WsSessionClosedHandler? onSessionClosed,
   }) async {
     if (_server != null) {
       return _server!.port;
@@ -60,8 +63,14 @@ class WebSocketHostServer {
             // Ignore malformed payloads per spec.
           }
         },
-        onDone: () => _channels.remove(sessionId),
-        onError: (_) => _channels.remove(sessionId),
+        onDone: () {
+          _channels.remove(sessionId);
+          onSessionClosed?.call(sessionId);
+        },
+        onError: (_) {
+          _channels.remove(sessionId);
+          onSessionClosed?.call(sessionId);
+        },
         cancelOnError: true,
       );
     });
@@ -95,6 +104,13 @@ class WebSocketHostServer {
     _server = null;
     if (server != null) {
       await server.close(force: true);
+    }
+  }
+
+  void sendTo(String sessionId, WsEnvelope envelope) {
+    final channel = _channels[sessionId];
+    if (channel != null && channel.closeCode == null) {
+      channel.sink.add(envelope.encode());
     }
   }
 

@@ -43,6 +43,7 @@ class _DelayedStopServer extends WebSocketHostServer {
   Future<int> start({
     required WsMessageHandler onMessage,
     required WsEnvelope Function() handshakeFactory,
+    WsSessionClosedHandler? onSessionClosed,
   }) async {
     return 9999;
   }
@@ -94,7 +95,10 @@ void main() {
         mdnsAdvertiser: _FakeMdnsAdvertiser(),
       );
 
-      await controller.startRoom(displayName: 'test');
+      await controller.startRoom(
+        displayName: 'test',
+        hostDeviceId: 'host-device-test',
+      );
       expect(controller.room, isNotNull);
 
       server.armBlock(release);

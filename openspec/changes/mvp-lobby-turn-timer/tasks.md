@@ -37,12 +37,12 @@ OUT: host migration, RECONNECT_REQUEST UI, Summary, pause, cloud. Locked: Approa
 
 ## Phase 2: Lobby Protocol + UI (PR2)
 
-- [ ] 2.1 Create pure `lib/core/domain/lobby_rules.dart` — JOIN end-slot + color/sound prefs; clamps; compact; reorder; UPDATE_PLAYER (silent ignore taken); START gate K≥2
-- [ ] 2.2 Extend `message_types.dart` with lobby types (JOIN/ACK, LOBBY_STATE, LEAVE/PLAYER_REMOVED, SET_*, REORDER_*, UPDATE_PLAYER, DISCARD_ROOM/ROOM_DISCARDED); no UPDATE_PLAYER_REJECTED
-- [ ] 2.3 Replace `SpikeRoomStub` usage in `host_room_controller.dart` with `GameRoom` + LobbyRules; unicast JOIN_ACK; broadcast LOBBY_STATE; discard/leave/compact
-- [ ] 2.4 Extend `game_socket_client.dart` typed lobby sends + LOBBY_STATE cache
-- [ ] 2.5 Create `lib/features/lobby/` — host config/reorder/Start; client pickers = free∪own from LOBBY_STATE; wire Home host/join → Lobby
-- [ ] 2.6 Unit tests: `test/core/domain/lobby_rules_test.dart` (join prefs, full reject, clamps, compact, START K≥2)
+- [x] 2.1 Create pure `lib/core/domain/lobby_rules.dart` — JOIN end-slot + color/sound prefs; clamps; compact; reorder; UPDATE_PLAYER (silent ignore taken); START gate K≥2
+- [x] 2.2 Extend `message_types.dart` with lobby types (JOIN/ACK, LOBBY_STATE, LEAVE/PLAYER_REMOVED, SET_*, REORDER_*, UPDATE_PLAYER, DISCARD_ROOM/ROOM_DISCARDED); no UPDATE_PLAYER_REJECTED
+- [x] 2.3 Replace `SpikeRoomStub` usage in `host_room_controller.dart` with `GameRoom` + LobbyRules; unicast JOIN_ACK; broadcast LOBBY_STATE; discard/leave/compact
+- [x] 2.4 Extend `game_socket_client.dart` typed lobby sends + LOBBY_STATE cache
+- [x] 2.5 Create `lib/features/lobby/` — host config/reorder/Start; client pickers = free∪own from LOBBY_STATE; wire Home host/join → Lobby
+- [x] 2.6 Unit tests: `test/core/domain/lobby_rules_test.dart` (join prefs, full reject, clamps, compact, START K≥2)
 
 ## Phase 3: Turn Engine + Game UI (PR3)
 
