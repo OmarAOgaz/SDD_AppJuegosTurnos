@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Pre-game lobby: local player profile, JOIN/slot assignment, host-only room config, player updates, leave/discard, and START gating. Authoritative lobby snapshot is `LOBBY_STATE`.
+Pre-game lobby: local player profile, JOIN/slot assignment, host-only room config, player updates, leave/discard, and START gating. Authoritative lobby snapshot is `LOBBY_STATE`. **Every lobby mutation MUST be reflected on all connected devices** (host and clients) without requiring manual refresh or unrelated UI interaction.
 
 ## Requirements
 
@@ -41,15 +41,40 @@ On `JOIN`, the host MUST assign a new `playerId`, seat the player at the end of 
 - THEN the host MUST NOT seat the player
 - AND the client remains out of lobby
 
-### Requirement: LOBBY_STATE broadcast
+### Requirement: LOBBY_STATE broadcast and lobby sync on all devices
 
-The host MUST broadcast `LOBBY_STATE` after join, leave, disconnect compact, config change, reorder, or successful `UPDATE_PLAYER`. `LOBBY_STATE` MUST include `displayName`, `maxPlayers`, `turnDurationSeconds`, `roundIncrementSeconds`, `variableTurnOrder`, slots, `turnSequence`, and `playersById`. Clients MUST treat `LOBBY_STATE` as authoritative for lobby UI.
+The host MUST broadcast `LOBBY_STATE` after **any** authoritative lobby mutation: join, leave, disconnect compact, config change, reorder, or successful `UPDATE_PLAYER`. `LOBBY_STATE` MUST include `displayName`, `maxPlayers`, `turnDurationSeconds`, `roundIncrementSeconds`, `variableTurnOrder`, slots, `turnSequence`, and `playersById`.
+
+**All connected devices** — including the host — MUST treat the latest `LOBBY_STATE` as authoritative for lobby UI. The host MUST NOT rely on local in-memory mutation alone; after each mutation the host MUST both broadcast `LOBBY_STATE` to peers **and** refresh its own lobby UI from the same authoritative room snapshot. Clients MUST apply incoming `LOBBY_STATE` immediately. No device MAY show stale player lists, config, or slot order while connected to an active lobby.
 
 #### Scenario: Config change refreshes all clients
 
 - GIVEN connected lobby clients
 - WHEN the host changes turn duration
 - THEN all peers receive `LOBBY_STATE` with the new `turnDurationSeconds`
+- AND every device shows the updated value without manual refresh
+
+#### Scenario: Join refreshes host and all clients
+
+- GIVEN a host in lobby with one seated player and at least one connected client
+- WHEN a new client successfully sends `JOIN`
+- THEN the host broadcasts `LOBBY_STATE` with the new seated player
+- AND the host lobby UI shows the new player immediately
+- AND all connected clients show the same updated player list
+
+#### Scenario: Player self-update syncs to everyone
+
+- GIVEN multiple seated players in lobby
+- WHEN a client sends a successful `UPDATE_PLAYER` (name, color, or sound)
+- THEN all devices — host included — receive `LOBBY_STATE`
+- AND all devices show the updated player fields
+
+#### Scenario: Leave or disconnect syncs remaining peers
+
+- GIVEN multiple seated players in lobby
+- WHEN a non-host client leaves or disconnects
+- THEN remaining devices receive `PLAYER_REMOVED` and updated `LOBBY_STATE`
+- AND all remaining devices show compacted slots and the reduced player count
 
 ### Requirement: Host-only lobby configuration
 

@@ -30,13 +30,17 @@ phases:
     artifact: openspec/changes/mvp-lobby-turn-timer/tasks.md
     engram_topic: sdd/mvp-lobby-turn-timer/tasks
   apply:
-    status: in_progress
+    status: complete
     pr1_completed_at: 2026-07-08
     pr2_completed_at: 2026-07-08
     pr3_completed_at: 2026-07-08
     chain_strategy: stacked-to-main
   verify:
-    status: pending
+    status: complete
+    completed_at: 2026-07-08
+    verdict: PASS_WITH_WARNINGS
+    artifact: openspec/changes/mvp-lobby-turn-timer/verify-report.md
+    engram_topic: sdd/mvp-lobby-turn-timer/verify
   archive:
     status: pending
 
@@ -62,7 +66,7 @@ context:
     - full summary screen
     - cloud
     - pausa_partida_host (PAUSED phase)
-  next: sdd-apply
+  next: sdd-archive
   spec_counts:
     lobby: { requirements: 10, scenarios: 16, type: new }
     turn-timer: { requirements: 8, scenarios: 12, type: new }

@@ -30,7 +30,7 @@ Ship a playable LAN loop on the archived foundation: local profile, lobby join/s
 ## Capabilities
 
 ### New Capabilities
-- `lobby`: LocalPlayerProfile, JOIN/LOBBY_STATE, slots, host config/reorder, UPDATE_PLAYER (UI filters taken colors/sounds; duplicate names OK), leave/discard, lobby disconnect compact
+- `lobby`: LocalPlayerProfile, JOIN/LOBBY_STATE, slots, host config/reorder, UPDATE_PLAYER (UI filters taken colors/sounds; duplicate names OK), leave/discard, lobby disconnect compact; **all lobby mutations sync to host + all connected clients**
 - `turn-timer`: START_GAME, TurnState sync (`serverNow` + `turnStartedAt`), PASS_TURN, fixed/variable rounds, excess fields, minimal ended screen + END_GAME teardown
 
 ### Modified Capabilities

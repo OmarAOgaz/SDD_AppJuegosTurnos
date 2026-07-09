@@ -33,7 +33,7 @@ class HostSession {
 }
 
 /// Orchestrates GameRoom, WebSocket server, mDNS, FGS, and heartbeats.
-class HostRoomController {
+class HostRoomController extends ChangeNotifier {
   HostRoomController({
     WebSocketHostServer? server,
     MdnsAdvertiser? mdnsAdvertiser,
@@ -98,10 +98,14 @@ class HostRoomController {
     );
 
     _startHeartbeatWatchdog();
+    notifyListeners();
     return room;
   }
 
-  Future<void> stopRoom({bool broadcastDiscarded = true}) async {
+  Future<void> stopRoom({
+    bool broadcastDiscarded = true,
+    bool notify = true,
+  }) async {
     if (broadcastDiscarded) {
       _broadcastRoomDiscarded();
     }
@@ -126,6 +130,9 @@ class HostRoomController {
       await _server.stop();
     } catch (_) {
       // Best-effort teardown.
+    }
+    if (notify) {
+      notifyListeners();
     }
   }
 
@@ -236,7 +243,7 @@ class HostRoomController {
     if (!TurnEngine.startGame(room, serverNow)) {
       return false;
     }
-    _server.broadcast(_buildGameState(serverNow));
+    _broadcastGameState(serverNow);
     await _foregroundServiceBridge.startGameSession();
     return true;
   }
@@ -258,7 +265,7 @@ class HostRoomController {
     if (room.gamePhase == GameRoomPhase.betweenRounds) {
       _server.broadcast(_buildRoundCompleted(serverNow));
     }
-    _server.broadcast(_buildGameState(serverNow));
+    _broadcastGameState(serverNow);
     return true;
   }
 
@@ -271,7 +278,7 @@ class HostRoomController {
     if (!TurnEngine.tryStartNextRound(room, serverNow)) {
       return false;
     }
-    _server.broadcast(_buildGameState(serverNow));
+    _broadcastGameState(serverNow);
     return true;
   }
 
@@ -283,7 +290,7 @@ class HostRoomController {
     if (!TurnEngine.tryReorderTurnOrder(room, orderedPlayerIds)) {
       return false;
     }
-    _server.broadcast(_buildGameState(DateTime.now().millisecondsSinceEpoch));
+    _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
     return true;
   }
 
@@ -293,7 +300,7 @@ class HostRoomController {
       return;
     }
     TurnEngine.endGame(room);
-    _server.broadcast(_buildGameState(DateTime.now().millisecondsSinceEpoch));
+    _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
     await _foregroundServiceBridge.stopGameSession();
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await stopRoom(broadcastDiscarded: false);
@@ -497,15 +504,19 @@ class HostRoomController {
       final player = room.playersById[playerId];
       if (player != null && player.connected) {
         player.connected = false;
-        _server.broadcast(
-          _buildGameState(DateTime.now().millisecondsSinceEpoch),
-        );
+        _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
       }
     }
   }
 
   void _broadcastLobbyState() {
     _server.broadcast(_buildLobbyState());
+    notifyListeners();
+  }
+
+  void _broadcastGameState(int serverNow) {
+    _server.broadcast(_buildGameState(serverNow));
+    notifyListeners();
   }
 
   void _broadcastPlayerRemoved(String playerId) {
@@ -597,6 +608,11 @@ class HostRoomController {
   }
 
   @visibleForTesting
+  void debugDispatchMessage(String sessionId, WsEnvelope envelope) {
+    _handleMessage(sessionId, envelope, (_) {});
+  }
+
+  @visibleForTesting
   void debugRegisterSession(
     String sessionId, {
     DateTime? lastHeartbeatAt,
@@ -616,7 +632,9 @@ class HostRoomController {
     return _sessions[sessionId]?.disconnected ?? false;
   }
 
+  @override
   void dispose() {
-    unawaited(stopRoom());
+    unawaited(stopRoom(broadcastDiscarded: false, notify: false));
+    super.dispose();
   }
 }

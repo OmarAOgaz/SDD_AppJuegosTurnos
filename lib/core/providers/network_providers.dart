@@ -10,10 +10,9 @@ import '../network/manual_endpoint_store.dart';
 import '../network/room_list_merger.dart';
 import '../../server/host_room_controller.dart';
 
-final hostRoomControllerProvider = Provider<HostRoomController>((ref) {
-  final controller = HostRoomController();
-  ref.onDispose(controller.dispose);
-  return controller;
+final hostRoomControllerProvider =
+    ChangeNotifierProvider<HostRoomController>((ref) {
+  return HostRoomController();
 });
 
 final manualEndpointStoreProvider = FutureProvider<ManualEndpointStore>((ref) {

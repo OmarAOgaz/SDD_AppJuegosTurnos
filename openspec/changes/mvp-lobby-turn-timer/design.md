@@ -46,7 +46,7 @@ Envelope `{type,payload}`. **No** required `UPDATE_PLAYER_REJECTED`.
 | `JOIN` | C→H | deviceId, displayName, preferredColorIds, preferredSoundIds |
 | `JOIN_ACK` | H→C | playerId, slotNumber, assignedColorId, assignedSoundId |
 | `LEAVE` / `PLAYER_REMOVED` | C→H / H→all | playerId |
-| `LOBBY_STATE` | H→all | config, slots, turnSequence, playersById |
+| `LOBBY_STATE` | H→all | config, slots, turnSequence, playersById; **every lobby mutation MUST broadcast and all devices (host + clients) MUST refresh UI from the latest snapshot** |
 | Host config | H | SET_ROOM_DISPLAY_NAME (+mDNS), SET_MAX_PLAYERS, SET_TURN_DURATION, SET_ROUND_INCREMENT, SET_VARIABLE_TURN_ORDER |
 | `REORDER_SLOTS` / `REORDER_TURN_SEQUENCE` | H | ordered ids (lobby) |
 | `UPDATE_PLAYER` | C→H | own name?/colorId?/soundId? |
@@ -73,7 +73,7 @@ Turn: remaining = turnStartedAt + currentRoundDuration − serverNow
 
 ## UI + Sync
 
-**Screens:** Personalización (defaults OK; empty name blocks foreign join) · Lobby (host config/reorder/Start K≥2; pickers from LOBBY_STATE eligible) · Game (active/waiting, flash ≤15s, exceeded solid, PASS tap; BETWEEN_ROUNDS host controls) · Ended (“Partida terminada” → Home) · Home wires lobby; spike not primary.
+**Screens:** Personalización (defaults OK; empty name blocks foreign join) · Lobby (host config/reorder/Start K≥2; pickers from LOBBY_STATE eligible; **all lobby changes sync to every connected device including host**) · Game (active/waiting, flash ≤15s, exceeded solid, PASS tap; BETWEEN_ROUNDS host controls) · Ended (“Partida terminada” → Home) · Home wires lobby; spike not primary.
 
 **GAME_STATE:** `serverNow`, `turnStartedAt`, `activePlayerId`, `phase`, round/durations, `variableTurnOrder`, `gamePhase`, players (+connected/excess), slots/`turnSequence`. Client resumes → `SYNC_REQUEST`. Lobby disconnect → compact; in-game → `connected=false`, keep slot; host MAY pass for disconnected active.
 
