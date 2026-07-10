@@ -5,12 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/catalogs/color_catalog.dart';
-import '../../core/constants/message_types.dart';
 import '../../core/domain/turn_engine.dart';
+import '../../core/lifecycle/client_sync_state.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
 import '../../core/models/game_phase.dart';
+import '../../core/models/game_room.dart';
 import '../../core/models/player.dart';
-import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 
@@ -33,7 +33,6 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen> {
   Timer? _uiTick;
-  StreamSubscription<WsEnvelope>? _messageSub;
 
   bool get _isHost => widget.role == 'host';
 
@@ -47,36 +46,34 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     });
     if (!_isHost) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _messageSub = ref.read(gameSocketClientProvider)?.messages.listen(
-          _onClientMessage,
-        );
+        unawaited(_ensureClientConnected());
       });
     }
+  }
+
+  Future<void> _ensureClientConnected() async {
+    final host = widget.host;
+    final port = widget.port;
+    if (host == null || port == null) {
+      return;
+    }
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null) {
+      return;
+    }
+    if (client.state == SocketClientState.connected ||
+        client.state == SocketClientState.connecting ||
+        client.state == SocketClientState.reconnecting) {
+      return;
+    }
+    await client.connect(host: host, port: port);
+    client.sendSyncRequest();
   }
 
   @override
   void dispose() {
     _uiTick?.cancel();
-    unawaited(_messageSub?.cancel());
     super.dispose();
-  }
-
-  void _onClientMessage(WsEnvelope envelope) {
-    ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
-    if (!mounted) {
-      return;
-    }
-    if (envelope.type == MessageTypes.gameState) {
-      final phase = envelope.payload['gamePhase'];
-      if (phase == GameRoomPhase.ended.wireValue) {
-        context.go('/ended');
-      }
-    }
-    setState(() {});
-  }
-
-  void _onClientResumed() {
-    ref.read(gameSocketClientProvider)?.sendSyncRequest();
   }
 
   Player? _playerById(Map<String, dynamic>? state, String? playerId) {
@@ -94,8 +91,98 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return Player.fromJson(Map<String, dynamic>.from(json));
   }
 
+  void _onClientResumed() {
+    ref.read(gameSocketClientProvider)?.sendSyncRequest();
+  }
+
+  Map<String, dynamic>? _newestGameState(
+    Map<String, dynamic>? syncState,
+    Map<String, dynamic>? socketState,
+  ) {
+    if (syncState == null) {
+      return socketState;
+    }
+    if (socketState == null) {
+      return syncState;
+    }
+    final syncServerNow = syncState['serverNow'];
+    final socketServerNow = socketState['serverNow'];
+    if (syncServerNow is int && socketServerNow is int) {
+      return socketServerNow >= syncServerNow ? socketState : syncState;
+    }
+    return syncState;
+  }
+
+  bool _hostCanPassTurn(GameRoom room, Player? active) {
+    if (room.gamePhase != GameRoomPhase.inGame) {
+      return false;
+    }
+    final activeId = room.turnState.activePlayerId;
+    if (activeId == null) {
+      return false;
+    }
+    if (activeId == room.hostPlayerId) {
+      return true;
+    }
+    return active != null && !active.connected;
+  }
+
+  int? _remainingSeconds(
+    ClientSyncState sync,
+    Map<String, dynamic>? state,
+  ) {
+    if (state == null) {
+      return null;
+    }
+    if (_usesSyncSnapshot(sync, state)) {
+      return sync.remainingSeconds();
+    }
+    final startedAt = state['turnStartedAt'];
+    final duration = state['currentRoundTurnDurationSeconds'] ??
+        state['currentRoundDurationSeconds'];
+    final serverNow = state['serverNow'];
+    if (startedAt is! int || duration is! int || serverNow is! int) {
+      return sync.remainingSeconds();
+    }
+    final remainingMs = duration * 1000 - (serverNow - startedAt);
+    return (remainingMs / 1000).ceil();
+  }
+
+  TurnPhase _interpolatedPhase(ClientSyncState sync, Map<String, dynamic>? state) {
+    if (_usesSyncSnapshot(sync, state)) {
+      return sync.interpolatedPhase();
+    }
+    final remaining = _remainingSeconds(sync, state);
+    if (remaining == null) {
+      return TurnPhase.normal;
+    }
+    if (remaining <= 0) {
+      return TurnPhase.exceeded;
+    }
+    if (remaining <= TurnEngine.warningThresholdSeconds) {
+      return TurnPhase.warning;
+    }
+    return TurnPhase.normal;
+  }
+
+  bool _usesSyncSnapshot(ClientSyncState sync, Map<String, dynamic>? state) {
+    final syncState = sync.lastGameState;
+    if (state == null || syncState == null) {
+      return state == syncState;
+    }
+    return state['serverNow'] == syncState['serverNow'] &&
+        state['activePlayerId'] == syncState['activePlayerId'];
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_isHost) {
+      ref.listen(clientSyncProvider, (previous, next) {
+        if (next.isEnded && mounted) {
+          context.go('/ended');
+        }
+      });
+    }
     if (_isHost) {
       return _buildHost(context);
     }
@@ -153,20 +240,22 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         remaining: remaining,
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
-        canPass: room.gamePhase == GameRoomPhase.inGame &&
-            room.turnState.activePlayerId != null &&
-            (room.turnState.activePlayerId == room.hostPlayerId ||
-                (active != null && !active.connected)),
+        canPass: _hostCanPassTurn(room, active),
         onPass: () {
-          controller.passTurn(room.hostPlayerId);
-          setState(() {});
+          final passed = controller.passTurn(room.hostPlayerId);
+          if (!passed && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No se pudo pasar el turno'),
+              ),
+            );
+          }
         },
         betweenRoundsActions: room.gamePhase == GameRoomPhase.betweenRounds
             ? [
                 FilledButton(
                   onPressed: () {
                     controller.startNextRound();
-                    setState(() {});
                   },
                   child: const Text('Iniciar siguiente ronda'),
                 ),
@@ -179,13 +268,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget _buildClient(BuildContext context) {
     final sync = ref.watch(clientSyncProvider);
     final client = ref.watch(gameSocketClientProvider);
-    final state = sync.lastGameState ?? client?.lastGameState;
+    final state = _newestGameState(sync.lastGameState, client?.lastGameState);
     final localPlayerId = client?.localPlayerId;
     final gamePhase = GameRoomPhase.fromWire(state?['gamePhase'] as String?);
     final activeId = state?['activePlayerId'] as String?;
     final active = _playerById(state, activeId);
-    final remaining = sync.remainingSeconds();
-    final phase = sync.interpolatedPhase();
+    final remaining = _remainingSeconds(sync, state);
+    final phase = _interpolatedPhase(sync, state);
     final canPass = gamePhase == GameRoomPhase.inGame &&
         localPlayerId != null &&
         localPlayerId == activeId;

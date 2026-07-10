@@ -351,6 +351,29 @@ class HostRoomController extends ChangeNotifier {
         }
         session.lastHeartbeatAt = DateTime.now();
         session.disconnected = false;
+        var playerId = session.playerId;
+        // Rebind after reconnect: new WS session has no playerId yet.
+        if (playerId == null && deviceId is String) {
+          for (final player in room.playersById.values) {
+            if (player.deviceId == deviceId) {
+              session.playerId = player.playerId;
+              playerId = player.playerId;
+              break;
+            }
+          }
+        }
+        if (playerId != null) {
+          final player = room.playersById[playerId];
+          if (player != null && !player.connected) {
+            player.connected = true;
+            if (room.gamePhase == GameRoomPhase.inGame ||
+                room.gamePhase == GameRoomPhase.betweenRounds) {
+              _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+            }
+          } else if (player != null) {
+            player.connected = true;
+          }
+        }
         send(
           WsEnvelope(
             type: MessageTypes.heartbeatAck,
@@ -610,6 +633,15 @@ class HostRoomController extends ChangeNotifier {
   @visibleForTesting
   void debugDispatchMessage(String sessionId, WsEnvelope envelope) {
     _handleMessage(sessionId, envelope, (_) {});
+  }
+
+  @visibleForTesting
+  void debugDispatchMessageWithSend(
+    String sessionId,
+    WsEnvelope envelope,
+    void Function(WsEnvelope) send,
+  ) {
+    _handleMessage(sessionId, envelope, send);
   }
 
   @visibleForTesting

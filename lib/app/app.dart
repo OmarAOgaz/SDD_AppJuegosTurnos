@@ -10,6 +10,8 @@ import '../features/lobby/lobby_screen.dart';
 import '../features/player_profile/personalize_screen.dart';
 import '../features/spike/spike_session_screen.dart';
 
+import '../core/providers/network_providers.dart';
+
 class TurnosApp extends ConsumerWidget {
   const TurnosApp({super.key});
 
@@ -74,6 +76,8 @@ class TurnosApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(deviceIdProvider);
+    ref.watch(gameSocketClientProvider);
     return MaterialApp.router(
       title: 'Turnos Juegos de mesa',
       theme: ThemeData(

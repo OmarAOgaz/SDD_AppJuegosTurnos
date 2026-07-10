@@ -41,6 +41,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   String? _statusMessage;
   bool _joinSent = false;
   bool _roomDiscarded = false;
+  /// When true, dispose must not tear down the socket (lobby → game).
+  bool _retainClientSession = false;
   final _roomNameController = TextEditingController();
 
   bool get _isHost => widget.role == 'host';
@@ -60,7 +62,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   void dispose() {
     unawaited(_messageSub?.cancel());
     unawaited(_stateSub?.cancel());
-    if (!_isHost) {
+    if (!_isHost && !_retainClientSession) {
       final playerId = _client?.localPlayerId;
       if (playerId != null && _client?.state == SocketClientState.connected) {
         _client?.sendLeave(playerId: playerId);
@@ -138,6 +140,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
       ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
       final phase = envelope.payload['gamePhase'];
       if (phase == GameRoomPhase.inGame.wireValue) {
+        // Keep the WebSocket + localPlayerId across lobby → game navigation.
+        _retainClientSession = true;
         context.go(
           '/game?role=client&host=${Uri.encodeComponent(widget.host!)}'
           '&port=${widget.port}',

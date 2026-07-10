@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/providers/network_providers.dart';
+
 /// Minimal post-game screen — exit to Home.
-class EndedScreen extends StatelessWidget {
+class EndedScreen extends ConsumerWidget {
   const EndedScreen({super.key});
 
+  Future<void> _goHome(WidgetRef ref, BuildContext context) async {
+    await ref.read(gameSocketClientProvider)?.disconnect();
+    ref.read(clientSyncProvider.notifier).reset();
+    if (context.mounted) {
+      context.go('/');
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(title: const Text('Partida terminada')),
       body: Center(
@@ -24,7 +35,7 @@ class EndedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: () => context.go('/'),
+                onPressed: () => _goHome(ref, context),
                 child: const Text('Volver al inicio'),
               ),
             ],

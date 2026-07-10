@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import '../constants/message_types.dart';
 import '../lifecycle/client_sync_state.dart';
 import '../models/ws_envelope.dart';
 import '../network/device_id_store.dart';
@@ -41,7 +44,14 @@ final gameSocketClientProvider = Provider<GameSocketClient?>((ref) {
   }
 
   final link = ref.keepAlive();
-  final client = GameSocketClient(deviceId: deviceId);
+  final client = GameSocketClient(
+    deviceId: deviceId,
+    onEnvelope: (envelope) {
+      if (envelope.type == MessageTypes.gameState) {
+        ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
+      }
+    },
+  );
   ref.onDispose(() {
     client.dispose();
     link.close();

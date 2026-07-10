@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/constants/network_constants.dart';
+import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
 import 'package:turnos_juegos/core/models/ws_envelope.dart';
 import 'package:turnos_juegos/core/network/discovery/mdns_advertiser.dart';
@@ -216,6 +217,79 @@ void main() {
       expect(
         controller.room!.playersById[playerId]!.displayName,
         'Renombrado',
+      );
+    });
+
+    test('passTurn broadcasts GAME_STATE and notifies listeners', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      server.broadcasts.clear();
+
+      final room = controller.room!;
+      expect(
+        TurnEngine.startGame(room, DateTime.now().millisecondsSinceEpoch),
+        isTrue,
+      );
+
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      server.broadcasts.clear();
+
+      final hostId = room.hostPlayerId;
+      expect(controller.passTurn(hostId), isTrue);
+      expect(notifications, 1);
+      expect(server.broadcasts, hasLength(1));
+      expect(server.broadcasts.single.type, MessageTypes.gameState);
+      expect(server.broadcasts.single.payload['activePlayerId'], isNot(hostId));
+    });
+
+    test('heartbeat rebinds session playerId after reconnect', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final playerId = server.unicasts.single.$2.payload['playerId'] as String;
+      final room = controller.room!;
+      expect(
+        TurnEngine.startGame(room, DateTime.now().millisecondsSinceEpoch),
+        isTrue,
+      );
+
+      // Simulate in-game disconnect of the original session.
+      room.playersById[playerId]!.connected = false;
+      server.broadcasts.clear();
+
+      // New WebSocket session after reconnect — no playerId yet.
+      controller.debugRegisterSession('client-session-2');
+      final acks = <WsEnvelope>[];
+      controller.debugDispatchMessageWithSend(
+        'client-session-2',
+        WsEnvelope(
+          type: MessageTypes.heartbeat,
+          payload: {
+            'deviceId': 'device-a',
+            'clientNow': DateTime.now().millisecondsSinceEpoch,
+          },
+        ),
+        acks.add,
+      );
+
+      expect(room.playersById[playerId]!.connected, isTrue);
+      expect(acks, isNotEmpty);
+      expect(acks.last.type, MessageTypes.heartbeatAck);
+      expect(
+        server.broadcasts.any((e) => e.type == MessageTypes.gameState),
+        isTrue,
       );
     });
 

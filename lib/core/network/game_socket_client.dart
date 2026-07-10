@@ -10,9 +10,13 @@ enum SocketClientState { disconnected, connecting, connected, reconnecting }
 
 /// WebSocket client with heartbeat and short reconnect window.
 class GameSocketClient {
-  GameSocketClient({required this.deviceId});
+  GameSocketClient({
+    required this.deviceId,
+    this.onEnvelope,
+  });
 
   final String deviceId;
+  final void Function(WsEnvelope envelope)? onEnvelope;
 
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
@@ -190,6 +194,7 @@ class GameSocketClient {
       if (envelope.type == MessageTypes.gameState) {
         _lastGameState = Map<String, dynamic>.from(envelope.payload);
       }
+      onEnvelope?.call(envelope);
       _messagesController.add(envelope);
     } on FormatException {
       // Ignore malformed payloads.
