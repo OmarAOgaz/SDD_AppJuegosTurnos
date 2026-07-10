@@ -35,9 +35,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Home Highlight + Tap Resume (PR2)
 
-- [ ] 2.1 In `home_screen.dart` + `room_list_merger.dart`: highlight rooms matching resume store until END_GAME/discard (no TTL)
-- [ ] 2.2 Tap highlighted room → connect cached endpoint or mDNS same `roomId` → heartbeat rebind → restore `playerId` → SYNC → `/game`
-- [ ] 2.3 Verify discovery list marks resumable (`lan-discovery`); no client reconnect envelope types
+- [x] 2.1 In `home_screen.dart` + `room_list_merger.dart`: highlight rooms matching resume store until END_GAME/discard (no TTL)
+- [x] 2.2 Tap highlighted room → connect cached endpoint or mDNS same `roomId` → heartbeat rebind → restore `playerId` → SYNC → `/game`
+- [x] 2.3 Verify discovery list marks resumable (`lan-discovery`); no client reconnect envelope types
 
 ## Phase 3: Host Succession + Reclaim (PR3)
 

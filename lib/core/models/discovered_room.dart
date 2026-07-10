@@ -1,4 +1,4 @@
-/// A room discovered via mDNS or manual entry.
+/// A room discovered via mDNS, manual entry, or resume-store cache.
 class DiscoveredRoom {
   const DiscoveredRoom({
     required this.roomId,
@@ -6,6 +6,7 @@ class DiscoveredRoom {
     required this.hostIp,
     required this.port,
     this.source = RoomDiscoverySource.mdns,
+    this.isResumable = false,
   });
 
   final String roomId;
@@ -13,6 +14,9 @@ class DiscoveredRoom {
   final String hostIp;
   final int port;
   final RoomDiscoverySource source;
+
+  /// True when local resume store matches this [roomId] (no TTL).
+  final bool isResumable;
 
   String get wsUrl => 'ws://$hostIp:$port/ws';
 
@@ -22,6 +26,7 @@ class DiscoveredRoom {
     String? hostIp,
     int? port,
     RoomDiscoverySource? source,
+    bool? isResumable,
   }) {
     return DiscoveredRoom(
       roomId: roomId ?? this.roomId,
@@ -29,8 +34,9 @@ class DiscoveredRoom {
       hostIp: hostIp ?? this.hostIp,
       port: port ?? this.port,
       source: source ?? this.source,
+      isResumable: isResumable ?? this.isResumable,
     );
   }
 }
 
-enum RoomDiscoverySource { mdns, manual }
+enum RoomDiscoverySource { mdns, manual, cached }
