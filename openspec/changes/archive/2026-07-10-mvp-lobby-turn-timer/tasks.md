@@ -57,8 +57,9 @@ OUT: host migration, RECONNECT_REQUEST UI, Summary, pause, cloud. Locked: Approa
 
 - [x] 4.1 Widget smoke: profile save; lobby picker omits taken; ended → Home (`test/features/*_smoke_test.dart`)
 - [x] 4.2 `dart analyze` + `flutter test` clean
-- [ ] 4.3 **Manual E2E (2 devices):** create/join defaults → lobby config → START → PASS sync → END → Home/teardown
-- [ ] 4.4 **Manual E2E:** variable order BETWEEN_ROUNDS reorder + START_NEXT_ROUND; host PASS for disconnected active; Android FGS stops on END
+- [x] 4.3 **Manual E2E (2 devices):** create/join defaults → lobby config → START → PASS sync → END → Home/teardown
+- [x] 4.4 **Manual E2E:** variable order BETWEEN_ROUNDS reorder + START_NEXT_ROUND; host PASS for disconnected active; Android FGS stops on END
+  - Known bug (out of scope / slice 6): client reconnection after disconnect is buggy; not blocking for MVP archive
 
 ## Apply Order
 

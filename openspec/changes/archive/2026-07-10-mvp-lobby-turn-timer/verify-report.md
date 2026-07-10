@@ -3,7 +3,7 @@
 **Change**: mvp-lobby-turn-timer  
 **Version**: delta specs (`lobby`, `turn-timer`, `lan-transport` delta)  
 **Mode**: Standard (`strict_tdd: false`)  
-**Date**: 2026-07-08  
+**Date**: 2026-07-10 (E2E sign-off; verify draft 2026-07-08)  
 **Persistence**: hybrid (`openspec/` + Engram `ssd_app_juegos_turnos`)
 
 ### Completeness
@@ -11,12 +11,12 @@
 | Metric | Value |
 |--------|-------|
 | Tasks total | 28 |
-| Tasks complete | 26 |
-| Tasks incomplete | 2 (4.3, 4.4 manual E2E) |
+| Tasks complete | 28 |
+| Tasks incomplete | 0 |
 
 Task notes:
 - **4.1**: Partial — `ended_screen_smoke_test` exists; profile-save and lobby-picker widget smokes listed in task text are not present as dedicated widget tests (covered indirectly by unit/repo tests).
-- **4.3–4.4**: Unchecked — no manual 2-device E2E sign-off recorded for this change.
+- **4.3–4.4**: **PASS** — manual 2-device E2E signed off 2026-07-10 (SM A505G host + SM X210 client). See `e2e-checklist.md` / `verify-notes.md`.
 
 ### Build & Tests Execution
 
@@ -105,9 +105,7 @@ Statuses: ✅ COMPLIANT (passing automated test or explicit manual sign-off) · 
 
 #### CRITICAL
 
-| ID | Issue | Recommendation |
-|----|-------|----------------|
-| C1 | Tasks **4.3** and **4.4** unchecked — no manual 2-device E2E sign-off | Run E2E on SM A505G + SM X210 (or equivalent); check tasks when PASS |
+_None open._ (C1 closed: 4.3–4.4 manual E2E signed PASS 2026-07-10.)
 
 #### WARNING
 
@@ -115,8 +113,9 @@ Statuses: ✅ COMPLIANT (passing automated test or explicit manual sign-off) · 
 |----|-------|----------------|
 | W1 | Task 4.1 claims profile + lobby picker widget smokes; only `ended_screen_smoke_test` exists | Add widget smokes or narrow task wording at archive |
 | W2 | Host lobby **reorder** and BETWEEN_ROUNDS **reorder** UI not implemented (backend only) | Add UI or defer to follow-up; document in archive |
-| W3 | Many transport/integration scenarios rely on source inspection only | Cover with manual E2E (4.3–4.4) or integration tests |
+| W3 | Many transport/integration scenarios rely on source inspection only | Covered in part by manual E2E 4.3–4.4; add integration tests later |
 | W4 | `START_NEXT_ROUND` / `REORDER_TURN_ORDER` not exposed via client WS (host-local only) | Acceptable for MVP host-on-device; document |
+| W5 | **Client reconnection buggy** after in-game disconnect (no clean rejoin) | Out of scope (`RECONNECT_REQUEST` / slice 6). Host PASS-for-disconnected is the MVP path. Track as post-MVP follow-up |
 
 #### SUGGESTION
 
@@ -124,11 +123,12 @@ Statuses: ✅ COMPLIANT (passing automated test or explicit manual sign-off) · 
 |----|-------|----------------|
 | S1 | Remove or archive unused `spike_room_stub.dart` | Cleanup in archive PR |
 | S2 | Add integration test for JOIN → LOBBY_STATE → START_GAME over loopback WS | Post-MVP hardening |
+| S3 | Implement slice-6 reconnect / `RECONNECT_REQUEST` when product needs client rejoin | Separate change after archive |
 
 ### Final Verdict
 
 **PASS WITH WARNINGS**
 
-Automated gate is green (analyze + 35 tests). Core domain behavior for lobby assignment, config clamps, turn engine (pass, rounds, phases, excess), client timer interpolation, and ended screen is covered by unit/widget tests. **Archive-ready for code quality**; **manual E2E (4.3–4.4) and several integration/UI scenarios remain open** before treating all spec scenarios as runtime-proven.
+Automated gate is green (analyze + tests). Manual E2E **4.3** and **4.4** signed **PASS** on 2 Android devices (2026-07-10). Known non-blocking bug: **client reconnection** after disconnect (deferred to slice 6). Remaining warnings: widget-smoke gap (4.1 wording), reorder UI deferred, transport coverage mostly manual.
 
-**Next recommended phase**: `/sdd-archive` (may proceed with warnings documented, matching LAN MVP precedent) **after** user accepts E2E gap or completes 4.3–4.4.
+**Next recommended phase**: `/sdd-archive`

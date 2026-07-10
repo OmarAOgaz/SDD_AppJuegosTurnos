@@ -135,7 +135,7 @@ flutter devices
 
 **✓ PASS** si: teardown completo en todos.
 
-**Anotar resultado 4.3:** ☐ PASS ☐ FAIL — Notas: _______________
+**Anotar resultado 4.3:** ☑ PASS ☐ FAIL — Notas: 2 devices (A505G host + X210 client); flujo básico OK
 
 ---
 
@@ -179,7 +179,7 @@ flutter devices
 
 **✓ PASS** si: FGS stop confirmado.
 
-**Anotar resultado 4.4:** ☐ PASS ☐ FAIL — Notas: _______________
+**Anotar resultado 4.4:** ☑ PASS ☐ FAIL — Notas: variable order + host PASS disconnect + FGS OK
 
 ---
 
@@ -187,15 +187,15 @@ flutter devices
 
 | Campo | Valor |
 |-------|--------|
-| Tester | |
-| Fecha | |
-| APK / commit | `7214087` (main) |
-| Dispositivos | Host: ___ Cliente A: ___ Cliente B: ___ |
-| 4.3 | ☐ PASS ☐ FAIL |
-| 4.4 | ☐ PASS ☐ FAIL |
-| Bugs encontrados | |
+| Tester | Omar |
+| Fecha | 2026-07-10 |
+| APK / commit | debug APK post PASS_TURN sync fix (main + uncommitted sync fixes) |
+| Dispositivos | Host: SM A505G · Cliente A: SM X210 · Cliente B: _(omitido)_ |
+| 4.3 | ☑ PASS ☐ FAIL |
+| 4.4 | ☑ PASS ☐ FAIL |
+| Bugs encontrados | **Client reconnection buggy** (out of scope for this change — no `RECONNECT_REQUEST` UI; slice 6). After disconnect, client does not cleanly rejoin the same in-game session. Documented as known follow-up; does not block 4.3/4.4 PASS. |
 
-Cuando ambos PASS → marcar `[x]` en `tasks.md` 4.3 y 4.4 y actualizar `verify-report.md`.
+Tasks 4.3–4.4 marked `[x]` in `tasks.md`; `verify-report.md` updated.
 
 ---
 

@@ -37,12 +37,20 @@ phases:
     chain_strategy: stacked-to-main
   verify:
     status: complete
-    completed_at: 2026-07-08
+    completed_at: 2026-07-10
     verdict: PASS_WITH_WARNINGS
     artifact: openspec/changes/mvp-lobby-turn-timer/verify-report.md
     engram_topic: sdd/mvp-lobby-turn-timer/verify
+    e2e_4_3: PASS
+    e2e_4_4: PASS
+    known_bugs:
+      - client_reconnection_buggy_out_of_scope_slice_6
   archive:
-    status: pending
+    status: complete
+    completed_at: 2026-07-10
+    artifact: openspec/changes/archive/2026-07-10-mvp-lobby-turn-timer/
+    engram_topic: sdd/mvp-lobby-turn-timer/archive-report
+    status_detail: intentional-with-warnings
 
 context:
   predecessor: openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/
@@ -66,7 +74,9 @@ context:
     - full summary screen
     - cloud
     - pausa_partida_host (PAUSED phase)
-  next: sdd-archive
+  known_bugs:
+    - client_reconnection_after_in_game_disconnect_buggy
+  next: none
   spec_counts:
     lobby: { requirements: 10, scenarios: 16, type: new }
     turn-timer: { requirements: 8, scenarios: 12, type: new }

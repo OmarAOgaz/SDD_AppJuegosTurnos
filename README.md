@@ -14,4 +14,4 @@ This repo uses **Spec-Driven Development** (Gentle AI / OpenSpec + Engram).
 
 ## Status
 
-**`mvp-lan-turn-timer` archived** (2026-07-08, PASS WITH WARNINGS). Main specs: [`openspec/specs/`](openspec/specs/). Audit trail: [`openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/`](openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/).
+**`mvp-lobby-turn-timer` archived** (2026-07-10, PASS WITH WARNINGS). Main specs: [`openspec/specs/`](openspec/specs/) (`lobby`, `turn-timer`, `lan-transport`, plus LAN foundation). Audit trail: [`openspec/changes/archive/2026-07-10-mvp-lobby-turn-timer/`](openspec/changes/archive/2026-07-10-mvp-lobby-turn-timer/). Predecessor: [`2026-07-08-mvp-lan-turn-timer`](openspec/changes/archive/2026-07-08-mvp-lan-turn-timer/).
