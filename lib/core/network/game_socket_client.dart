@@ -178,6 +178,27 @@ class GameSocketClient {
     );
   }
 
+  /// Original-host reclaim after reconnecting to an acting host.
+  void sendHostReclaim({
+    required String roomId,
+    required String originalHostPlayerId,
+    String? host,
+    int? port,
+  }) {
+    final payload = <String, dynamic>{
+      'roomId': roomId,
+      'originalHostPlayerId': originalHostPlayerId,
+      'deviceId': deviceId,
+    };
+    if (host != null) {
+      payload['host'] = host;
+    }
+    if (port != null) {
+      payload['port'] = port;
+    }
+    _send(WsEnvelope(type: MessageTypes.hostReclaim, payload: payload));
+  }
+
   void clearLobbyCache() {
     _lastLobbyState = null;
     _lastGameState = null;
@@ -249,7 +270,8 @@ class GameSocketClient {
       if (envelope.type == MessageTypes.lobbyState) {
         _lastLobbyState = Map<String, dynamic>.from(envelope.payload);
       }
-      if (envelope.type == MessageTypes.gameState) {
+      if (envelope.type == MessageTypes.gameState ||
+          envelope.type == MessageTypes.roomSnapshot) {
         _lastGameState = Map<String, dynamic>.from(envelope.payload);
       }
       onEnvelope?.call(envelope);

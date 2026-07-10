@@ -9,13 +9,15 @@ class GameRoom {
     required this.roomId,
     required this.displayName,
     required this.hostPlayerId,
+    String? originalHostPlayerId,
     RoomConfig? config,
     this.gamePhase = GameRoomPhase.lobby,
     TurnState? turnState,
     List<String>? slots,
     List<String>? turnSequence,
     Map<String, Player>? playersById,
-  })  : config = config ?? RoomConfig(),
+  })  : originalHostPlayerId = originalHostPlayerId ?? hostPlayerId,
+        config = config ?? RoomConfig(),
         turnState = turnState ?? TurnState(),
         slots = slots ?? <String>[],
         turnSequence = turnSequence ?? <String>[],
@@ -23,7 +25,13 @@ class GameRoom {
 
   final String roomId;
   String displayName;
-  final String hostPlayerId;
+
+  /// Current acting host (may change after succession / reclaim).
+  String hostPlayerId;
+
+  /// Immutable original host seat for reclaim matching.
+  final String originalHostPlayerId;
+
   RoomConfig config;
   GameRoomPhase gamePhase;
   TurnState turnState;
@@ -43,6 +51,8 @@ class GameRoom {
 
   GameRoom copyWith({
     String? displayName,
+    String? hostPlayerId,
+    String? originalHostPlayerId,
     RoomConfig? config,
     GameRoomPhase? gamePhase,
     TurnState? turnState,
@@ -53,7 +63,8 @@ class GameRoom {
     return GameRoom(
       roomId: roomId,
       displayName: displayName ?? this.displayName,
-      hostPlayerId: hostPlayerId,
+      hostPlayerId: hostPlayerId ?? this.hostPlayerId,
+      originalHostPlayerId: originalHostPlayerId ?? this.originalHostPlayerId,
       config: config ?? this.config.copyWith(),
       gamePhase: gamePhase ?? this.gamePhase,
       turnState: turnState ?? this.turnState.copyWith(),
@@ -73,6 +84,7 @@ class GameRoom {
       'roomId': roomId,
       'displayName': displayName,
       'hostPlayerId': hostPlayerId,
+      'originalHostPlayerId': originalHostPlayerId,
       'config': config.toJson(),
       'slots': slots,
       'turnSequence': turnSequence,
@@ -88,6 +100,7 @@ class GameRoom {
       'roomId': roomId,
       'displayName': displayName,
       'hostPlayerId': hostPlayerId,
+      'originalHostPlayerId': originalHostPlayerId,
       'serverNow': serverNow,
       'gamePhase': gamePhase.wireValue,
       'config': config.toJson(),
@@ -106,5 +119,59 @@ class GameRoom {
       'phase': turnState.phase.wireValue,
       'variableTurnOrder': config.variableTurnOrder,
     };
+  }
+
+  /// Rebuilds room state from a `ROOM_SNAPSHOT` / `GAME_STATE` payload.
+  factory GameRoom.fromSnapshot(Map<String, dynamic> json) {
+    final hostPlayerId = json['hostPlayerId'] as String? ?? '';
+    final playersRaw = json['playersById'];
+    final playersById = <String, Player>{};
+    if (playersRaw is Map) {
+      for (final entry in playersRaw.entries) {
+        final value = entry.value;
+        if (value is Map<String, dynamic>) {
+          playersById[entry.key as String] = Player.fromJson(value);
+        } else if (value is Map) {
+          playersById[entry.key as String] = Player.fromJson(
+            Map<String, dynamic>.from(value),
+          );
+        }
+      }
+    }
+
+    final configRaw = json['config'];
+    final config = configRaw is Map<String, dynamic>
+        ? RoomConfig.fromJson(configRaw)
+        : configRaw is Map
+            ? RoomConfig.fromJson(Map<String, dynamic>.from(configRaw))
+            : RoomConfig();
+
+    return GameRoom(
+      roomId: json['roomId'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? '',
+      hostPlayerId: hostPlayerId,
+      originalHostPlayerId:
+          json['originalHostPlayerId'] as String? ?? hostPlayerId,
+      config: config,
+      gamePhase: GameRoomPhase.fromWire(json['gamePhase'] as String?),
+      turnState: TurnState(
+        activePlayerId: json['activePlayerId'] as String?,
+        turnStartedAtMs: json['turnStartedAt'] as int?,
+        currentRound: json['currentRound'] as int? ?? 0,
+        baseTurnDurationSeconds: json['baseTurnDurationSeconds'] as int? ??
+            RoomConfigDefaults.turnDurationSeconds,
+        currentRoundDurationSeconds:
+            json['currentRoundDurationSeconds'] as int? ??
+                json['currentRoundTurnDurationSeconds'] as int? ??
+                RoomConfigDefaults.turnDurationSeconds,
+        phase: TurnPhase.fromWire(json['phase'] as String?),
+      ),
+      slots: (json['slots'] as List?)?.whereType<String>().toList() ??
+          <String>[],
+      turnSequence:
+          (json['turnSequence'] as List?)?.whereType<String>().toList() ??
+              <String>[],
+      playersById: playersById,
+    );
   }
 }

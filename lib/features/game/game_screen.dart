@@ -5,13 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/catalogs/color_catalog.dart';
+import '../../core/constants/message_types.dart';
+import '../../core/domain/host_succession_coordinator.dart';
 import '../../core/domain/turn_engine.dart';
 import '../../core/lifecycle/app_lifecycle_sync.dart';
 import '../../core/lifecycle/client_sync_state.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
+import '../../core/models/discovered_room.dart';
 import '../../core/models/game_phase.dart';
 import '../../core/models/game_room.dart';
 import '../../core/models/player.dart';
+import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
@@ -36,6 +40,13 @@ class GameScreen extends ConsumerStatefulWidget {
 class _GameScreenState extends ConsumerState<GameScreen> {
   Timer? _uiTick;
   String? _lastPersistedResumeKey;
+  StreamSubscription<SocketClientState>? _socketStateSub;
+  StreamSubscription<WsEnvelope>? _socketMessageSub;
+  StreamSubscription<List<DiscoveredRoom>>? _mdnsSub;
+  bool _successionInFlight = false;
+  bool _reclaimInFlight = false;
+  bool _resumingAsClient = false;
+  bool _intentionalHostExit = false;
 
   bool get _isHost => widget.role == 'host';
 
@@ -50,6 +61,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (!_isHost) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_ensureClientConnected());
+        _bindClientSuccessionListeners();
       });
     }
   }
@@ -126,7 +138,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           deviceId: deviceId,
           host: controller.hostLanIp,
           port: controller.port,
-          originalHostPlayerId: room.hostPlayerId,
+          originalHostPlayerId: room.originalHostPlayerId,
         ),
       ),
     );
@@ -156,15 +168,252 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           deviceId: deviceId,
           host: widget.host ?? client.lastHost,
           port: widget.port ?? client.lastPort,
-          originalHostPlayerId: state['hostPlayerId'] as String?,
+          originalHostPlayerId: state['originalHostPlayerId'] as String? ??
+              state['hostPlayerId'] as String?,
         ),
       ),
     );
   }
 
+  void _bindClientSuccessionListeners() {
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null) {
+      return;
+    }
+    _socketStateSub?.cancel();
+    _socketMessageSub?.cancel();
+    _socketStateSub = client.stateChanges.listen((state) {
+      if (state == SocketClientState.disconnected) {
+        unawaited(_onClientHostLost());
+      }
+      if (state == SocketClientState.connected) {
+        unawaited(_maybeSendHostReclaim(client));
+      }
+    });
+    _socketMessageSub = client.messages.listen(_onClientEnvelope);
+  }
+
+  Future<void> _onClientHostLost() async {
+    if (!mounted || _isHost || _successionInFlight) {
+      return;
+    }
+    final client = ref.read(gameSocketClientProvider);
+    final localPlayerId = client?.localPlayerId;
+    final lastState = _newestGameState(
+      ref.read(clientSyncProvider).lastGameState,
+      client?.lastGameState,
+    );
+    if (client == null || localPlayerId == null || lastState == null) {
+      return;
+    }
+
+    final decision = HostSuccessionCoordinator.decideAfterHostLost(
+      lastGameState: lastState,
+      localPlayerId: localPlayerId,
+    );
+    switch (decision.action) {
+      case SuccessionAction.none:
+        return;
+      case SuccessionAction.endGame:
+        await _clearResumeStore();
+        if (mounted) {
+          context.go('/ended');
+        }
+      case SuccessionAction.becomeHost:
+        await _becomeActingHost(decision);
+      case SuccessionAction.waitForNewHost:
+        await _waitForActingHost(decision.roomId!);
+    }
+  }
+
+  Future<void> _becomeActingHost(SuccessionDecision decision) async {
+    if (_successionInFlight || decision.snapshot == null) {
+      return;
+    }
+    _successionInFlight = true;
+    try {
+      final client = ref.read(gameSocketClientProvider);
+      await client?.disconnect();
+      final controller = ref.read(hostRoomControllerProvider);
+      await controller.startFromSnapshot(
+        snapshot: decision.snapshot!,
+        actingHostPlayerId: decision.actingHostPlayerId,
+      );
+      if (!mounted) {
+        return;
+      }
+      context.go('/game?role=host');
+    } finally {
+      _successionInFlight = false;
+    }
+  }
+
+  Future<void> _waitForActingHost(String roomId) async {
+    final browser = ref.read(mdnsBrowserProvider);
+    if (!browser.isBrowsing) {
+      await browser.start();
+    }
+    await _mdnsSub?.cancel();
+    _mdnsSub = browser.roomsStream.listen((rooms) {
+      final match = rooms.where((r) => r.roomId == roomId).firstOrNull;
+      if (match != null) {
+        unawaited(_reconnectToEndpoint(match.hostIp, match.port));
+      }
+    });
+    final existing = browser.currentRooms.where((r) => r.roomId == roomId);
+    final first = existing.firstOrNull;
+    if (first != null) {
+      await _reconnectToEndpoint(first.hostIp, first.port);
+    }
+  }
+
+  Future<void> _reconnectToEndpoint(String host, int port) async {
+    if (!mounted || _isHost) {
+      return;
+    }
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null) {
+      return;
+    }
+    if (client.state == SocketClientState.connected &&
+        client.lastHost == host &&
+        client.lastPort == port) {
+      client.sendSyncRequest();
+      return;
+    }
+    await _restoreLocalPlayerIdIfNeeded(client);
+    await client.connect(host: host, port: port);
+    await _mdnsSub?.cancel();
+    _mdnsSub = null;
+    if (!mounted) {
+      return;
+    }
+    context.go(
+      '/game?role=client&host=${Uri.encodeComponent(host)}&port=$port',
+    );
+  }
+
+  void _onClientEnvelope(WsEnvelope envelope) {
+    if (envelope.type == MessageTypes.hostMigrated) {
+      unawaited(_onHostMigrated(envelope.payload));
+      return;
+    }
+    if (envelope.type == MessageTypes.roomSnapshot) {
+      unawaited(_onRoomSnapshot(envelope.payload));
+    }
+  }
+
+  Future<void> _onHostMigrated(Map<String, dynamic> payload) async {
+    final roomId = payload['roomId'] as String?;
+    final host = payload['host'] as String?;
+    final port = payload['port'];
+    final hostPlayerId = payload['hostPlayerId'] as String?;
+    final client = ref.read(gameSocketClientProvider);
+    if (roomId == null || client == null) {
+      return;
+    }
+
+    final controller = ref.read(hostRoomControllerProvider);
+    if (controller.hasHostingAuthority &&
+        controller.room?.hostPlayerId == hostPlayerId) {
+      return;
+    }
+
+    if (host is String && port is int) {
+      await _reconnectToEndpoint(host, port);
+      return;
+    }
+    await _waitForActingHost(roomId);
+  }
+
+  Future<void> _onRoomSnapshot(Map<String, dynamic> snapshot) async {
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null || !_reclaimInFlight) {
+      return;
+    }
+    final localPlayerId = client.localPlayerId;
+    final original = snapshot['originalHostPlayerId'] as String? ??
+        snapshot['hostPlayerId'] as String?;
+    if (localPlayerId == null || original == null || localPlayerId != original) {
+      return;
+    }
+
+    _reclaimInFlight = false;
+    await client.disconnect();
+    final controller = ref.read(hostRoomControllerProvider);
+    await controller.startFromSnapshot(
+      snapshot: snapshot,
+      actingHostPlayerId: original,
+    );
+    if (!mounted) {
+      return;
+    }
+    context.go('/game?role=host');
+  }
+
+  Future<void> _maybeSendHostReclaim(GameSocketClient client) async {
+    if (_reclaimInFlight || _isHost) {
+      return;
+    }
+    final state = _newestGameState(
+      ref.read(clientSyncProvider).lastGameState,
+      client.lastGameState,
+    );
+    final store = await ref.read(gameResumeStoreProvider.future);
+    final entry = store.load();
+    final localPlayerId = client.localPlayerId ?? entry?.playerId;
+    if (localPlayerId == null) {
+      return;
+    }
+    if (!HostSuccessionCoordinator.shouldReclaimHost(
+      gameState: state,
+      localPlayerId: localPlayerId,
+      originalHostPlayerId: entry?.originalHostPlayerId,
+    )) {
+      return;
+    }
+
+    final roomId = state?['roomId'] as String? ??
+        entry?.roomId ??
+        client.handshakeRoomId;
+    final original = entry?.originalHostPlayerId ??
+        state?['originalHostPlayerId'] as String?;
+    if (roomId == null || original == null || state == null) {
+      return;
+    }
+
+    // Start hosting first so reclaim can advertise the new endpoint.
+    _reclaimInFlight = true;
+    try {
+      final controller = ref.read(hostRoomControllerProvider);
+      final snapshot = Map<String, dynamic>.from(state);
+      snapshot['hostPlayerId'] = original;
+      await controller.startFromSnapshot(
+        snapshot: snapshot,
+        actingHostPlayerId: original,
+      );
+      client.sendHostReclaim(
+        roomId: roomId,
+        originalHostPlayerId: original,
+        host: controller.hostLanIp,
+        port: controller.port,
+      );
+      await client.disconnect();
+      if (!mounted) {
+        return;
+      }
+      context.go('/game?role=host');
+    } finally {
+      _reclaimInFlight = false;
+    }
+  }
+
   @override
   void dispose() {
     _uiTick?.cancel();
+    unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
+    unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
+    unawaited(_mdnsSub?.cancel() ?? Future<void>.value());
     super.dispose();
   }
 
@@ -294,6 +543,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           unawaited(_clearResumeStore());
           context.go('/ended');
         }
+        final client = ref.read(gameSocketClientProvider);
+        if (client != null &&
+            client.state == SocketClientState.connected &&
+            next.lastGameState != null) {
+          unawaited(_maybeSendHostReclaim(client));
+        }
       });
     }
     if (_isHost) {
@@ -307,17 +562,80 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
+  Future<void> _resumeAsClientAfterHostLost() async {
+    if (!mounted || !_isHost || _resumingAsClient || _intentionalHostExit) {
+      return;
+    }
+    _resumingAsClient = true;
+    try {
+      final store = await ref.read(gameResumeStoreProvider.future);
+      final entry = store.load();
+      if (entry == null) {
+        if (mounted) {
+          context.go('/');
+        }
+        return;
+      }
+      final browser = ref.read(mdnsBrowserProvider);
+      if (!browser.isBrowsing) {
+        await browser.start();
+      }
+      DiscoveredRoom? match = browser.currentRooms
+          .where((r) => r.roomId == entry.roomId)
+          .firstOrNull;
+      if (match == null && entry.host != null && entry.port != null) {
+        match = DiscoveredRoom(
+          roomId: entry.roomId,
+          displayName: entry.roomId,
+          hostIp: entry.host!,
+          port: entry.port!,
+          source: RoomDiscoverySource.cached,
+          isResumable: true,
+        );
+      }
+      if (match == null) {
+        if (mounted) {
+          context.go('/');
+        }
+        return;
+      }
+      final client = ref.read(gameSocketClientProvider);
+      if (client == null) {
+        return;
+      }
+      client.restoreLocalPlayerId(entry.playerId);
+      await client.connect(host: match.hostIp, port: match.port);
+      if (!mounted) {
+        return;
+      }
+      context.go(
+        '/game?role=client&host=${Uri.encodeComponent(match.hostIp)}&port=${match.port}',
+      );
+    } finally {
+      _resumingAsClient = false;
+    }
+  }
+
   Widget _buildHost(BuildContext context) {
     final controller = ref.watch(hostRoomControllerProvider);
     final room = controller.room;
     if (room == null) {
-      return Scaffold(
-        body: Center(
-          child: FilledButton(
-            onPressed: () => context.go('/'),
-            child: const Text('Volver al inicio'),
+      if (_intentionalHostExit) {
+        return Scaffold(
+          body: Center(
+            child: FilledButton(
+              onPressed: () => context.go('/'),
+              child: const Text('Volver al inicio'),
+            ),
           ),
-        ),
+        );
+      }
+      // Acting host lost authority (e.g. original reclaim) — resume as client.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_resumeAsClientAfterHostLost());
+      });
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -337,6 +655,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         actions: [
           TextButton(
             onPressed: () async {
+              _intentionalHostExit = true;
               await controller.endGame();
               await _clearResumeStore();
               if (context.mounted) {

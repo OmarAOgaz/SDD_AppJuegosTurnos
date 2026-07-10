@@ -36,4 +36,9 @@ class MessageTypes {
   static const reorderTurnOrder = 'REORDER_TURN_ORDER';
   static const startNextRound = 'START_NEXT_ROUND';
   static const endGame = 'END_GAME';
+
+  /// Host succession / reclaim (not client seat resume).
+  static const hostMigrated = 'HOST_MIGRATED';
+  static const roomSnapshot = 'ROOM_SNAPSHOT';
+  static const hostReclaim = 'HOST_RECLAIM';
 }

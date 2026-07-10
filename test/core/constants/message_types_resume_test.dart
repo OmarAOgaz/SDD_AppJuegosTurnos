@@ -32,6 +32,9 @@ void main() {
       MessageTypes.reorderTurnOrder,
       MessageTypes.startNextRound,
       MessageTypes.endGame,
+      MessageTypes.hostMigrated,
+      MessageTypes.roomSnapshot,
+      MessageTypes.hostReclaim,
     ];
 
     for (final type in values) {
@@ -43,5 +46,8 @@ void main() {
 
     expect(values, contains(MessageTypes.syncRequest));
     expect(values, contains(MessageTypes.heartbeat));
+    expect(MessageTypes.hostMigrated, 'HOST_MIGRATED');
+    expect(MessageTypes.roomSnapshot, 'ROOM_SNAPSHOT');
+    expect(MessageTypes.hostReclaim, 'HOST_RECLAIM');
   });
 }

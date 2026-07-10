@@ -85,7 +85,8 @@ class ClientSyncState {
   }
 
   ClientSyncState applyEnvelope(WsEnvelope envelope) {
-    if (envelope.type != MessageTypes.gameState) {
+    if (envelope.type != MessageTypes.gameState &&
+        envelope.type != MessageTypes.roomSnapshot) {
       return this;
     }
     return copyWith(
