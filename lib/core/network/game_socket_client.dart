@@ -8,17 +8,52 @@ import '../models/ws_envelope.dart';
 
 enum SocketClientState { disconnected, connecting, connected, reconnecting }
 
+/// Minimal socket transport used by [GameSocketClient] (testable).
+abstract class GameSocketConnection {
+  Stream<dynamic> get stream;
+  int? get closeCode;
+  void add(String data);
+  Future<void> close();
+}
+
+class _WebSocketGameSocketConnection implements GameSocketConnection {
+  _WebSocketGameSocketConnection(this._channel);
+
+  final WebSocketChannel _channel;
+
+  @override
+  Stream<dynamic> get stream => _channel.stream;
+
+  @override
+  int? get closeCode => _channel.closeCode;
+
+  @override
+  void add(String data) => _channel.sink.add(data);
+
+  @override
+  Future<void> close() => _channel.sink.close();
+}
+
+typedef GameSocketConnectionFactory = Future<GameSocketConnection> Function(
+  Uri uri,
+);
+
 /// WebSocket client with heartbeat and short reconnect window.
 class GameSocketClient {
   GameSocketClient({
     required this.deviceId,
     this.onEnvelope,
-  });
+    GameSocketConnectionFactory? connect,
+    Duration reconnectDelay = const Duration(seconds: 1),
+  })  : _connect = connect,
+        _reconnectDelay = reconnectDelay;
 
   final String deviceId;
   final void Function(WsEnvelope envelope)? onEnvelope;
+  final GameSocketConnectionFactory? _connect;
+  final Duration _reconnectDelay;
 
-  WebSocketChannel? _channel;
+  GameSocketConnection? _connection;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
   DateTime? _disconnectStartedAt;
@@ -36,10 +71,15 @@ class GameSocketClient {
   Map<String, dynamic>? _lastGameState;
   String? _localPlayerId;
 
+  /// Envelopes sent over the wire (test/debug).
+  final List<WsEnvelope> sentEnvelopes = <WsEnvelope>[];
+
   Stream<WsEnvelope> get messages => _messagesController.stream;
   Stream<SocketClientState> get stateChanges => _stateController.stream;
   SocketClientState get state => _state;
   String? get handshakeRoomId => _handshakeRoomId;
+  String? get lastHost => _lastHost;
+  int? get lastPort => _lastPort;
   Map<String, dynamic>? get lastLobbyState => _lastLobbyState;
   Map<String, dynamic>? get lastGameState => _lastGameState;
   String? get localPlayerId => _localPlayerId;
@@ -55,9 +95,19 @@ class GameSocketClient {
 
   Future<void> disconnect() async {
     _disconnectStartedAt = null;
+    _lastHost = null;
+    _lastPort = null;
     _setState(SocketClientState.disconnected);
     clearLobbyCache();
     await _closeSocket();
+  }
+
+  /// Restores seat identity after reconnect / Home resume (no RECONNECT_* types).
+  void restoreLocalPlayerId(String playerId) {
+    if (playerId.isEmpty) {
+      return;
+    }
+    _localPlayerId = playerId;
   }
 
   void sendPing() {
@@ -152,14 +202,22 @@ class GameSocketClient {
 
     try {
       final uri = Uri.parse('ws://$host:$port$kWsPath');
-      _channel = WebSocketChannel.connect(uri);
-      await _channel!.ready;
+      final factory = _connect;
+      if (factory != null) {
+        _connection = await factory(uri);
+      } else {
+        final channel = WebSocketChannel.connect(uri);
+        await channel.ready;
+        _connection = _WebSocketGameSocketConnection(channel);
+      }
 
       _disconnectStartedAt = null;
       _setState(SocketClientState.connected);
       _startHeartbeat();
+      // Heartbeat + SYNC only — no RECONNECT_*/RESUME_* types.
+      sendSyncRequest();
 
-      _subscription = _channel!.stream.listen(
+      _subscription = _connection!.stream.listen(
         _onData,
         onDone: _onSocketClosed,
         onError: (_) => _onSocketClosed(),
@@ -220,7 +278,7 @@ class GameSocketClient {
     }
 
     _setState(SocketClientState.reconnecting);
-    await Future<void>.delayed(const Duration(seconds: 1));
+    await Future<void>.delayed(_reconnectDelay);
     if (_state == SocketClientState.disconnected) {
       return;
     }
@@ -250,11 +308,12 @@ class GameSocketClient {
   }
 
   void _send(WsEnvelope envelope) {
-    final channel = _channel;
-    if (channel == null || channel.closeCode != null) {
+    final connection = _connection;
+    if (connection == null || connection.closeCode != null) {
       return;
     }
-    channel.sink.add(envelope.encode());
+    sentEnvelopes.add(envelope);
+    connection.add(envelope.encode());
   }
 
   Future<void> _closeSocket() async {
@@ -262,8 +321,8 @@ class GameSocketClient {
     _heartbeatTimer = null;
     await _subscription?.cancel();
     _subscription = null;
-    await _channel?.sink.close();
-    _channel = null;
+    await _connection?.close();
+    _connection = null;
   }
 
   void _setState(SocketClientState next) {

@@ -6,11 +6,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/catalogs/color_catalog.dart';
 import '../../core/domain/turn_engine.dart';
+import '../../core/lifecycle/app_lifecycle_sync.dart';
 import '../../core/lifecycle/client_sync_state.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
 import '../../core/models/game_phase.dart';
 import '../../core/models/game_room.dart';
 import '../../core/models/player.dart';
+import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 
@@ -33,6 +35,7 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen> {
   Timer? _uiTick;
+  String? _lastPersistedResumeKey;
 
   bool get _isHost => widget.role == 'host';
 
@@ -61,13 +64,102 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (client == null) {
       return;
     }
+    await _restoreLocalPlayerIdIfNeeded(client);
     if (client.state == SocketClientState.connected ||
         client.state == SocketClientState.connecting ||
         client.state == SocketClientState.reconnecting) {
+      if (client.state == SocketClientState.connected) {
+        client.sendSyncRequest();
+      }
       return;
     }
     await client.connect(host: host, port: port);
-    client.sendSyncRequest();
+  }
+
+  Future<void> _restoreLocalPlayerIdIfNeeded(GameSocketClient client) async {
+    if (client.localPlayerId != null) {
+      return;
+    }
+    final store = await ref.read(gameResumeStoreProvider.future);
+    final entry = store.load();
+    if (entry != null) {
+      client.restoreLocalPlayerId(entry.playerId);
+    }
+  }
+
+  Future<void> _persistResumeEntry(GameResumeEntry entry) async {
+    final key =
+        '${entry.roomId}|${entry.playerId}|${entry.deviceId}|${entry.host}|${entry.port}';
+    if (_lastPersistedResumeKey == key) {
+      return;
+    }
+    final store = await ref.read(gameResumeStoreProvider.future);
+    await store.save(entry);
+    _lastPersistedResumeKey = key;
+  }
+
+  Future<void> _clearResumeStore() async {
+    final store = await ref.read(gameResumeStoreProvider.future);
+    await store.clear();
+    _lastPersistedResumeKey = null;
+  }
+
+  bool _isResumablePhase(GameRoomPhase phase) {
+    return phase == GameRoomPhase.inGame ||
+        phase == GameRoomPhase.betweenRounds;
+  }
+
+  void _maybePersistHostResume(GameRoom room) {
+    if (!_isResumablePhase(room.gamePhase)) {
+      return;
+    }
+    final deviceId = ref.read(deviceIdProvider).asData?.value;
+    if (deviceId == null) {
+      return;
+    }
+    final controller = ref.read(hostRoomControllerProvider);
+    unawaited(
+      _persistResumeEntry(
+        GameResumeEntry(
+          roomId: room.roomId,
+          playerId: room.hostPlayerId,
+          deviceId: deviceId,
+          host: controller.hostLanIp,
+          port: controller.port,
+          originalHostPlayerId: room.hostPlayerId,
+        ),
+      ),
+    );
+  }
+
+  void _maybePersistClientResume(Map<String, dynamic>? state) {
+    if (state == null) {
+      return;
+    }
+    final phase = GameRoomPhase.fromWire(state['gamePhase'] as String?);
+    if (!_isResumablePhase(phase)) {
+      return;
+    }
+    final client = ref.read(gameSocketClientProvider);
+    final playerId = client?.localPlayerId;
+    final deviceId = client?.deviceId ??
+        ref.read(deviceIdProvider).asData?.value;
+    final roomId = state['roomId'] as String? ?? client?.handshakeRoomId;
+    if (client == null || playerId == null || deviceId == null || roomId == null) {
+      return;
+    }
+    unawaited(
+      _persistResumeEntry(
+        GameResumeEntry(
+          roomId: roomId,
+          playerId: playerId,
+          deviceId: deviceId,
+          host: widget.host ?? client.lastHost,
+          port: widget.port ?? client.lastPort,
+          originalHostPlayerId: state['hostPlayerId'] as String?,
+        ),
+      ),
+    );
   }
 
   @override
@@ -92,7 +184,27 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   void _onClientResumed() {
-    ref.read(gameSocketClientProvider)?.sendSyncRequest();
+    unawaited(_handleClientLifecycleResume());
+  }
+
+  Future<void> _handleClientLifecycleResume() async {
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null) {
+      return;
+    }
+    ref.read(clientSyncProvider.notifier).onResumed();
+    final store = await ref.read(gameResumeStoreProvider.future);
+    await syncOrReconnectSession(client: client, resume: store.load());
+  }
+
+  bool _isClientSessionActive() {
+    final client = ref.read(gameSocketClientProvider);
+    final hasResume =
+        ref.read(gameResumeStoreProvider).asData?.value.hasEntry ?? false;
+    return isLifecycleSessionActive(
+      hasResumeIdentity: hasResume,
+      socketState: client?.state,
+    );
   }
 
   Map<String, dynamic>? _newestGameState(
@@ -179,6 +291,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (!_isHost) {
       ref.listen(clientSyncProvider, (previous, next) {
         if (next.isEnded && mounted) {
+          unawaited(_clearResumeStore());
           context.go('/ended');
         }
       });
@@ -187,9 +300,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return _buildHost(context);
     }
     return SessionLifecycleListener(
-      isSessionActive: () =>
-          ref.read(gameSocketClientProvider)?.state ==
-          SocketClientState.connected,
+      isSessionActive: _isClientSessionActive,
       onResumed: _onClientResumed,
       onPaused: () => ref.read(clientSyncProvider.notifier).onPaused(),
       child: _buildClient(context),
@@ -210,6 +321,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       );
     }
 
+    _maybePersistHostResume(room);
+
     final serverNow = DateTime.now().millisecondsSinceEpoch;
     TurnEngine.refreshPhase(room, serverNow);
     final remaining = TurnEngine.remainingSeconds(room, serverNow);
@@ -225,6 +338,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           TextButton(
             onPressed: () async {
               await controller.endGame();
+              await _clearResumeStore();
               if (context.mounted) {
                 context.go('/ended');
               }
@@ -269,6 +383,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final sync = ref.watch(clientSyncProvider);
     final client = ref.watch(gameSocketClientProvider);
     final state = _newestGameState(sync.lastGameState, client?.lastGameState);
+    _maybePersistClientResume(state);
     final localPlayerId = client?.localPlayerId;
     final gamePhase = GameRoomPhase.fromWire(state?['gamePhase'] as String?);
     final activeId = state?['activePlayerId'] as String?;

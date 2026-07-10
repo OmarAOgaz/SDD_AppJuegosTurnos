@@ -1,0 +1,65 @@
+name: client-reconnect-in-game
+created: 2026-07-10
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-07-10
+    artifact: openspec/changes/client-reconnect-in-game/exploration.md
+    engram_topic: sdd/client-reconnect-in-game/explore
+  propose:
+    status: complete
+    completed_at: 2026-07-10
+    artifact: openspec/changes/client-reconnect-in-game/proposal.md
+    engram_topic: sdd/client-reconnect-in-game/proposal
+  spec:
+    status: complete
+    completed_at: 2026-07-10
+    artifact: openspec/changes/client-reconnect-in-game/specs/
+    engram_topic: sdd/client-reconnect-in-game/spec
+  design:
+    status: complete
+    completed_at: 2026-07-10
+    artifact: openspec/changes/client-reconnect-in-game/design.md
+    engram_topic: sdd/client-reconnect-in-game/design
+  tasks:
+    status: complete
+    completed_at: 2026-07-10
+    artifact: openspec/changes/client-reconnect-in-game/tasks.md
+    engram_topic: sdd/client-reconnect-in-game/tasks
+  apply:
+    status: pending
+  verify:
+    status: pending
+  archive:
+    status: pending
+
+recommendation: Approach C — resumable games + host succession/reclaim; heartbeat/SYNC only (no new reconnect msgs)
+locked_assumptions:
+  - host_drop_next_turn_order_player_becomes_host
+  - host_election_skips_disconnected_until_next_connected
+  - host_drop_with_no_connected_players_ends_game
+  - original_host_reconnect_reclaims_host
+  - dropped_client_or_host_sees_highlighted_resumable_room_in_list
+  - resume_restores_same_player_control
+  - resume_identity_persists_roomId_playerId_deviceId
+  - resumable_highlight_until_end_game_or_discard
+  - client_resume_protocol_heartbeat_and_sync_only
+  - intentional_host_terminar_is_end_game_no_succession
+out_of_scope:
+  - new_RECONNECT_or_RESUME_message_types
+  - RECONNECT_REQUEST_stranger_approval_UI
+  - highlight_TTL
+  - cloud
+  - summary
+  - pause
+next: sdd-apply
+design_delivery_hint: "chained PRs: SYNC glue+store → Home highlight → succession+reclaim"
+delivery_strategy: ask-on-risk
+chain_strategy: stacked-to-main
+decision_needed_before_apply: false
+budget_risk: High
+chained_prs_recommended: true
+note: "User chose stacked-to-main 2026-07-10; apply PR1 first"

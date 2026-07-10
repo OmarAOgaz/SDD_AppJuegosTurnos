@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'app_lifecycle_sync.dart';
 
 /// Registers lifecycle observer for an active spike/game session.
+///
+/// [isSessionActive] SHOULD treat resume-store identity OR a live/reconnecting
+/// socket as active (see [isLifecycleSessionActive]). On resume, prefer
+/// [syncOrReconnectSession] so a dead socket reconnects then sends SYNC.
 class SessionLifecycleListener extends StatefulWidget {
   const SessionLifecycleListener({
     super.key,
