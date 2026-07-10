@@ -8,6 +8,7 @@ import '../lifecycle/client_sync_state.dart';
 import '../models/ws_envelope.dart';
 import '../network/device_id_store.dart';
 import '../network/discovery/mdns_browser.dart';
+import '../network/game_resume_store.dart';
 import '../network/game_socket_client.dart';
 import '../network/manual_endpoint_store.dart';
 import '../network/room_list_merger.dart';
@@ -20,6 +21,10 @@ final hostRoomControllerProvider =
 
 final manualEndpointStoreProvider = FutureProvider<ManualEndpointStore>((ref) {
   return ManualEndpointStore.create();
+});
+
+final gameResumeStoreProvider = FutureProvider<GameResumeStore>((ref) {
+  return GameResumeStore.create();
 });
 
 final deviceIdProvider = FutureProvider<String>((ref) async {

@@ -9,6 +9,8 @@ class EndedScreen extends ConsumerWidget {
   const EndedScreen({super.key});
 
   Future<void> _goHome(WidgetRef ref, BuildContext context) async {
+    final resumeStore = ref.read(gameResumeStoreProvider).asData?.value;
+    await resumeStore?.clear();
     await ref.read(gameSocketClientProvider)?.disconnect();
     ref.read(clientSyncProvider.notifier).reset();
     if (context.mounted) {
