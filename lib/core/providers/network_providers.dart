@@ -52,7 +52,8 @@ final gameSocketClientProvider = Provider<GameSocketClient?>((ref) {
   final client = GameSocketClient(
     deviceId: deviceId,
     onEnvelope: (envelope) {
-      if (envelope.type == MessageTypes.gameState) {
+      if (envelope.type == MessageTypes.gameState ||
+          envelope.type == MessageTypes.roomSnapshot) {
         ref.read(clientSyncProvider.notifier).applyEnvelope(envelope);
       }
     },

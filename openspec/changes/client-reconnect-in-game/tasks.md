@@ -35,20 +35,20 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Home Highlight + Tap Resume (PR2)
 
-- [ ] 2.1 In `home_screen.dart` + `room_list_merger.dart`: highlight rooms matching resume store until END_GAME/discard (no TTL)
-- [ ] 2.2 Tap highlighted room → connect cached endpoint or mDNS same `roomId` → heartbeat rebind → restore `playerId` → SYNC → `/game`
-- [ ] 2.3 Verify discovery list marks resumable (`lan-discovery`); no client reconnect envelope types
+- [x] 2.1 In `home_screen.dart` + `room_list_merger.dart`: highlight rooms matching resume store until END_GAME/discard (no TTL)
+- [x] 2.2 Tap highlighted room → connect cached endpoint or mDNS same `roomId` → heartbeat rebind → restore `playerId` → SYNC → `/game`
+- [x] 2.3 Verify discovery list marks resumable (`lan-discovery`); no client reconnect envelope types
 
 ## Phase 3: Host Succession + Reclaim (PR3)
 
-- [ ] 3.1 Create `lib/core/domain/host_succession.dart` — `electActingHost` walks `turnSequence`, skips `!connected`; null → end
-- [ ] 3.2 Add `HOST_MIGRATED`, `ROOM_SNAPSHOT`, `HOST_RECLAIM` to `message_types.dart` (+ envelope payloads)
-- [ ] 3.3 In `host_room_controller.dart`: host-drop detection; snapshot export/import; broadcast migration; handle `HOST_RECLAIM`; reject stale acting host
-- [ ] 3.4 Intentional Terminar → `END_GAME` only (no succession); unexpected drop → elect or END_GAME
-- [ ] 3.5 mDNS/`discovery/*`: acting host advertises same `roomId`; FGS follows acting host only
-- [ ] 3.6 Tests: `test/core/domain/host_succession_test.dart` (skip disconnected / none→end); controller reclaim/rebind regressions
+- [x] 3.1 Create `lib/core/domain/host_succession.dart` — `electActingHost` walks `turnSequence`, skips `!connected`; null → end
+- [x] 3.2 Add `HOST_MIGRATED`, `ROOM_SNAPSHOT`, `HOST_RECLAIM` to `message_types.dart` (+ envelope payloads)
+- [x] 3.3 In `host_room_controller.dart`: host-drop detection; snapshot export/import; broadcast migration; handle `HOST_RECLAIM`; reject stale acting host
+- [x] 3.4 Intentional Terminar → `END_GAME` only (no succession); unexpected drop → elect or END_GAME
+- [x] 3.5 mDNS/`discovery/*`: acting host advertises same `roomId`; FGS follows acting host only
+- [x] 3.6 Tests: `test/core/domain/host_succession_test.dart` (skip disconnected / none→end); controller reclaim/rebind regressions
 
 ## Phase 4: Verification
 
-- [ ] 4.1 Unit/widget: short-window SYNC; Home highlight lifetime; election; reclaim; no `RECONNECT_*`
+- [x] 4.1 Unit/widget: short-window SYNC; Home highlight lifetime; election; reclaim; no `RECONNECT_*`
 - [ ] 4.2 Manual/E2E (2–3 devices): client drop; host succession; original-host reclaim; Terminar ends game

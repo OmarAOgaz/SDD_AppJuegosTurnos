@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/constants/message_types.dart';
 import '../core/constants/network_constants.dart';
+import '../core/domain/host_succession.dart';
 import '../core/domain/lobby_rules.dart';
 import '../core/domain/turn_engine.dart';
 import '../core/lifecycle/foreground_service_bridge.dart';
@@ -16,6 +17,18 @@ import '../core/models/local_player_profile.dart';
 import '../core/models/ws_envelope.dart';
 import '../core/network/discovery/mdns_advertiser.dart';
 import 'websocket_host_server.dart';
+
+/// Result of [HostRoomController.handleUnexpectedHostDrop].
+enum HostDropOutcome {
+  /// No in-progress room to hand off.
+  noRoom,
+
+  /// No connected successor — game ended via [HostRoomController.endGame].
+  ended,
+
+  /// Snapshot + HOST_MIGRATED broadcast; local hosting stopped (no END_GAME).
+  migrated,
+}
 
 /// Tracks a single WebSocket peer and heartbeat state.
 class HostSession {
@@ -55,10 +68,15 @@ class HostRoomController extends ChangeNotifier {
   final Map<String, HostSession> _sessions = {};
   Timer? _heartbeatWatchdog;
 
+  /// When false, this device must not act as authoritative host (post-reclaim).
+  bool _hostingAuthorityActive = true;
+
   GameRoom? get room => _room;
   int? get port => _server.port;
   String? get hostLanIp => _hostLanIp;
   bool get isHosting => _room != null && _server.isRunning;
+  bool get hasHostingAuthority =>
+      _hostingAuthorityActive && _room != null && _server.isRunning;
 
   Future<GameRoom> startRoom({
     String? displayName,
@@ -79,6 +97,7 @@ class HostRoomController extends ChangeNotifier {
       preferredSoundIds: resolvedProfile.preferredSoundIds,
     );
     _room = room;
+    _hostingAuthorityActive = true;
 
     final boundPort = await _server.start(
       handshakeFactory: () => buildHandshake(
@@ -102,6 +121,63 @@ class HostRoomController extends ChangeNotifier {
     return room;
   }
 
+  /// Starts hosting from a `ROOM_SNAPSHOT` / last `GAME_STATE` after succession.
+  ///
+  /// Advertises the **same** [GameRoom.roomId] via mDNS and starts FGS only
+  /// while this device is the acting host for an in-progress game.
+  Future<GameRoom> startFromSnapshot({
+    required Map<String, dynamic> snapshot,
+    String? actingHostPlayerId,
+  }) async {
+    await stopRoom(broadcastDiscarded: false);
+
+    final room = GameRoom.fromSnapshot(snapshot);
+    if (actingHostPlayerId != null) {
+      room.hostPlayerId = actingHostPlayerId;
+    }
+    _room = room;
+    _hostingAuthorityActive = true;
+
+    final boundPort = await _server.start(
+      handshakeFactory: () => buildHandshake(
+        roomId: room.roomId,
+        displayName: room.displayName,
+      ),
+      onMessage: _handleMessage,
+      onSessionClosed: _onSessionClosed,
+    );
+
+    _hostLanIp = await findLanIPv4();
+
+    // Same canonical roomId so peers / Home browse find the continuing game.
+    await _mdnsAdvertiser.start(
+      roomId: room.roomId,
+      displayName: room.displayName,
+      port: boundPort,
+    );
+
+    _startHeartbeatWatchdog();
+
+    if (room.gamePhase == GameRoomPhase.inGame ||
+        room.gamePhase == GameRoomPhase.betweenRounds) {
+      await _foregroundServiceBridge.startGameSession();
+    }
+
+    notifyListeners();
+    return room;
+  }
+
+  /// Exports authoritative state for `ROOM_SNAPSHOT` / peer takeover.
+  Map<String, dynamic>? exportRoomSnapshot() {
+    final room = _room;
+    if (room == null) {
+      return null;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    TurnEngine.refreshPhase(room, serverNow);
+    return room.toGameStatePayload(serverNow: serverNow);
+  }
+
   Future<void> stopRoom({
     bool broadcastDiscarded = true,
     bool notify = true,
@@ -112,6 +188,7 @@ class HostRoomController extends ChangeNotifier {
 
     _room = null;
     _hostLanIp = null;
+    _hostingAuthorityActive = false;
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = null;
     _sessions.clear();
@@ -294,6 +371,7 @@ class HostRoomController extends ChangeNotifier {
     return true;
   }
 
+  /// Intentional host **Terminar** — ends the game with no succession.
   Future<void> endGame() async {
     final room = _room;
     if (room == null) {
@@ -304,6 +382,57 @@ class HostRoomController extends ChangeNotifier {
     await _foregroundServiceBridge.stopGameSession();
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await stopRoom(broadcastDiscarded: false);
+  }
+
+  /// Unexpected host loss while this device still hosts: elect next connected
+  /// seat or [endGame]. Does **not** run for intentional Terminar.
+  Future<HostDropOutcome> handleUnexpectedHostDrop() async {
+    final room = _room;
+    if (room == null || !_hostingAuthorityActive) {
+      return HostDropOutcome.noRoom;
+    }
+    if (room.gamePhase != GameRoomPhase.inGame &&
+        room.gamePhase != GameRoomPhase.betweenRounds) {
+      return HostDropOutcome.noRoom;
+    }
+
+    final droppingHostId = room.hostPlayerId;
+    room.playersById[droppingHostId]?.connected = false;
+
+    final nextHostId = HostSuccession.electActingHost(
+      room,
+      droppingHostPlayerId: droppingHostId,
+    );
+    if (nextHostId == null) {
+      // Prevent re-entrant drop handling while ending.
+      _hostingAuthorityActive = false;
+      await endGame();
+      return HostDropOutcome.ended;
+    }
+
+    room.hostPlayerId = nextHostId;
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    final snapshot = room.toGameStatePayload(serverNow: serverNow);
+    _server.broadcast(
+      WsEnvelope(type: MessageTypes.roomSnapshot, payload: snapshot),
+    );
+    _server.broadcast(
+      WsEnvelope(
+        type: MessageTypes.hostMigrated,
+        payload: {
+          'roomId': room.roomId,
+          'hostPlayerId': nextHostId,
+          'host': _hostLanIp,
+          'port': _server.port,
+          'serverNow': serverNow,
+        },
+      ),
+    );
+
+    // Relinquish local hosting; elected peer starts from snapshot + same roomId.
+    _hostingAuthorityActive = false;
+    await stopRoom(broadcastDiscarded: false);
+    return HostDropOutcome.migrated;
   }
 
   void showHostKeepOpenBannerIfNeeded(BuildContext context) {
@@ -333,6 +462,11 @@ class HostRoomController extends ChangeNotifier {
   ) {
     final room = _room;
     if (room == null) {
+      return;
+    }
+
+    // Stale acting host after reclaim / migration — reject authority.
+    if (!_hostingAuthorityActive) {
       return;
     }
 
@@ -396,6 +530,8 @@ class HostRoomController extends ChangeNotifier {
         _handleUpdatePlayer(session, envelope);
       case MessageTypes.passTurn:
         _handlePassTurn(session, envelope);
+      case MessageTypes.hostReclaim:
+        unawaited(_handleHostReclaim(session, envelope, send));
       default:
         break;
     }
@@ -499,6 +635,77 @@ class HostRoomController extends ChangeNotifier {
     passTurn(senderId);
   }
 
+  /// Original host reclaim: validate identity, hand snapshot + HOST_MIGRATED,
+  /// then stop acting-host authority (FGS/mDNS follow the reclaiming host).
+  Future<void> _handleHostReclaim(
+    HostSession session,
+    WsEnvelope envelope,
+    void Function(WsEnvelope) send,
+  ) async {
+    final room = _room;
+    if (room == null || !_hostingAuthorityActive) {
+      return;
+    }
+    if (room.gamePhase != GameRoomPhase.inGame &&
+        room.gamePhase != GameRoomPhase.betweenRounds) {
+      return;
+    }
+
+    final roomId = envelope.payload['roomId'];
+    final originalHostPlayerId = envelope.payload['originalHostPlayerId'];
+    final deviceId = envelope.payload['deviceId'] as String? ?? session.deviceId;
+    if (roomId is! String ||
+        originalHostPlayerId is! String ||
+        deviceId == null) {
+      return;
+    }
+    if (roomId != room.roomId) {
+      return;
+    }
+    if (originalHostPlayerId != room.originalHostPlayerId) {
+      return;
+    }
+
+    final original = room.playersById[room.originalHostPlayerId];
+    if (original == null || original.deviceId != deviceId) {
+      return;
+    }
+
+    // Already original host — nothing to reclaim.
+    if (room.hostPlayerId == room.originalHostPlayerId) {
+      return;
+    }
+
+    room.hostPlayerId = room.originalHostPlayerId;
+    original.connected = true;
+    session.playerId = room.originalHostPlayerId;
+    session.deviceId = deviceId;
+
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    final snapshot = room.toGameStatePayload(serverNow: serverNow);
+    send(WsEnvelope(type: MessageTypes.roomSnapshot, payload: snapshot));
+    _server.broadcast(
+      WsEnvelope(type: MessageTypes.roomSnapshot, payload: snapshot),
+    );
+    _server.broadcast(
+      WsEnvelope(
+        type: MessageTypes.hostMigrated,
+        payload: {
+          'roomId': room.roomId,
+          'hostPlayerId': room.originalHostPlayerId,
+          'host': envelope.payload['host'] ?? _hostLanIp,
+          'port': envelope.payload['port'] ?? _server.port,
+          'serverNow': serverNow,
+        },
+      ),
+    );
+
+    // Reject further stale acting-host authority; FGS stops with stopRoom.
+    _hostingAuthorityActive = false;
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await stopRoom(broadcastDiscarded: false);
+  }
+
   void _onSessionClosed(String sessionId) {
     final room = _room;
     if (room == null) {
@@ -528,6 +735,11 @@ class HostRoomController extends ChangeNotifier {
       if (player != null && player.connected) {
         player.connected = false;
         _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+      }
+
+      // Host seat dropped while we still have authority → elect or END_GAME.
+      if (_hostingAuthorityActive && playerId == room.hostPlayerId) {
+        unawaited(handleUnexpectedHostDrop());
       }
     }
   }

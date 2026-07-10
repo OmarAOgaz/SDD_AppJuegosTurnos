@@ -1,59 +1,54 @@
-# Apply Progress: client-reconnect-in-game (PR1)
+# Apply Progress: client-reconnect-in-game (PR1 + PR2 + PR3)
 
 **Mode**: Standard (strict_tdd: false)  
-**Work unit**: Phase 1 / PR1 — SYNC glue + resume store  
-**Chain**: stacked-to-main  
+**Work unit**: Phase 3 / PR3 — Host succession + reclaim + peer UI wiring  
+**Chain**: stacked-to-main (`feat/client-reconnect-host-succession`)  
 **Updated**: 2026-07-10
 
 ## Completed Tasks
 
-- [x] 1.1 Create `game_resume_store.dart`
-- [x] 1.2 Wire `gameResumeStoreProvider`
-- [x] 1.3 Write/clear resume store from `game_screen` / `ended_screen`
-- [x] 1.4 Post-connect `SYNC_REQUEST`; restore `localPlayerId`; no `RECONNECT_*`/`RESUME_*`
-- [x] 1.5 Lifecycle active = resume store OR socket; dead socket → reconnect then SYNC
-- [x] 1.6 Unit tests for store + post-reconnect SYNC
+### Phase 1 / PR1 (prior batch)
 
-## Remaining (out of this batch)
+- [x] 1.1–1.6 SYNC glue + resume store
 
-- [ ] Phase 2 (2.1–2.3) — Home highlight + tap resume
-- [ ] Phase 3 (3.1–3.6) — Host succession + reclaim
-- [ ] Phase 4 (4.1–4.2) — Verification
+### Phase 2 / PR2 (prior batch)
 
-## Files Changed
+- [x] 2.1–2.3 Home highlight + tap resume
+
+### Phase 3 / PR3 (this batch)
+
+- [x] 3.1–3.6 Domain/controller succession + HOST_* + tests
+- [x] Peer UI wiring: `HostSuccessionCoordinator`, `GameScreen` election/reclaim/mDNS reconnect, `sendHostReclaim`, `ROOM_SNAPSHOT` sync
+
+## Remaining
+
+- [ ] 4.2 Manual/E2E (2–3 devices)
+
+## Files Changed (PR3 + UI wiring)
 
 | File | Action |
 |------|--------|
-| `lib/core/network/game_resume_store.dart` | Created |
-| `lib/core/network/game_socket_client.dart` | Modified — SYNC on connect, restore playerId, injectable connection |
-| `lib/core/providers/network_providers.dart` | Modified — `gameResumeStoreProvider` |
-| `lib/core/lifecycle/app_lifecycle_sync.dart` | Modified — `isLifecycleSessionActive`, `syncOrReconnectSession` |
-| `lib/core/lifecycle/session_lifecycle_listener.dart` | Modified — docs for resume-aware session |
-| `lib/features/game/game_screen.dart` | Modified — persist/clear store; lifecycle reconnect |
-| `lib/features/game/ended_screen.dart` | Modified — clear resume store on exit |
-| `test/core/network/game_resume_store_test.dart` | Created |
-| `test/core/network/game_socket_client_reconnect_test.dart` | Created |
-| `openspec/changes/client-reconnect-in-game/tasks.md` | Marked 1.1–1.6 [x] |
+| `lib/core/domain/host_succession.dart` | Created |
+| `lib/core/domain/host_succession_coordinator.dart` | Created — peer-local decide/reclaim |
+| `lib/core/constants/message_types.dart` | Modified — HOST_* |
+| `lib/core/models/game_room.dart` | Modified |
+| `lib/core/network/game_socket_client.dart` | Modified — `sendHostReclaim`, cache `ROOM_SNAPSHOT` |
+| `lib/core/lifecycle/client_sync_state.dart` | Modified — apply `ROOM_SNAPSHOT` |
+| `lib/core/providers/network_providers.dart` | Modified |
+| `lib/server/host_room_controller.dart` | Modified |
+| `lib/features/game/game_screen.dart` | Modified — succession/reclaim UI |
+| `test/core/domain/host_succession_test.dart` | Created |
+| `test/core/domain/host_succession_coordinator_test.dart` | Created |
+| `test/server/host_room_controller_test.dart` | Modified |
 
 ## Test Results
 
-```
-flutter test test/core/network/game_resume_store_test.dart \
-  test/core/network/game_socket_client_reconnect_test.dart \
-  test/features/ended_screen_smoke_test.dart
-→ 9 passed
-```
+Domain + controller + network + coordinator suites green (56+ related tests).
 
 ## Deviations from Design
 
-None — heartbeat + SYNC only; resume keys match design `GameResumeEntry`.
-
-## Workload / PR Boundary
-
-- Mode: stacked PR slice (PR1)
-- Boundary: SYNC glue + resume store write/clear only
-- Next: PR2 Home highlight when user asks
+None — peer-local election after reconnect window; reclaim starts local host then `HOST_RECLAIM`; Terminar sets intentional exit (no succession).
 
 ## Status
 
-6/6 Phase 1 tasks complete. Ready for PR2 apply when requested (or verify of PR1 slice).
+Implementation through Phase 3 complete including UI wiring. Next: commit/PR3 + sdd-verify; manual E2E (4.2) on devices.

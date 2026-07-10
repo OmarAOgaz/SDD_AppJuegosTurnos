@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models/discovered_room.dart';
+import '../../core/network/game_resume_store.dart';
+import '../../core/network/game_socket_client.dart';
 import '../../core/network/manual_endpoint_store.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/providers/profile_providers.dart';
@@ -18,8 +20,10 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _statusMessage;
   bool _stoppingHost = false;
+  bool _resuming = false;
   List<DiscoveredRoom> _mdnsRooms = [];
   List<ManualEndpoint> _manualEndpoints = [];
+  GameResumeEntry? _resumeEntry;
 
   @override
   void initState() {
@@ -28,6 +32,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _startDiscovery() async {
+    await _reloadResumeEntry();
     final browser = ref.read(mdnsBrowserProvider);
     browser.roomsStream.listen((rooms) {
       if (mounted) {
@@ -36,6 +41,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
     await browser.start();
     await _reloadManualEndpoints();
+  }
+
+  Future<void> _reloadResumeEntry() async {
+    final store = await ref.read(gameResumeStoreProvider.future);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _resumeEntry = store.load());
   }
 
   Future<void> _reloadManualEndpoints() async {
@@ -51,6 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return merger.merge(
       mdnsRooms: _mdnsRooms,
       manualEndpoints: _manualEndpoints,
+      resume: _resumeEntry,
     );
   }
 
@@ -148,6 +162,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _connectToRoom(DiscoveredRoom room) async {
+    if (room.isResumable) {
+      await _resumeToRoom(room);
+      return;
+    }
+
     final profile = await ref.read(localPlayerProfileProvider.future);
     if (!profile.hasUsableDisplayName) {
       if (!mounted) {
@@ -189,11 +208,89 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// Tap resume: connect cached/mDNS endpoint → restore playerId → SYNC → /game.
+  /// Uses heartbeat rebind + SYNC only (no RECONNECT_*/RESUME_* types).
+  Future<void> _resumeToRoom(DiscoveredRoom room) async {
+    if (_resuming) {
+      return;
+    }
+
+    final store = await ref.read(gameResumeStoreProvider.future);
+    final entry = store.load();
+    if (entry == null || entry.roomId != room.roomId) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _statusMessage = 'Resume identity missing');
+      return;
+    }
+
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _statusMessage = 'Device not ready');
+      return;
+    }
+
+    setState(() {
+      _resuming = true;
+      _statusMessage = 'Reanudando…';
+    });
+
+    try {
+      client.restoreLocalPlayerId(entry.playerId);
+
+      // Prefer listed endpoint (mDNS or injected cache) for this roomId.
+      final host = room.hostIp;
+      final port = room.port;
+
+      if (client.state == SocketClientState.connected &&
+          client.lastHost == host &&
+          client.lastPort == port) {
+        client.sendSyncRequest();
+      } else {
+        await client.connect(host: host, port: port);
+      }
+
+      if (!mounted) {
+        return;
+      }
+      context.go(
+        '/game?role=client&host=${Uri.encodeComponent(host)}&port=$port',
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _statusMessage = 'Resume failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() => _resuming = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Refresh resume highlight when store provider resolves / changes.
+    ref.listen(gameResumeStoreProvider, (previous, next) {
+      next.whenData((store) {
+        if (!mounted) {
+          return;
+        }
+        final entry = store.load();
+        if (entry != _resumeEntry) {
+          setState(() => _resumeEntry = entry);
+        }
+      });
+    });
+
     final controller = ref.watch(hostRoomControllerProvider);
     final room = controller.room;
     final mergedRooms = _mergedRooms;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -271,10 +368,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           else
             ...mergedRooms.map(
               (entry) => ListTile(
+                key: ValueKey('room-${entry.roomId}'),
+                tileColor: entry.isResumable
+                    ? scheme.primaryContainer.withValues(alpha: 0.45)
+                    : null,
+                shape: entry.isResumable
+                    ? RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: BorderSide(color: scheme.primary),
+                      )
+                    : null,
                 title: Text(entry.displayName),
-                subtitle: Text('${entry.hostIp}:${entry.port} · ${entry.source.name}'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _connectToRoom(entry),
+                subtitle: Text(
+                  entry.isResumable
+                      ? '${entry.hostIp}:${entry.port} · reanudable'
+                      : '${entry.hostIp}:${entry.port} · ${entry.source.name}',
+                ),
+                trailing: entry.isResumable
+                    ? Chip(
+                        label: const Text('Reanudar'),
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: scheme.primaryContainer,
+                      )
+                    : const Icon(Icons.chevron_right),
+                onTap: _resuming ? null : () => _connectToRoom(entry),
               ),
             ),
         ],
