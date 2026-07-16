@@ -43,6 +43,13 @@ class _FakeWakelockPlatform extends WakelockPlusPlatformInterface {
 /// Shared across tests in this file — reassigned in [setUp].
 late _FakeWakelockPlatform _wakelock;
 
+Finder get _activeTurnToast => find.byKey(const Key('active-turn-toast'));
+
+TextSpan _toastSpanTree(WidgetTester tester) {
+  final text = tester.widget<Text>(_activeTurnToast);
+  return text.textSpan! as TextSpan;
+}
+
 /// Records outbound intents instead of touching a real socket — the client
 /// under test is never `connect()`-ed, so base-class network code paths are
 /// never exercised.
@@ -414,6 +421,43 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets(
+        'host tap passes when active seat is disconnected (not own turn)',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, [_hostId]);
+      expect(_activeTurnToast, findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host tap shows toast when active seat is still connected (not own turn)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_activeTurnToast, findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('tap on active device passes turn (client)', (tester) async {
       final client = _clientAs(_clientId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
@@ -436,17 +480,27 @@ void main() {
       await tester.pump();
 
       expect(client.passTurnCalls, isEmpty);
-      expect(find.text('Turno de "$_clientName"'), findsOneWidget);
+      expect(_activeTurnToast, findsOneWidget);
+      final root = _toastSpanTree(tester);
+      expect(root.toPlainText(), 'Turno de "$_clientName"');
+      expect(root.children, hasLength(2));
+      expect((root.children![0] as TextSpan).text, 'Turno de ');
+      expect((root.children![0] as TextSpan).style?.color, Colors.white);
+      expect((root.children![1] as TextSpan).text, '"$_clientName"');
+      expect(
+        (root.children![1] as TextSpan).style?.color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
 
       // Transient toast auto-clears ~2s later.
       await tester.pump(const Duration(seconds: 3));
-      expect(find.text('Turno de "$_clientName"'), findsNothing);
+      expect(_activeTurnToast, findsNothing);
 
       await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets(
-        '2s long-press opens Salir partida without passing, even for the active player (host)',
+        '500ms long-press opens Salir partida without passing, even for the active player (host)',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
@@ -464,7 +518,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('2s long-press opens Salir partida without passing (client, non-active)',
+    testWidgets('500ms long-press opens Salir partida without passing (client, non-active)',
         (tester) async {
       final client = _clientAs(_hostId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
@@ -490,7 +544,7 @@ void main() {
 
       await tester.tap(_gestureLayer);
       await tester.pump();
-      expect(find.text('Turno de "$_clientName"'), findsOneWidget);
+      expect(_activeTurnToast, findsOneWidget);
 
       final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
       await tester.pump(const Duration(seconds: 3));

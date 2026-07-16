@@ -62,12 +62,20 @@ TurnFeedbackVisual resolveTurnFeedback({
 
 /// Pure mapping of a full-screen tap to what it should do for the local
 /// device. Inert (`none`) outside `inGame`.
+///
+/// [canHostPassForDisconnectedActive] mirrors [TurnEngine.tryPassTurn]: the
+/// host may pass when the active seat is disconnected, even if this device
+/// is not the active seat.
 GestureIntent resolveTapIntent({
   required bool isMyDeviceActive,
   required GameRoomPhase gamePhase,
+  bool canHostPassForDisconnectedActive = false,
 }) {
   if (gamePhase != GameRoomPhase.inGame) {
     return GestureIntent.none;
   }
-  return isMyDeviceActive ? GestureIntent.pass : GestureIntent.showActiveToast;
+  if (isMyDeviceActive || canHostPassForDisconnectedActive) {
+    return GestureIntent.pass;
+  }
+  return GestureIntent.showActiveToast;
 }

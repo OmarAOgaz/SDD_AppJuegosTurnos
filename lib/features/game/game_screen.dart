@@ -57,7 +57,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
   bool _wakelockOn = false;
-  String? _activeToastText;
+  String? _activeToastName;
   Color? _activeToastColor;
   Timer? _toastTimer;
 
@@ -752,6 +752,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
         isMyDeviceActive: room.turnState.activePlayerId == room.hostPlayerId,
+        canHostPassForDisconnectedActive:
+            active != null && !active.connected,
         onPass: () {
           final passed = controller.passTurn(room.hostPlayerId);
           if (!passed && context.mounted) {
@@ -834,6 +836,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required String activeName,
     required String? activeColorId,
     required bool isMyDeviceActive,
+    bool canHostPassForDisconnectedActive = false,
     required VoidCallback onPass,
     required Future<void> Function() onExit,
     List<Widget>? betweenRoundsActions,
@@ -932,7 +935,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     // Sole pass affordance during inGame: a full-screen tap (via
     // resolveTapIntent) replaces the removed 'Pasar turno' button. Long-press
-    // (2s, wins the gesture arena over tap by default) opens the exit menu
+    // (500ms, wins the gesture arena over tap by default) opens the exit menu
     // for any player, active or not.
     return RawGestureDetector(
       key: inGameGestureLayerKey,
@@ -943,6 +946,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           (instance) {
             instance.onTap = () => _handleInGameTap(
                   isMyDeviceActive: isMyDeviceActive,
+                  canHostPassForDisconnectedActive:
+                      canHostPassForDisconnectedActive,
                   gamePhase: gamePhase,
                   activeName: activeName,
                   activeColor: color,
@@ -952,7 +957,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-          () => LongPressGestureRecognizer(duration: const Duration(seconds: 2)),
+          () => LongPressGestureRecognizer(
+            duration: const Duration(milliseconds: 500),
+          ),
           (instance) {
             instance.onLongPress = () => _showExitMenu(context, onExit);
           },
@@ -963,7 +970,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         children: [
           Positioned.fill(child: BlinkFeedbackLayer(visual: visual)),
           content,
-          if (_activeToastText != null)
+          if (_activeToastName != null)
             Positioned(
               top: 24,
               left: 24,
@@ -977,14 +984,29 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       color: Colors.black.withValues(alpha: 0.65),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(
-                      _activeToastText!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: _activeToastColor ?? Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
+                    child: Text.rich(
+                      key: const Key('active-turn-toast'),
+                      TextSpan(
+                        children: [
+                          const TextSpan(
+                            text: 'Turno de ',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          TextSpan(
+                            text: '"$_activeToastName"',
+                            style: TextStyle(
+                              color: _activeToastColor ?? Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ],
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -996,9 +1018,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   /// Resolves the tap intent (Phase 1) and either passes the turn (active
-  /// device) or shows a transient 'whose turn' toast (non-active device).
+  /// device, or host when the active seat is disconnected) or shows a
+  /// transient 'whose turn' toast (non-active device).
   void _handleInGameTap({
     required bool isMyDeviceActive,
+    bool canHostPassForDisconnectedActive = false,
     required GameRoomPhase gamePhase,
     required String activeName,
     required Color activeColor,
@@ -1006,6 +1030,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }) {
     final intent = resolveTapIntent(
       isMyDeviceActive: isMyDeviceActive,
+      canHostPassForDisconnectedActive: canHostPassForDisconnectedActive,
       gamePhase: gamePhase,
     );
     switch (intent) {
@@ -1021,19 +1046,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void _showActiveToast(String activeName, Color activeColor) {
     _toastTimer?.cancel();
     setState(() {
-      _activeToastText = 'Turno de "$activeName"';
+      _activeToastName = activeName;
       _activeToastColor = activeColor;
     });
     _toastTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) {
         setState(() {
-          _activeToastText = null;
+          _activeToastName = null;
+          _activeToastColor = null;
         });
       }
     });
   }
 
-  /// Opens the 2s-long-press menu. Only 'Salir partida' exists today; the
+  /// Opens the 500ms-long-press menu. Only 'Salir partida' exists today; the
   /// dialog is a list so future options can be appended without restructuring.
   Future<void> _showExitMenu(
     BuildContext context,
