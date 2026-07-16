@@ -935,7 +935,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     // Sole pass affordance during inGame: a full-screen tap (via
     // resolveTapIntent) replaces the removed 'Pasar turno' button. Long-press
-    // (2s, wins the gesture arena over tap by default) opens the exit menu
+    // (1s, wins the gesture arena over tap by default) opens the exit menu
     // for any player, active or not.
     return RawGestureDetector(
       key: inGameGestureLayerKey,
@@ -957,7 +957,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-          () => LongPressGestureRecognizer(duration: const Duration(seconds: 2)),
+          () => LongPressGestureRecognizer(duration: const Duration(seconds: 1)),
           (instance) {
             instance.onLongPress = () => _showExitMenu(context, onExit);
           },
@@ -1057,7 +1057,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     });
   }
 
-  /// Opens the 2s-long-press menu. Only 'Salir partida' exists today; the
+  /// Opens the 1s-long-press menu. Only 'Salir partida' exists today; the
   /// dialog is a list so future options can be appended without restructuring.
   Future<void> _showExitMenu(
     BuildContext context,
