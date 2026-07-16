@@ -23,6 +23,12 @@ import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 
+/// Identifies the sole full-screen tap/long-press layer during `inGame` —
+/// exposed so widget tests can target it unambiguously (Scaffold/MaterialApp
+/// also mount their own internal `RawGestureDetector`s).
+@visibleForTesting
+const inGameGestureLayerKey = Key('inGameGestureLayer');
+
 /// In-game turn timer UI for host and clients.
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({
@@ -928,6 +934,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     // (2s, wins the gesture arena over tap by default) opens the exit menu
     // for any player, active or not.
     return RawGestureDetector(
+      key: inGameGestureLayerKey,
       behavior: HitTestBehavior.opaque,
       gestures: {
         TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
