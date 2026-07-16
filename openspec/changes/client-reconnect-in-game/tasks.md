@@ -51,4 +51,5 @@ Chain strategy: stacked-to-main
 ## Phase 4: Verification
 
 - [x] 4.1 Unit/widget: short-window SYNC; Home highlight lifetime; election; reclaim; no `RECONNECT_*`
-- [ ] 4.2 Manual/E2E (2–3 devices): client drop; host succession; original-host reclaim; Terminar ends game
+- [x] 4.2 Manual/E2E (2–3 devices): client drop; host succession; original-host reclaim; Terminar ends game
+  - 2026-07-15 final: **A–E all PASS** (A505G + X210) after `reconnect-e2e-followups` fixes

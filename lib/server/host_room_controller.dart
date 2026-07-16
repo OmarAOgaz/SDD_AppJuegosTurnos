@@ -30,6 +30,31 @@ enum HostDropOutcome {
   migrated,
 }
 
+/// How a demoted acting host should resume as a client after reclaim.
+class HostDemotionResume {
+  const HostDemotionResume({
+    required this.roomId,
+    required this.seatPlayerId,
+    this.host,
+    this.port,
+    this.formerListenHost,
+    this.formerListenPort,
+  });
+
+  final String roomId;
+
+  /// Seat this device held as acting host (same id as before succession).
+  final String seatPlayerId;
+
+  /// Reclaiming host endpoint from [HOST_RECLAIM] / migration payload.
+  final String? host;
+  final int? port;
+
+  /// This device's former listen address — must not be used as peer target.
+  final String? formerListenHost;
+  final int? formerListenPort;
+}
+
 /// Tracks a single WebSocket peer and heartbeat state.
 class HostSession {
   HostSession({
@@ -71,12 +96,23 @@ class HostRoomController extends ChangeNotifier {
   /// When false, this device must not act as authoritative host (post-reclaim).
   bool _hostingAuthorityActive = true;
 
+  /// Set when this acting host is demoted by [HOST_RECLAIM]; consumed by UI.
+  HostDemotionResume? _pendingDemotionResume;
+
   GameRoom? get room => _room;
   int? get port => _server.port;
   String? get hostLanIp => _hostLanIp;
   bool get isHosting => _room != null && _server.isRunning;
   bool get hasHostingAuthority =>
       _hostingAuthorityActive && _room != null && _server.isRunning;
+  HostDemotionResume? get pendingDemotionResume => _pendingDemotionResume;
+
+  /// UI reads once after demotion; clears so Home/resume does not reuse stale hint.
+  HostDemotionResume? takePendingDemotionResume() {
+    final value = _pendingDemotionResume;
+    _pendingDemotionResume = null;
+    return value;
+  }
 
   Future<GameRoom> startRoom({
     String? displayName,
@@ -676,6 +712,19 @@ class HostRoomController extends ChangeNotifier {
       return;
     }
 
+    // Capture demoted acting-host seat + reclaiming endpoint before transfer.
+    final demotedSeatPlayerId = room.hostPlayerId;
+    final reclaimHost = envelope.payload['host'] as String?;
+    final reclaimPort = envelope.payload['port'];
+    _pendingDemotionResume = HostDemotionResume(
+      roomId: room.roomId,
+      seatPlayerId: demotedSeatPlayerId,
+      host: reclaimHost is String ? reclaimHost : null,
+      port: reclaimPort is int ? reclaimPort : null,
+      formerListenHost: _hostLanIp,
+      formerListenPort: _server.port,
+    );
+
     room.hostPlayerId = room.originalHostPlayerId;
     original.connected = true;
     session.playerId = room.originalHostPlayerId;
@@ -693,8 +742,8 @@ class HostRoomController extends ChangeNotifier {
         payload: {
           'roomId': room.roomId,
           'hostPlayerId': room.originalHostPlayerId,
-          'host': envelope.payload['host'] ?? _hostLanIp,
-          'port': envelope.payload['port'] ?? _server.port,
+          'host': reclaimHost ?? _hostLanIp,
+          'port': reclaimPort is int ? reclaimPort : _server.port,
           'serverNow': serverNow,
         },
       ),
@@ -714,7 +763,16 @@ class HostRoomController extends ChangeNotifier {
     }
 
     final session = _sessions.remove(sessionId);
-    final playerId = session?.playerId;
+    var playerId = session?.playerId;
+    // Reconnect race: session may die before heartbeat rebound playerId.
+    if (playerId == null && session?.deviceId != null) {
+      for (final player in room.playersById.values) {
+        if (player.deviceId == session!.deviceId) {
+          playerId = player.playerId;
+          break;
+        }
+      }
+    }
     if (playerId == null) {
       return;
     }
@@ -830,16 +888,29 @@ class HostRoomController extends ChangeNotifier {
   void checkHeartbeats() {
     final now = DateTime.now();
     final timeout = const Duration(milliseconds: kHeartbeatTimeoutMs);
+    final staleSessionIds = <String>[];
 
-    for (final session in _sessions.values) {
-      if (session.disconnected) {
-        continue;
-      }
-      if (now.difference(session.lastHeartbeatAt) > timeout) {
+    for (final entry in _sessions.entries) {
+      final session = entry.value;
+      if (session.disconnected ||
+          now.difference(session.lastHeartbeatAt) > timeout) {
         session.disconnected = true;
-        _server.closeSession(session.sessionId);
+        staleSessionIds.add(entry.key);
       }
     }
+
+    // Always apply in-game disconnect here. Relying only on WebSocket onDone
+    // fails on half-open sockets (2nd+ Wi‑Fi drop): session stays flagged
+    // disconnected while player.connected remains true — host cannot PASS.
+    for (final sessionId in staleSessionIds) {
+      _server.closeSession(sessionId);
+      _onSessionClosed(sessionId);
+    }
+  }
+
+  @visibleForTesting
+  void debugSessionClosed(String sessionId) {
+    _onSessionClosed(sessionId);
   }
 
   @visibleForTesting
@@ -862,9 +933,13 @@ class HostRoomController extends ChangeNotifier {
     DateTime? lastHeartbeatAt,
     bool disconnected = false,
     String? playerId,
+    String? deviceId,
   }) {
-    final session = HostSession(sessionId: sessionId, playerId: playerId)
-      ..disconnected = disconnected;
+    final session = HostSession(
+      sessionId: sessionId,
+      playerId: playerId,
+      deviceId: deviceId,
+    )..disconnected = disconnected;
     if (lastHeartbeatAt != null) {
       session.lastHeartbeatAt = lastHeartbeatAt;
     }

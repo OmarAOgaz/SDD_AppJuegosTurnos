@@ -118,33 +118,88 @@ void main() {
       await incoming.close();
     });
 
-    test('syncOrReconnectSession restores playerId and reconnects', () async {
+    test('second unexpected drop starts a fresh reconnect window', () async {
       final incoming = StreamController<dynamic>.broadcast();
+      var connectCount = 0;
+      var failNext = false;
+
       final client = GameSocketClient(
         deviceId: 'device-test',
         reconnectDelay: Duration.zero,
-        connect: (uri) async => _FakeConnection(incoming),
+        lanLikelyAvailable: () async => true,
+        connect: (uri) async {
+          connectCount++;
+          if (failNext) {
+            failNext = false;
+            throw Exception('connect failed');
+          }
+          return _FakeConnection(incoming);
+        },
       );
 
-      const resume = GameResumeEntry(
-        roomId: 'room-1',
-        playerId: 'seat-9',
-        deviceId: 'device-test',
-        host: '10.0.0.2',
-        port: 4242,
-      );
-
-      await syncOrReconnectSession(client: client, resume: resume);
-
-      expect(client.localPlayerId, 'seat-9');
+      await client.connect(host: '127.0.0.1', port: 9);
       expect(client.state, SocketClientState.connected);
-      expect(
-        client.sentEnvelopes.any((e) => e.type == MessageTypes.syncRequest),
-        isTrue,
-      );
+      final firstConnects = connectCount;
+
+      // First drop + recover.
+      incoming.addError(Exception('drop-1'));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(connectCount, greaterThan(firstConnects));
+      expect(client.state, SocketClientState.connected);
+
+      final afterFirst = connectCount;
+
+      // Second drop must attempt reconnect again (fresh window).
+      incoming.addError(Exception('drop-2'));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(connectCount, greaterThan(afterFirst));
+      expect(client.localPlayerId, isNull); // never set in this test
+      expect(client.lastHost, '127.0.0.1');
 
       await client.disconnect();
       await incoming.close();
+    });
+
+    test('without LAN keeps reconnecting instead of hard disconnect', () async {
+      final client = GameSocketClient(
+        deviceId: 'device-test',
+        reconnectDelay: const Duration(milliseconds: 5),
+        lanLikelyAvailable: () async => false,
+        connect: (uri) async => throw Exception('no route'),
+      );
+
+      // Force a reconnect window already expired via failed opens.
+      await client.connect(host: '10.0.0.1', port: 9);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // Still trying (reconnecting), not terminal disconnected.
+      expect(client.state, isNot(SocketClientState.disconnected));
+      expect(client.lastHost, '10.0.0.1');
+
+      await client.disconnect();
+    });
+
+    test('LAN up + unreachable host disconnects after host-loss grace (~3s)',
+        () async {
+      final client = GameSocketClient(
+        deviceId: 'device-test',
+        reconnectDelay: const Duration(milliseconds: 20),
+        lanLikelyAvailable: () async => true,
+        connect: (uri) async => throw Exception('connection refused'),
+      );
+
+      final states = <SocketClientState>[];
+      final sub = client.stateChanges.listen(states.add);
+
+      await client.connect(host: '10.0.0.1', port: 9);
+      // Wait past kHostLossGraceMs (3s) plus a little slack.
+      await Future<void>.delayed(const Duration(milliseconds: 3500));
+
+      expect(client.state, SocketClientState.disconnected);
+      expect(states, contains(SocketClientState.disconnected));
+      expect(client.lastHost, '10.0.0.1');
+
+      await sub.cancel();
+      await client.disconnect();
     });
   });
 }

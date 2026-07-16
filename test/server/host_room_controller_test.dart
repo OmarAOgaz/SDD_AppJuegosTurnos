@@ -323,6 +323,46 @@ void main() {
       );
     });
 
+    test('session close with deviceId only marks player disconnected for host pass',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(
+        TurnEngine.startGame(room, DateTime.now().millisecondsSinceEpoch),
+        isTrue,
+      );
+      final clientId = room.turnSequence.firstWhere(
+        (id) => id != room.hostPlayerId,
+      );
+      // Make client the active player.
+      while (room.turnState.activePlayerId != clientId) {
+        expect(controller.passTurn(room.hostPlayerId), isTrue);
+      }
+      expect(room.playersById[clientId]!.connected, isTrue);
+
+      // New WS session after reconnect: deviceId known, playerId not yet rebound.
+      controller.debugRegisterSession(
+        'client-session-reopen',
+        deviceId: 'device-a',
+      );
+      server.broadcasts.clear();
+      controller.debugSessionClosed('client-session-reopen');
+
+      expect(room.playersById[clientId]!.connected, isFalse);
+      expect(
+        controller.passTurn(room.hostPlayerId),
+        isTrue,
+        reason: 'host may pass for disconnected active',
+      );
+    });
+
     test('LEAVE broadcasts PLAYER_REMOVED and updated LOBBY_STATE', () async {
       final fixture = await _lobbySyncFixture();
       final controller = fixture.controller;
@@ -367,8 +407,86 @@ void main() {
 
       controller.checkHeartbeats();
 
-      expect(controller.debugIsSessionDisconnected('peer-1'), isTrue);
+      // Session is removed after disconnect is applied (idempotent onDone).
+      expect(controller.debugIsSessionDisconnected('peer-1'), isFalse);
       expect(server.closedSessions, contains('peer-1'));
+    });
+
+    test('2nd stale heartbeat marks player disconnected so host can pass',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(TurnEngine.startGame(room, 1), isTrue);
+      final clientId = room.turnSequence.firstWhere(
+        (id) => id != room.hostPlayerId,
+      );
+      while (room.turnState.activePlayerId != clientId) {
+        expect(controller.passTurn(room.hostPlayerId), isTrue);
+      }
+
+      // 1st drop via heartbeat timeout.
+      controller.debugRegisterSession(
+        'ws-1',
+        playerId: clientId,
+        deviceId: 'device-a',
+        lastHeartbeatAt: DateTime.now().subtract(
+          const Duration(milliseconds: kHeartbeatTimeoutMs + 500),
+        ),
+      );
+      controller.checkHeartbeats();
+      expect(room.playersById[clientId]!.connected, isFalse);
+      expect(controller.passTurn(room.hostPlayerId), isTrue);
+
+      // Reconnect: rebound seat connected.
+      while (room.turnState.activePlayerId != clientId) {
+        // Advance until client's turn again if pass moved on.
+        final active = room.turnState.activePlayerId!;
+        if (active == room.hostPlayerId ||
+            !(room.playersById[active]?.connected ?? false)) {
+          expect(controller.passTurn(room.hostPlayerId), isTrue);
+        } else {
+          break;
+        }
+        if (room.gamePhase != GameRoomPhase.inGame) {
+          break;
+        }
+      }
+      room.playersById[clientId]!.connected = true;
+      if (room.turnState.activePlayerId != clientId &&
+          room.gamePhase == GameRoomPhase.inGame) {
+        // Force active to client for the assertion path.
+        room.turnState.activePlayerId = clientId;
+      }
+
+      // 2nd drop — must mark disconnected again even without WS onDone.
+      controller.debugRegisterSession(
+        'ws-2',
+        playerId: clientId,
+        deviceId: 'device-a',
+        lastHeartbeatAt: DateTime.now().subtract(
+          const Duration(milliseconds: kHeartbeatTimeoutMs + 500),
+        ),
+      );
+      server.broadcasts.clear();
+      controller.checkHeartbeats();
+
+      expect(room.playersById[clientId]!.connected, isFalse);
+      expect(
+        server.broadcasts.any((e) => e.type == MessageTypes.gameState),
+        isTrue,
+      );
+      expect(
+        controller.passTurn(room.hostPlayerId),
+        isTrue,
+        reason: 'host may pass on 2nd disconnect',
+      );
     });
   });
 
@@ -608,6 +726,8 @@ void main() {
             'roomId': room.roomId,
             'originalHostPlayerId': originalHostId,
             'deviceId': originalDeviceId,
+            'host': '10.0.0.50',
+            'port': 5555,
           },
         ),
         replies.add,
@@ -626,6 +746,13 @@ void main() {
       );
       expect(controller.room, isNull);
       expect(controller.hasHostingAuthority, isFalse);
+
+      final demotion = controller.takePendingDemotionResume();
+      expect(demotion, isNotNull);
+      expect(demotion!.seatPlayerId, actingId);
+      expect(demotion.host, '10.0.0.50');
+      expect(demotion.port, 5555);
+      expect(controller.pendingDemotionResume, isNull);
 
       // Stale acting host must ignore further commands.
       controller.debugDispatchMessage(

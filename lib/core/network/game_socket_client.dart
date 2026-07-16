@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -45,18 +46,23 @@ class GameSocketClient {
     this.onEnvelope,
     GameSocketConnectionFactory? connect,
     Duration reconnectDelay = const Duration(seconds: 1),
+    Future<bool> Function()? lanLikelyAvailable,
   })  : _connect = connect,
-        _reconnectDelay = reconnectDelay;
+        _reconnectDelay = reconnectDelay,
+        _lanLikelyAvailable = lanLikelyAvailable ?? _defaultLanLikelyAvailable;
 
   final String deviceId;
   final void Function(WsEnvelope envelope)? onEnvelope;
   final GameSocketConnectionFactory? _connect;
   final Duration _reconnectDelay;
+  final Future<bool> Function() _lanLikelyAvailable;
 
   GameSocketConnection? _connection;
   StreamSubscription<dynamic>? _subscription;
   Timer? _heartbeatTimer;
   DateTime? _disconnectStartedAt;
+  bool _suppressCloseEvent = false;
+  int _reconnectGeneration = 0;
 
   final StreamController<WsEnvelope> _messagesController =
       StreamController<WsEnvelope>.broadcast();
@@ -90,16 +96,19 @@ class GameSocketClient {
   }) async {
     _lastHost = host;
     _lastPort = port;
+    _disconnectStartedAt = null;
+    _reconnectGeneration++;
     await _openSocket(host: host, port: port, isReconnect: false);
   }
 
   Future<void> disconnect() async {
+    _reconnectGeneration++;
     _disconnectStartedAt = null;
     _lastHost = null;
     _lastPort = null;
     _setState(SocketClientState.disconnected);
     clearLobbyCache();
-    await _closeSocket();
+    await _closeSocket(intentional: true);
   }
 
   /// Restores seat identity after reconnect / Home resume (no RECONNECT_* types).
@@ -108,6 +117,16 @@ class GameSocketClient {
       return;
     }
     _localPlayerId = playerId;
+  }
+
+  /// Starts a fresh reconnect window (e.g. after LAN returns).
+  void restartReconnectWindow() {
+    if (_lastHost == null || _lastPort == null) {
+      return;
+    }
+    _disconnectStartedAt = DateTime.now();
+    _reconnectGeneration++;
+    unawaited(_scheduleReconnect());
   }
 
   void sendPing() {
@@ -216,7 +235,7 @@ class GameSocketClient {
     required int port,
     required bool isReconnect,
   }) async {
-    await _closeSocket();
+    await _closeSocket(intentional: true);
     _setState(
       isReconnect ? SocketClientState.reconnecting : SocketClientState.connecting,
     );
@@ -245,7 +264,7 @@ class GameSocketClient {
         cancelOnError: true,
       );
     } catch (_) {
-      await _scheduleReconnect();
+      unawaited(_scheduleReconnect());
     }
   }
 
@@ -282,11 +301,20 @@ class GameSocketClient {
   }
 
   void _onSocketClosed() {
-    unawaited(_closeSocket());
+    if (_suppressCloseEvent) {
+      return;
+    }
+    // Fresh window for each unexpected drop from a live connection.
+    if (_state == SocketClientState.connected) {
+      _disconnectStartedAt = DateTime.now();
+      _reconnectGeneration++;
+    }
+    unawaited(_closeSocket(intentional: false));
     unawaited(_scheduleReconnect());
   }
 
   Future<void> _scheduleReconnect() async {
+    final generation = _reconnectGeneration;
     if (_lastHost == null || _lastPort == null) {
       _setState(SocketClientState.disconnected);
       return;
@@ -294,14 +322,38 @@ class GameSocketClient {
 
     _disconnectStartedAt ??= DateTime.now();
     final elapsed = DateTime.now().difference(_disconnectStartedAt!);
-    if (elapsed > const Duration(milliseconds: kReconnectWindowMs)) {
-      _setState(SocketClientState.disconnected);
+    final lanUp = await _lanLikelyAvailable();
+    if (generation != _reconnectGeneration) {
       return;
+    }
+
+    // Host-loss (LAN up, host unreachable): short grace ≤3s then disconnect
+    // so peers can elect. Client Wi‑Fi down: keep the longer reconnect window
+    // and keep retrying instead of succession.
+    final grace = Duration(
+      milliseconds: lanUp ? kHostLossGraceMs : kReconnectWindowMs,
+    );
+    if (elapsed > grace) {
+      if (!lanUp) {
+        // Client likely lost Wi‑Fi — keep trying; do not treat as host loss yet.
+        _disconnectStartedAt = DateTime.now();
+      } else {
+        // LAN up but host unreachable → host-loss path (UI may succession).
+        _disconnectStartedAt = null;
+        _setState(SocketClientState.disconnected);
+        return;
+      }
     }
 
     _setState(SocketClientState.reconnecting);
     await Future<void>.delayed(_reconnectDelay);
+    if (generation != _reconnectGeneration) {
+      return;
+    }
     if (_state == SocketClientState.disconnected) {
+      return;
+    }
+    if (_state == SocketClientState.connected) {
       return;
     }
     await _openSocket(
@@ -338,19 +390,54 @@ class GameSocketClient {
     connection.add(envelope.encode());
   }
 
-  Future<void> _closeSocket() async {
+  Future<void> _closeSocket({required bool intentional}) async {
+    if (intentional) {
+      _suppressCloseEvent = true;
+    }
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     await _subscription?.cancel();
     _subscription = null;
-    await _connection?.close();
+    try {
+      await _connection?.close();
+    } catch (_) {
+      // Best-effort close.
+    }
     _connection = null;
+    if (intentional) {
+      // Allow async onDone from the old socket to be ignored briefly.
+      await Future<void>.delayed(Duration.zero);
+      _suppressCloseEvent = false;
+    }
   }
 
   void _setState(SocketClientState next) {
+    if (_state == next) {
+      return;
+    }
     _state = next;
     if (!_stateController.isClosed) {
       _stateController.add(next);
+    }
+  }
+
+  static Future<bool> _defaultLanLikelyAvailable() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        includeLinkLocal: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final iface in interfaces) {
+        for (final addr in iface.addresses) {
+          if (!addr.isLoopback) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (_) {
+      // Fail open: assume LAN up so host-loss succession can still run.
+      return true;
     }
   }
 }

@@ -129,15 +129,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (deviceId == null) {
       return;
     }
-    final controller = ref.read(hostRoomControllerProvider);
+    // Seat identity only — do NOT cache this device's listen address as the
+    // peer to join after demotion (that caused E2E D identity loss).
     unawaited(
       _persistResumeEntry(
         GameResumeEntry(
           roomId: room.roomId,
           playerId: room.hostPlayerId,
           deviceId: deviceId,
-          host: controller.hostLanIp,
-          port: controller.port,
           originalHostPlayerId: room.originalHostPlayerId,
         ),
       ),
@@ -184,6 +183,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _socketMessageSub?.cancel();
     _socketStateSub = client.stateChanges.listen((state) {
       if (state == SocketClientState.disconnected) {
+        // Reached only when LAN looks up but host unreachable (see GameSocketClient).
         unawaited(_onClientHostLost());
       }
       if (state == SocketClientState.connected) {
@@ -568,48 +568,97 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
     _resumingAsClient = true;
     try {
+      final controller = ref.read(hostRoomControllerProvider);
+      final demotion = controller.takePendingDemotionResume();
       final store = await ref.read(gameResumeStoreProvider.future);
       final entry = store.load();
-      if (entry == null) {
+
+      final roomId = demotion?.roomId ?? entry?.roomId;
+      final seatPlayerId = demotion?.seatPlayerId ?? entry?.playerId;
+      if (roomId == null || seatPlayerId == null) {
         if (mounted) {
           context.go('/');
         }
         return;
       }
-      final browser = ref.read(mdnsBrowserProvider);
-      if (!browser.isBrowsing) {
-        await browser.start();
+
+      final selfHost = demotion?.formerListenHost;
+      final selfPort = demotion?.formerListenPort;
+
+      String? host = demotion?.host;
+      int? port = demotion?.port;
+
+      // Prefer mDNS for same roomId when hint incomplete; never use self listen.
+      if (host == null || port == null) {
+        final browser = ref.read(mdnsBrowserProvider);
+        if (!browser.isBrowsing) {
+          await browser.start();
+        }
+        final match = browser.currentRooms.where((r) {
+          if (r.roomId != roomId) {
+            return false;
+          }
+          if (selfHost != null &&
+              selfPort != null &&
+              r.hostIp == selfHost &&
+              r.port == selfPort) {
+            return false;
+          }
+          return true;
+        }).firstOrNull;
+        if (match != null) {
+          host = match.hostIp;
+          port = match.port;
+        }
       }
-      DiscoveredRoom? match = browser.currentRooms
-          .where((r) => r.roomId == entry.roomId)
-          .firstOrNull;
-      if (match == null && entry.host != null && entry.port != null) {
-        match = DiscoveredRoom(
-          roomId: entry.roomId,
-          displayName: entry.roomId,
-          hostIp: entry.host!,
-          port: entry.port!,
-          source: RoomDiscoverySource.cached,
-          isResumable: true,
+
+      // Last resort: cached resume endpoint if it is not our former listen addr.
+      if ((host == null || port == null) &&
+          entry?.host != null &&
+          entry?.port != null) {
+        final cachedIsSelf = selfHost != null &&
+            selfPort != null &&
+            entry!.host == selfHost &&
+            entry.port == selfPort;
+        if (!cachedIsSelf) {
+          host = entry!.host;
+          port = entry.port;
+        }
+      }
+
+      if (host == null || port == null) {
+        if (mounted) {
+          context.go('/');
+        }
+        return;
+      }
+
+      final deviceId = entry?.deviceId ??
+          ref.read(deviceIdProvider).asData?.value;
+      if (deviceId != null) {
+        await store.save(
+          GameResumeEntry(
+            roomId: roomId,
+            playerId: seatPlayerId,
+            deviceId: deviceId,
+            host: host,
+            port: port,
+            originalHostPlayerId: entry?.originalHostPlayerId,
+          ),
         );
       }
-      if (match == null) {
-        if (mounted) {
-          context.go('/');
-        }
-        return;
-      }
+
       final client = ref.read(gameSocketClientProvider);
       if (client == null) {
         return;
       }
-      client.restoreLocalPlayerId(entry.playerId);
-      await client.connect(host: match.hostIp, port: match.port);
+      client.restoreLocalPlayerId(seatPlayerId);
+      await client.connect(host: host, port: port);
       if (!mounted) {
         return;
       }
       context.go(
-        '/game?role=client&host=${Uri.encodeComponent(match.hostIp)}&port=${match.port}',
+        '/game?role=client&host=${Uri.encodeComponent(host)}&port=$port',
       );
     } finally {
       _resumingAsClient = false;

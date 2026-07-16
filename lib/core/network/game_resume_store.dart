@@ -20,6 +20,27 @@ class GameResumeEntry {
   final int? port;
   final String? originalHostPlayerId;
 
+  GameResumeEntry copyWith({
+    String? roomId,
+    String? playerId,
+    String? deviceId,
+    String? host,
+    int? port,
+    String? originalHostPlayerId,
+    bool clearHost = false,
+    bool clearPort = false,
+  }) {
+    return GameResumeEntry(
+      roomId: roomId ?? this.roomId,
+      playerId: playerId ?? this.playerId,
+      deviceId: deviceId ?? this.deviceId,
+      host: clearHost ? null : (host ?? this.host),
+      port: clearPort ? null : (port ?? this.port),
+      originalHostPlayerId:
+          originalHostPlayerId ?? this.originalHostPlayerId,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'roomId': roomId,
         'playerId': playerId,

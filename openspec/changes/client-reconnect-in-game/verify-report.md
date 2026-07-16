@@ -104,21 +104,16 @@ PARTIAL items are device/E2E or full UI-path gaps covered by task **4.2**.
 
 ### Issues Found
 
-**CRITICAL**: None
+**CRITICAL**: None (E2E 4.2 A–E PASS 2026-07-15 after follow-up fixes)
 
-**WARNING**:
-1. **Task 4.2 incomplete** — Manual/E2E on 2–3 devices still pending (client drop, host succession, original-host reclaim, Terminar ends game). Blocks full archive readiness for success criteria that require multi-device proof.
-2. **PARTIAL scenarios** — Home tap full UX, ~30s reconnect window timing, and real Android FGS transfer lack device-level runtime evidence (unit/fake coverage only).
+**WARNING**: None open for archive gate
 
 **SUGGESTION**:
-1. Merge stacked PRs (#1→#2→#3) while unit gate is green, then run 4.2 checklist on devices before `sdd-archive`.
-2. Optionally add a short E2E checklist file under the change folder when executing 4.2 (mirror prior mvp-lobby pattern).
+1. Commit `reconnect-e2e-followups` code + docs if not on `main`, then `sdd-archive`.
 
 ### Verdict
 
-**PASS WITH WARNINGS**
-
-Implementation Phases 1–3 and unit verification (4.1) match specs/design; all targeted Flutter tests green and analyze clean. Archive is **not** recommended until **4.2** multi-device E2E passes. Prefer **merge the stacked PR chain first**, then complete 4.2, then `sdd-archive`.
+**PASS** — Phases 1–3 + unit verify + manual E2E 4.2 (A–E) signed off on SM A505G + SM X210 (2026-07-15). Ready for `sdd-archive`.
 
 ### Spot-check summary (critical locks)
 
