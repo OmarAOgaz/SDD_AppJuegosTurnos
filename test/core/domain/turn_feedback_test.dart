@@ -119,6 +119,34 @@ void main() {
       );
     });
 
+    test(
+      'inGame + non-active + host pass for disconnected active -> pass',
+      () {
+        expect(
+          resolveTapIntent(
+            isMyDeviceActive: false,
+            canHostPassForDisconnectedActive: true,
+            gamePhase: GameRoomPhase.inGame,
+          ),
+          GestureIntent.pass,
+        );
+      },
+    );
+
+    test(
+      'host pass for disconnect does not apply outside inGame',
+      () {
+        expect(
+          resolveTapIntent(
+            isMyDeviceActive: false,
+            canHostPassForDisconnectedActive: true,
+            gamePhase: GameRoomPhase.betweenRounds,
+          ),
+          GestureIntent.none,
+        );
+      },
+    );
+
     for (final gamePhase in [
       GameRoomPhase.lobby,
       GameRoomPhase.betweenRounds,
