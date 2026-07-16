@@ -445,6 +445,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
     unawaited(_mdnsSub?.cancel() ?? Future<void>.value());
     if (_wakelockOn) {
+      _wakelockOn = false;
       unawaited(WakelockPlus.disable());
     }
     super.dispose();
@@ -1067,18 +1068,21 @@ class BlinkFeedbackLayer extends StatefulWidget {
 
   final TurnFeedbackVisual visual;
 
+  /// One black↔color transition duration. With [AnimationController.repeat]
+  /// `reverse: true`, each luminance transition takes this long (~1.8 Hz
+  /// per-transition, within the 1.5–2 Hz product target).
+  @visibleForTesting
+  static const flashCycle = Duration(milliseconds: 550);
+
   @override
   State<BlinkFeedbackLayer> createState() => _BlinkFeedbackLayerState();
 }
 
 class _BlinkFeedbackLayerState extends State<BlinkFeedbackLayer>
     with SingleTickerProviderStateMixin {
-  // ~1.8 Hz full black<->color<->black cycle, within the 1.5-2 Hz target.
-  static const _flashCycle = Duration(milliseconds: 550);
-
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: _flashCycle,
+    duration: BlinkFeedbackLayer.flashCycle,
   );
 
   @override
