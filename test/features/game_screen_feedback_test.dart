@@ -500,7 +500,7 @@ void main() {
     });
 
     testWidgets(
-        '1s long-press opens Salir partida without passing, even for the active player (host)',
+        '500ms long-press opens Salir partida without passing, even for the active player (host)',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
@@ -518,7 +518,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('1s long-press opens Salir partida without passing (client, non-active)',
+    testWidgets('500ms long-press opens Salir partida without passing (client, non-active)',
         (tester) async {
       final client = _clientAs(_hostId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
