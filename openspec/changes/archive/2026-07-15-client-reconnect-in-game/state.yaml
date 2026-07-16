@@ -30,11 +30,23 @@ phases:
     artifact: openspec/changes/client-reconnect-in-game/tasks.md
     engram_topic: sdd/client-reconnect-in-game/tasks
   apply:
-    status: pending
+    status: complete
+    completed_at: 2026-07-10
+    chain_strategy: stacked-to-main
+    note: PR1 SYNC+store, PR2 Home highlight, PR3 succession+reclaim
   verify:
-    status: pending
+    status: complete
+    completed_at: 2026-07-15
+    verdict: PASS
+    artifact: openspec/changes/archive/2026-07-15-client-reconnect-in-game/verify-report.md
+    engram_topic: sdd/client-reconnect-in-game/verify-report
+    e2e_4_2: PASS
+    e2e_devices: [SM_A505G, SM_X210]
   archive:
-    status: pending
+    status: complete
+    completed_at: 2026-07-15
+    artifact: openspec/changes/archive/2026-07-15-client-reconnect-in-game/
+    engram_topic: sdd/client-reconnect-in-game/archive-report
 
 recommendation: Approach C — resumable games + host succession/reclaim; heartbeat/SYNC only (no new reconnect msgs)
 locked_assumptions:
@@ -55,11 +67,12 @@ out_of_scope:
   - cloud
   - summary
   - pause
-next: sdd-apply
+next: none
+follow_up_archived: openspec/changes/archive/2026-07-15-reconnect-e2e-followups/
 design_delivery_hint: "chained PRs: SYNC glue+store → Home highlight → succession+reclaim"
 delivery_strategy: ask-on-risk
 chain_strategy: stacked-to-main
 decision_needed_before_apply: false
 budget_risk: High
 chained_prs_recommended: true
-note: "User chose stacked-to-main 2026-07-10; apply PR1 first"
+note: "Archived 2026-07-15 after E2E A–E PASS; follow-up reconnect-e2e-followups archived same day"

@@ -1,0 +1,19 @@
+schema: sdd-change-state
+version: 1
+change: reconnect-e2e-followups
+phase: archive
+status: complete
+created: 2026-07-15
+archived_at: 2026-07-15
+archived_to: openspec/changes/archive/2026-07-15-reconnect-e2e-followups/
+parent_change: client-reconnect-in-game
+source_e2e: client-reconnect-in-game/4.2
+persistence: openspec
+engram_project: ssd_app_juegos_turnos
+engram_topic: sdd/reconnect-e2e-followups/archive-report
+notes:
+  - P1 host-loss short grace vs 30s window
+  - P2 demotion seat identity + endpoint
+  - E2E A/C/D/E PASS 2026-07-15 SM A505G + SM X210
+  - Specs synced as ADDED onto main after parent client-reconnect promotion
+next: none

@@ -101,7 +101,7 @@ Every `GAME_STATE` (broadcast or `SYNC_REQUEST` response) MUST include at least:
 
 ### Requirement: In-game disconnect keeps slot
 
-During `IN_GAME` or `BETWEEN_ROUNDS`, a peer timeout MUST mark the player `connected=false`, keep the slot/`playerId`, and MUST NOT compact lobby-style. The active timer MUST continue. The product MUST NOT provide `RECONNECT_REQUEST` UI in this change. Host MAY pass for a disconnected active player per PASS_TURN rules.
+During `IN_GAME` or `BETWEEN_ROUNDS`, a peer timeout MUST mark the player `connected=false`, keep the slot/`playerId`, and MUST NOT compact lobby-style. The active timer MUST continue. Seat restore for the same device MUST follow `in-game-resume` / `lan-transport` (Home highlight + heartbeat rebind + `SYNC`); the product MUST NOT require stranger approve/deny `RECONNECT_REQUEST` UI. Host MAY pass for a disconnected active player per PASS_TURN rules. If the host drops and no seated player remains connected, the game MUST end per `host-succession`.
 
 #### Scenario: Mid-game client timeout
 
@@ -109,7 +109,26 @@ During `IN_GAME` or `BETWEEN_ROUNDS`, a peer timeout MUST mark the player `conne
 - WHEN that client heartbeats timeout
 - THEN the player remains in their slot with `connected=false`
 - AND other players continue
-- AND no reconnect approval UI is shown
+- AND no stranger reconnect-approval UI is shown
+
+#### Scenario: Host drop with no connected seats ends play
+
+- GIVEN an in-progress game where every non-host seat is disconnected
+- WHEN the host drops
+- THEN the game ends per `host-succession` / `END_GAME`
+- AND no waiting-host lobby is kept alive for that room
+
+### Requirement: Pass-turn needs a live authoritative host
+
+`PASS_TURN` MUST be accepted only by a live authoritative host (original or acting). During a **host-loss short grace** (see `host-succession`), the UI MAY disable pass and show waiting; after succession completes, the active seat MUST be able to pass without waiting for the full client reconnect window.
+
+#### Scenario: Active seat can pass after early succession
+
+- GIVEN host loss triggered succession within the short grace
+- AND this device is connected to the new acting host (or is the acting host)
+- AND this device’s seat is the active player
+- WHEN the player triggers pass turn
+- THEN the host accepts `PASS_TURN` and broadcasts updated `GAME_STATE`
 
 ### Requirement: END_GAME minimal ended screen and teardown
 

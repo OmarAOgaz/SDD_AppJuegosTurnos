@@ -4,7 +4,7 @@
 
 ### Requirement: Foreground service for Android host in game
 
-When the device is the room host and game status is `IN_GAME` on Android, the system MUST start a foreground service with a persistent notification so the WebSocket server and authoritative state remain active while the app is backgrounded. The foreground service MUST stop when the game ends (`END_GAME`) or the device is no longer host.
+When the device is the room host and game status is `IN_GAME` on Android, the system MUST start a foreground service with a persistent notification so the WebSocket server and authoritative state remain active while the app is backgrounded. The foreground service MUST stop when the game ends (`END_GAME`) or the device is no longer host. After host succession or reclaim, FGS MUST run on the current acting host device and MUST NOT remain on a device that lost host authority.
 
 #### Scenario: Android host switches apps during spike session
 
@@ -18,6 +18,12 @@ When the device is the room host and game status is `IN_GAME` on Android, the sy
 - WHEN `END_GAME` is processed or the host role is lost
 - THEN the foreground service stops and its notification is removed
 
+#### Scenario: FGS follows acting host after succession
+
+- GIVEN Android device A was host with FGS and succession elects device B
+- WHEN handoff completes
+- THEN FGS stops on A and MUST run on B while B remains acting host in-game
+
 ### Requirement: iOS host foreground policy
 
 On iOS, when the device is host and status is `IN_GAME`, the system MUST display a non-blocking in-game banner advising the user to keep the app open. The system MUST NOT claim reliable background hosting on iOS in MVP.
@@ -30,13 +36,20 @@ On iOS, when the device is host and status is `IN_GAME`, the system MUST display
 
 ### Requirement: Lifecycle observer and SYNC_REQUEST
 
-All app roles MUST register a lifecycle observer. When the app transitions to `resumed` during an active game session, a connected client MUST send `SYNC_REQUEST` to the host. If the socket is down, the client SHOULD reconnect first, then send `SYNC_REQUEST`.
+All app roles MUST register a lifecycle observer. An active game session for lifecycle purposes MUST include in-progress play where the device still holds resume identity (`roomId`/`playerId`/`deviceId`), including when the socket is down or reconnecting. When the app transitions to `resumed` during such a session, if the socket is alive the client MUST send `SYNC_REQUEST`; if the socket is down, the client MUST attempt reconnect first, then send `SYNC_REQUEST` after connected.
 
 #### Scenario: Client returns from background
 
 - GIVEN a client was in an active game and the app was backgrounded
 - WHEN the app becomes `resumed` and the socket is alive
 - THEN the client sends `SYNC_REQUEST` to the host
+
+#### Scenario: Resume with dead socket reconnects then SYNC
+
+- GIVEN a client has resume identity for an in-progress game and the socket is down
+- WHEN the app becomes `resumed`
+- THEN the client attempts reconnect
+- AND after connected sends `SYNC_REQUEST`
 
 ### Requirement: GAME_STATE includes serverNow
 
