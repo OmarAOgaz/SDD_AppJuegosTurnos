@@ -406,7 +406,7 @@ class GameSocketClient {
     _connection = null;
     if (intentional) {
       // Allow async onDone from the old socket to be ignored briefly.
-      await Future<void>.delayed(Duration.zero);
+      await Future<void>.value();
       _suppressCloseEvent = false;
     }
   }
