@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/catalogs/color_catalog.dart';
 import '../../core/constants/message_types.dart';
 import '../../core/domain/host_succession_coordinator.dart';
 import '../../core/domain/turn_engine.dart';
+import '../../core/domain/turn_feedback.dart';
 import '../../core/lifecycle/app_lifecycle_sync.dart';
 import '../../core/lifecycle/client_sync_state.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
@@ -47,6 +49,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _reclaimInFlight = false;
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
+  bool _wakelockOn = false;
 
   bool get _isHost => widget.role == 'host';
 
@@ -408,12 +411,31 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
+  /// Keeps the display awake for the duration of `inGame` on every device
+  /// (host and clients). Idempotent — only toggles the platform wakelock
+  /// when the desired state actually changes.
+  void _syncWakelock(GameRoomPhase gamePhase) {
+    final shouldBeOn = gamePhase == GameRoomPhase.inGame;
+    if (shouldBeOn == _wakelockOn) {
+      return;
+    }
+    _wakelockOn = shouldBeOn;
+    if (shouldBeOn) {
+      unawaited(WakelockPlus.enable());
+    } else {
+      unawaited(WakelockPlus.disable());
+    }
+  }
+
   @override
   void dispose() {
     _uiTick?.cancel();
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
     unawaited(_mdnsSub?.cancel() ?? Future<void>.value());
+    if (_wakelockOn) {
+      unawaited(WakelockPlus.disable());
+    }
     super.dispose();
   }
 
@@ -689,6 +711,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     _maybePersistHostResume(room);
+    _syncWakelock(room.gamePhase);
 
     final serverNow = DateTime.now().millisecondsSinceEpoch;
     TurnEngine.refreshPhase(room, serverNow);
@@ -697,9 +720,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       room.toGameStatePayload(serverNow: serverNow),
       room.turnState.activePlayerId,
     );
+    final onBlackBackground = room.gamePhase == GameRoomPhase.inGame;
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: onBlackBackground ? Colors.black : null,
+        foregroundColor: onBlackBackground ? Colors.white : null,
         title: Text('Ronda ${room.turnState.currentRound}'),
         actions: [
           TextButton(
@@ -711,6 +737,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 context.go('/ended');
               }
             },
+            style: onBlackBackground
+                ? TextButton.styleFrom(foregroundColor: Colors.white)
+                : null,
             child: const Text('Terminar'),
           ),
         ],
@@ -722,6 +751,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         remaining: remaining,
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
+        isMyDeviceActive: room.turnState.activePlayerId == room.hostPlayerId,
         canPass: _hostCanPassTurn(room, active),
         onPass: () {
           final passed = controller.passTurn(room.hostPlayerId);
@@ -761,9 +791,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final canPass = gamePhase == GameRoomPhase.inGame &&
         localPlayerId != null &&
         localPlayerId == activeId;
+    _syncWakelock(gamePhase);
+    final onBlackBackground = gamePhase == GameRoomPhase.inGame;
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: onBlackBackground ? Colors.black : null,
+        foregroundColor: onBlackBackground ? Colors.white : null,
         title: Text('Ronda ${state?['currentRound'] ?? '—'}'),
       ),
       body: _gameBody(
@@ -773,6 +807,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         remaining: remaining,
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
+        isMyDeviceActive: canPass,
         canPass: canPass,
         onPass: () {
           client?.sendPassTurn(playerId: localPlayerId!);
@@ -788,6 +823,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required int? remaining,
     required String activeName,
     required String? activeColorId,
+    required bool isMyDeviceActive,
     required bool canPass,
     required VoidCallback onPass,
     List<Widget>? betweenRoundsActions,
@@ -815,7 +851,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       );
     }
 
-    return Padding(
+    // Only `inGame` renders the ambient black/flash/fixed background; every
+    // other phase reaching this branch keeps the plain (non-black) UI.
+    final onBlackBackground = gamePhase == GameRoomPhase.inGame;
+    final foregroundColor = onBlackBackground ? Colors.white : null;
+    final visual = resolveTurnFeedback(
+      isMyDeviceActive: isMyDeviceActive,
+      gamePhase: gamePhase,
+      phase: phase,
+      activeColorId: activeColorId,
+    );
+
+    final content = Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -827,7 +874,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               Expanded(
                 child: Text(
                   'Turno de $activeName',
-                  style: Theme.of(context).textTheme.titleLarge,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(color: foregroundColor),
                 ),
               ),
             ],
@@ -859,6 +909,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 TurnPhase.warning => 'Quedan ≤ ${TurnEngine.warningThresholdSeconds}s',
                 TurnPhase.normal => 'Turno en curso',
               },
+              style: TextStyle(color: foregroundColor),
             ),
           ),
           const Spacer(),
@@ -868,12 +919,104 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               child: const Text('Pasar turno'),
             )
           else
-            const Text(
+            Text(
               'Esperando al jugador activo…',
               textAlign: TextAlign.center,
+              style: TextStyle(color: foregroundColor),
             ),
         ],
       ),
+    );
+
+    if (!onBlackBackground) {
+      return content;
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(child: BlinkFeedbackLayer(visual: visual)),
+        content,
+      ],
+    );
+  }
+}
+
+/// Isolated ambient background for the in-game screen: literal black, a
+/// smooth reverse-fade flash between black and [TurnFeedbackVisual.colorId],
+/// or a fixed solid color — driven purely by [TurnFeedbackVisual.kind].
+///
+/// Repaints independently of the rest of [GameScreen] via its own
+/// [AnimationController] and never receives pointer events, so any gesture
+/// layer placed above it (Phase 3) gets every touch.
+class BlinkFeedbackLayer extends StatefulWidget {
+  const BlinkFeedbackLayer({super.key, required this.visual});
+
+  final TurnFeedbackVisual visual;
+
+  @override
+  State<BlinkFeedbackLayer> createState() => _BlinkFeedbackLayerState();
+}
+
+class _BlinkFeedbackLayerState extends State<BlinkFeedbackLayer>
+    with SingleTickerProviderStateMixin {
+  // ~1.8 Hz full black<->color<->black cycle, within the 1.5-2 Hz target.
+  static const _flashCycle = Duration(milliseconds: 550);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _flashCycle,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _syncAnimation();
+  }
+
+  @override
+  void didUpdateWidget(BlinkFeedbackLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visual.kind != widget.visual.kind) {
+      _syncAnimation();
+    }
+  }
+
+  void _syncAnimation() {
+    if (widget.visual.kind == TurnFeedbackKind.flashing) {
+      _controller.repeat(reverse: true);
+    } else {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final flashColor = ColorCatalog.byId(widget.visual.colorId ?? '')?.color;
+
+    return IgnorePointer(
+      child: switch (widget.visual.kind) {
+        TurnFeedbackKind.black => const ColoredBox(color: Colors.black),
+        TurnFeedbackKind.fixed => ColoredBox(color: flashColor ?? Colors.black),
+        TurnFeedbackKind.flashing => AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) => ColoredBox(
+              color: Color.lerp(
+                    Colors.black,
+                    flashColor ?? Colors.black,
+                    _controller.value,
+                  ) ??
+                  Colors.black,
+            ),
+          ),
+      },
     );
   }
 }
