@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 import 'package:turnos_juegos/core/catalogs/color_catalog.dart';
@@ -17,18 +19,29 @@ import 'package:turnos_juegos/server/host_room_controller.dart';
 
 /// No-op wakelock backend so `WakelockPlus.enable()/disable()` (called from
 /// every `GameScreen` build while `inGame`) never hits a real platform
-/// channel in the widget test environment.
+/// channel in the widget test environment. Also records enable/disable for
+/// runtime assertions (verify coverage gap).
 class _FakeWakelockPlatform extends WakelockPlusPlatformInterface {
   bool enabledValue = false;
+  int enableCalls = 0;
+  int disableCalls = 0;
 
   @override
   Future<void> toggle({required bool enable}) async {
+    if (enable) {
+      enableCalls++;
+    } else {
+      disableCalls++;
+    }
     enabledValue = enable;
   }
 
   @override
   Future<bool> get enabled async => enabledValue;
 }
+
+/// Shared across tests in this file — reassigned in [setUp].
+late _FakeWakelockPlatform _wakelock;
 
 /// Records outbound intents instead of touching a real socket — the client
 /// under test is never `connect()`-ed, so base-class network code paths are
@@ -38,6 +51,7 @@ class _RecordingSocketClient extends GameSocketClient {
 
   final List<String> passTurnCalls = [];
   final List<String> leaveCalls = [];
+  int disconnectCalls = 0;
 
   @override
   void sendPassTurn({required String playerId}) {
@@ -50,7 +64,9 @@ class _RecordingSocketClient extends GameSocketClient {
   }
 
   @override
-  Future<void> disconnect() async {}
+  Future<void> disconnect() async {
+    disconnectCalls++;
+  }
 }
 
 /// Serves a pre-built [GameRoom] and records host-authority calls, bypassing
@@ -60,6 +76,7 @@ class _FakeHostRoomController extends HostRoomController {
 
   final GameRoom _fakeRoom;
   final List<String> passTurnCalls = [];
+  int endGameCalls = 0;
 
   @override
   GameRoom? get room => _fakeRoom;
@@ -71,7 +88,9 @@ class _FakeHostRoomController extends HostRoomController {
   }
 
   @override
-  Future<void> endGame() async {}
+  Future<void> endGame() async {
+    endGameCalls++;
+  }
 }
 
 class _FixedClientSyncNotifier extends ClientSyncNotifier {
@@ -188,6 +207,28 @@ Widget _wrapHost(HostRoomController controller) {
   );
 }
 
+/// Host wrap with [GoRouter] so `context.go('/ended')` from Salir/Terminar
+/// can be asserted without throwing.
+Widget _wrapHostRouted(HostRoomController controller) {
+  final router = GoRouter(
+    initialLocation: '/game',
+    routes: [
+      GoRoute(path: '/', builder: (_, __) => const Text('Home')),
+      GoRoute(
+        path: '/game',
+        builder: (_, __) => const GameScreen(role: 'host'),
+      ),
+      GoRoute(path: '/ended', builder: (_, __) => const Text('Ended')),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      hostRoomControllerProvider.overrideWith((ref) => controller),
+    ],
+    child: MaterialApp.router(routerConfig: router),
+  );
+}
+
 Widget _wrapClient({
   required GameSocketClient client,
   required ClientSyncState syncState,
@@ -200,6 +241,29 @@ Widget _wrapClient({
     // role defaults to 'client'; host/port stay null so `_ensureClientConnected`
     // no-ops instead of attempting a real socket connection.
     child: const MaterialApp(home: GameScreen(role: 'client')),
+  );
+}
+
+Widget _wrapClientRouted({
+  required GameSocketClient client,
+  required ClientSyncState syncState,
+}) {
+  final router = GoRouter(
+    initialLocation: '/game',
+    routes: [
+      GoRoute(path: '/', builder: (_, __) => const Text('Home')),
+      GoRoute(
+        path: '/game',
+        builder: (_, __) => const GameScreen(role: 'client'),
+      ),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      gameSocketClientProvider.overrideWith((ref) => client),
+      clientSyncProvider.overrideWith((ref) => _FixedClientSyncNotifier(syncState)),
+    ],
+    child: MaterialApp.router(routerConfig: router),
   );
 }
 
@@ -225,7 +289,10 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    WakelockPlusPlatformInterface.instance = _FakeWakelockPlatform();
+    _wakelock = _FakeWakelockPlatform();
+    // wakelock_plus routes through this exported var (not only PlatformInterface).
+    WakelockPlusPlatformInterface.instance = _wakelock;
+    wakelockPlusPlatformInstance = _wakelock;
   });
 
   group('Visual states (Requirement: turn-visual-feedback)', () {
@@ -432,6 +499,175 @@ void main() {
 
       expect(find.text('Salir partida'), findsOneWidget);
       expect(client.passTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Verify coverage gaps (CRITICAL + WARNING)', () {
+    testWidgets(
+        'wakelock enables on inGame for host and client, disables on leave/dispose',
+        (tester) async {
+      expect(_wakelock.enabledValue, isFalse);
+
+      final room = _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_wakelock.enabledValue, isTrue, reason: 'host inGame');
+      expect(_wakelock.enableCalls, greaterThan(0));
+
+      room.gamePhase = GameRoomPhase.betweenRounds;
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        _wakelock.enabledValue,
+        isFalse,
+        reason: 'leaving inGame must release display wakelock',
+      );
+
+      room.gamePhase = GameRoomPhase.inGame;
+      await tester.pump(const Duration(seconds: 1));
+      expect(_wakelock.enabledValue, isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(_wakelock.enabledValue, isFalse, reason: 'host dispose');
+
+      // Fresh platform spy so a prior host enable/disable cannot mask client.
+      _wakelock = _FakeWakelockPlatform();
+      WakelockPlusPlatformInterface.instance = _wakelock;
+      wakelockPlusPlatformInstance = _wakelock;
+
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      expect(find.byType(BlinkFeedbackLayer), findsOneWidget);
+      await tester.pump();
+      await tester.pump();
+      expect(_wakelock.enableCalls, greaterThan(0), reason: 'client inGame');
+      expect(_wakelock.enabledValue, isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(_wakelock.enabledValue, isFalse, reason: 'client dispose');
+    });
+
+    testWidgets(
+        'long-press Salir partida on host calls endGame and navigates to /ended',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHostRouted(controller));
+
+      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
+      await tester.pump(const Duration(seconds: 3));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Salir partida'));
+      await tester.pumpAndSettle();
+
+      expect(controller.endGameCalls, 1);
+      expect(controller.passTurnCalls, isEmpty);
+      expect(find.text('Ended'), findsOneWidget);
+    });
+
+    testWidgets(
+        'long-press Salir partida on client sendLeave + disconnect and navigates home',
+        (tester) async {
+      final client = _clientAs(_hostId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      await _mount(tester, _wrapClientRouted(client: client, syncState: sync));
+
+      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
+      await tester.pump(const Duration(seconds: 3));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Salir partida'));
+      await tester.pumpAndSettle();
+
+      expect(client.leaveCalls, [_hostId]);
+      expect(client.disconnectCalls, 1);
+      expect(client.passTurnCalls, isEmpty);
+      expect(find.text('Home'), findsOneWidget);
+    });
+
+    testWidgets('AppBar and status text stay white/legible on black inGame background',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      final appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.backgroundColor, Colors.black);
+      expect(appBar.foregroundColor, Colors.white);
+
+      final terminar = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, 'Terminar'),
+      );
+      expect(
+        terminar.style?.foregroundColor?.resolve(const <WidgetState>{}),
+        Colors.white,
+      );
+
+      final status = tester.widget<Text>(find.text('Turno en curso'));
+      expect(status.style?.color, Colors.white);
+
+      final title = tester.widget<Text>(find.text('Turno de $_hostName'));
+      expect(title.style?.color, Colors.white);
+
+      expect(find.byType(TextButton), findsOneWidget);
+      expect(terminar.onPressed, isNotNull);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('fixed color clears to black when active seat changes (turn passed)',
+        (tester) async {
+      final room = _buildHostRoom(activePlayerId: _hostId, remainingSeconds: -5);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.fixed);
+
+      room.turnState.activePlayerId = _clientId;
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(
+        _blinkLayer(tester).visual.kind,
+        TurnFeedbackKind.black,
+        reason: 'after turn passes, former active device must return to black',
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('flash cycle duration is within 1.5–2 Hz per-transition target',
+        (tester) async {
+      final hz = 1000 / BlinkFeedbackLayer.flashCycle.inMilliseconds;
+      expect(hz, inInclusiveRange(1.5, 2.0));
+
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 10);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+
+      ColoredBox flashBox() => tester.widget<ColoredBox>(
+            find.descendant(
+              of: find.byType(BlinkFeedbackLayer),
+              matching: find.byType(ColoredBox),
+            ),
+          );
+
+      expect(flashBox().color, Colors.black);
+      await tester.pump(BlinkFeedbackLayer.flashCycle ~/ 2);
+      expect(
+        flashBox().color,
+        isNot(Colors.black),
+        reason: 'mid-cycle should lerp toward the player color',
+      );
 
       await tester.pumpWidget(const SizedBox());
     });
