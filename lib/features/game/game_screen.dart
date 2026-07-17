@@ -9,10 +9,13 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/catalogs/color_catalog.dart';
 import '../../core/constants/message_types.dart';
 import '../../core/domain/host_succession_coordinator.dart';
+import '../../core/domain/pickup_detector.dart';
 import '../../core/domain/turn_engine.dart';
 import '../../core/domain/turn_feedback.dart';
+import '../../core/domain/turn_info_presentation.dart';
 import '../../core/lifecycle/app_lifecycle_sync.dart';
 import '../../core/lifecycle/client_sync_state.dart';
+import '../../core/lifecycle/immersive_system_ui.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
 import '../../core/models/discovered_room.dart';
 import '../../core/models/game_phase.dart';
@@ -22,6 +25,7 @@ import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
+import '../../core/sensors/motion_sensor_source.dart';
 
 /// Identifies the sole full-screen tap/long-press layer during `inGame` —
 /// exposed so widget tests can target it unambiguously (Scaffold/MaterialApp
@@ -37,6 +41,18 @@ const inGameInfoPanelKey = Key('inGameInfoPanel');
 @visibleForTesting
 const inGameInfoPanelLongPress = Duration(seconds: 2);
 
+/// Transient turn-info overlay (tap or motion). Kept for existing finders.
+@visibleForTesting
+const turnInfoPresentationKey = Key('active-turn-toast');
+
+/// Localized time line inside the turn-info overlay.
+@visibleForTesting
+const turnInfoTimeKey = Key('turn-info-time');
+
+/// How long tap/motion turn-info stays visible (immutable through timeout).
+@visibleForTesting
+const turnInfoPresentationTimeout = Duration(seconds: 2);
+
 /// In-game turn timer UI for host and clients.
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({
@@ -44,11 +60,27 @@ class GameScreen extends ConsumerStatefulWidget {
     this.role = 'host',
     this.host,
     this.port,
+    this.motionSensorSource,
+    this.pickupDetector,
+    this.immersiveSystemUi,
+    this.now,
   });
 
   final String role;
   final String? host;
   final int? port;
+
+  /// Injectable motion stream (tests inject fakes; production uses sensors).
+  final MotionSensorSource? motionSensorSource;
+
+  /// Optional shared detector instance for tests.
+  final PickupDetector? pickupDetector;
+
+  /// Injectable immersive SystemChrome owner (tests spy on apply/restore).
+  final ImmersiveSystemUi? immersiveSystemUi;
+
+  /// Wall-clock used when capturing presentation time (tests inject fixed).
+  final DateTime Function()? now;
 
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
@@ -60,21 +92,34 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   StreamSubscription<SocketClientState>? _socketStateSub;
   StreamSubscription<WsEnvelope>? _socketMessageSub;
   StreamSubscription<List<DiscoveredRoom>>? _mdnsSub;
+  StreamSubscription<PickupSample>? _motionSub;
+  Future<void> _motionLifecycle = Future<void>.value();
+  int _motionSessionGen = 0;
   bool _successionInFlight = false;
   bool _reclaimInFlight = false;
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
   bool _wakelockOn = false;
-  String? _activeToastName;
-  Color? _activeToastColor;
-  Timer? _toastTimer;
+  TurnInfoPresentation? _activePresentation;
+  Timer? _presentationTimer;
   bool _panelOpen = false;
+  bool _appInForeground = true;
+  bool _motionDegraded = false;
+  GameRoomPhase? _cachedPhase;
+  late final MotionSensorSource _motionSource;
+  late final PickupDetector _pickupDetector;
+  late final ImmersiveSystemUi _immersive;
+  late final DateTime Function() _now;
 
   bool get _isHost => widget.role == 'host';
 
   @override
   void initState() {
     super.initState();
+    _motionSource = widget.motionSensorSource ?? SensorsPlusMotionSource();
+    _pickupDetector = widget.pickupDetector ?? PickupDetector();
+    _immersive = widget.immersiveSystemUi ?? ImmersiveSystemUi();
+    _now = widget.now ?? DateTime.now;
     _uiTick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {});
@@ -450,10 +495,297 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
+  /// Coordinates wakelock, immersive System UI, and motion subscription for
+  /// the current phase. Called from host/client build paths (outside stream
+  /// creation in `build` body widgets) and from lifecycle / panel edges.
+  void _syncInGameChrome(GameRoomPhase gamePhase) {
+    final leftInGame = _cachedPhase == GameRoomPhase.inGame &&
+        gamePhase != GameRoomPhase.inGame;
+    _cachedPhase = gamePhase;
+    _syncWakelock(gamePhase);
+    _syncImmersive(gamePhase);
+    if (leftInGame) {
+      // Avoid setState during build; overlay is already off-tree outside inGame.
+      _clearPresentation(notify: false);
+    }
+    _syncMotionSubscription(gamePhase);
+  }
+
+  /// Tears down in-game chrome immediately when the host room becomes null
+  /// (demotion spinner / lost authority) — do not wait for dispose.
+  void _leaveEffectiveInGameSurface() {
+    final alreadyLeft = _cachedPhase == null &&
+        !_wakelockOn &&
+        !_immersive.isActive &&
+        _motionSub == null;
+    if (alreadyLeft) {
+      return;
+    }
+    final wasInGame = _cachedPhase == GameRoomPhase.inGame;
+    _cachedPhase = null;
+    _syncWakelock(GameRoomPhase.lobby);
+    unawaited(_immersive.restore());
+    if (wasInGame) {
+      _clearPresentation(notify: false);
+    }
+    unawaited(_stopMotion(resetDetector: true));
+  }
+
+  void _syncImmersive(GameRoomPhase gamePhase) {
+    if (gamePhase == GameRoomPhase.inGame) {
+      // Idempotent enter: skip if already applied. Resume path reapplies
+      // explicitly via [_onAppResumed].
+      if (!_immersive.isActive) {
+        unawaited(_immersive.apply());
+      }
+    } else {
+      unawaited(_immersive.restore());
+    }
+  }
+
+  bool _hasUsableLocalIdentity() {
+    final snapshot = _latestTurnInfoSnapshot();
+    if (snapshot == null || snapshot.gamePhase != GameRoomPhase.inGame) {
+      return false;
+    }
+    final localId = snapshot.localPlayerId?.trim();
+    return localId != null && localId.isNotEmpty;
+  }
+
+  bool _shouldRunMotion(GameRoomPhase? gamePhase) {
+    return mounted &&
+        _appInForeground &&
+        gamePhase == GameRoomPhase.inGame &&
+        !_panelOpen &&
+        !_motionDegraded &&
+        _hasUsableLocalIdentity();
+  }
+
+  /// True only while a live subscription may dispatch presentations.
+  bool _motionDispatchAllowed() {
+    return _shouldRunMotion(_cachedPhase) && _motionSub != null;
+  }
+
+  TurnInfoSnapshot? _latestTurnInfoSnapshot() {
+    if (_isHost) {
+      final room = ref.read(hostRoomControllerProvider).room;
+      if (room == null) {
+        return null;
+      }
+      final activeId = room.turnState.activePlayerId;
+      final active = activeId == null ? null : room.playersById[activeId];
+      return TurnInfoSnapshot(
+        gamePhase: room.gamePhase,
+        localPlayerId: room.hostPlayerId,
+        activePlayerId: activeId,
+        activePlayerName: active?.displayName,
+        activePlayerColorId: active?.colorId,
+      );
+    }
+
+    final client = ref.read(gameSocketClientProvider);
+    final sync = ref.read(clientSyncProvider);
+    final state = _newestGameState(sync.lastGameState, client?.lastGameState);
+    if (state == null) {
+      return null;
+    }
+    final activeId = state['activePlayerId'] as String?;
+    final active = _playerById(state, activeId);
+    return TurnInfoSnapshot(
+      gamePhase: GameRoomPhase.fromWire(state['gamePhase'] as String?),
+      localPlayerId: client?.localPlayerId,
+      activePlayerId: activeId,
+      activePlayerName: active?.displayName,
+      activePlayerColorId: active?.colorId,
+    );
+  }
+
+  void _syncMotionSubscription(GameRoomPhase gamePhase) {
+    if (_shouldRunMotion(gamePhase)) {
+      unawaited(_startMotionIfNeeded());
+      return;
+    }
+    // Avoid bumping the session generation on every idle rebuild — that would
+    // cancel a start scheduled immediately after stop (panel close / resume).
+    if (_motionSub != null) {
+      unawaited(_stopMotion(resetDetector: true));
+    } else {
+      _pickupDetector.reset();
+    }
+  }
+
+  Future<void> _startMotionIfNeeded() {
+    // Single-flight: every start is serialized on [_motionLifecycle] so
+    // concurrent sync/resume callers cannot each listen and orphan subs.
+    return _enqueueMotionOp(() async {
+      if (!mounted || _motionSub != null || !_shouldRunMotion(_cachedPhase)) {
+        return;
+      }
+      _pickupDetector.reset();
+      _debugMotion('subscribe');
+      final sessionGen = _motionSessionGen;
+      late final StreamSubscription<PickupSample> sub;
+      try {
+        sub = _motionSource.pickupSamples().listen(
+          (sample) {
+            if (sessionGen != _motionSessionGen ||
+                !identical(_motionSub, sub) ||
+                !_motionDispatchAllowed()) {
+              return;
+            }
+            _onPickupSample(sample);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (sessionGen != _motionSessionGen ||
+                !identical(_motionSub, sub)) {
+              return;
+            }
+            _debugMotion('sensor error (degraded): $error');
+            _motionDegraded = true;
+            unawaited(_stopMotion(resetDetector: true));
+          },
+          onDone: () {
+            if (sessionGen != _motionSessionGen ||
+                !identical(_motionSub, sub)) {
+              return;
+            }
+            _debugMotion('sensor done');
+            unawaited(_stopMotion(resetDetector: true));
+          },
+        );
+      } catch (error) {
+        _debugMotion('subscribe failed (degraded): $error');
+        _motionDegraded = true;
+        return;
+      }
+      // Re-check after listen attach (and any await inside cancel paths).
+      if (sessionGen != _motionSessionGen ||
+          _motionSub != null ||
+          !_shouldRunMotion(_cachedPhase)) {
+        unawaited(sub.cancel().catchError((Object _) {}));
+        return;
+      }
+      _motionSub = sub;
+    });
+  }
+
+  Future<void> _stopMotion({required bool resetDetector}) async {
+    final sub = _motionSub;
+    if (sub == null) {
+      // Idempotent: do not bump generation when already stopped.
+      if (resetDetector) {
+        _pickupDetector.reset();
+      }
+      return;
+    }
+    // Drop the live sub synchronously so late samples cannot dispatch, then
+    // serialize the platform cancel on the shared lifecycle mutex.
+    _motionSub = null;
+    _motionSessionGen++;
+    if (resetDetector) {
+      _pickupDetector.reset();
+    }
+    _debugMotion('unsubscribe');
+    await _enqueueMotionOp(() async {
+      try {
+        await sub.cancel().timeout(const Duration(milliseconds: 100));
+      } on TimeoutException {
+        _debugMotion('cancel timed out');
+      } catch (error) {
+        _debugMotion('cancel failed: $error');
+      }
+    });
+  }
+
+  /// Serializes motion start/stop so cancel and listen never overlap unsafely.
+  Future<void> _enqueueMotionOp(Future<void> Function() op) {
+    final result = _motionLifecycle.then((_) => op());
+    _motionLifecycle = result.catchError((Object _) {});
+    return result;
+  }
+
+  void _onPickupSample(PickupSample sample) {
+    if (!_motionDispatchAllowed()) {
+      return;
+    }
+    final trigger = _pickupDetector.addSample(sample);
+    if (trigger == null) {
+      return;
+    }
+    if (!_motionDispatchAllowed()) {
+      return;
+    }
+    _debugMotion('pickupFromRest');
+    // Motion is display-only: never resolveTapIntent / pass / panel.
+    _dispatchTurnInfoPresentation();
+  }
+
+  void _dispatchTurnInfoPresentation() {
+    final snapshot = _latestTurnInfoSnapshot();
+    if (snapshot == null) {
+      return;
+    }
+    final presentation = resolveTurnInfoPresentation(
+      snapshot: snapshot,
+      capturedAt: _now(),
+    );
+    if (presentation == null) {
+      return;
+    }
+    _showPresentation(presentation);
+  }
+
+  void _showPresentation(TurnInfoPresentation presentation) {
+    _presentationTimer?.cancel();
+    setState(() {
+      _activePresentation = presentation;
+    });
+    _presentationTimer = Timer(turnInfoPresentationTimeout, () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _activePresentation = null;
+      });
+    });
+  }
+
+  void _clearPresentation({required bool notify}) {
+    _presentationTimer?.cancel();
+    _presentationTimer = null;
+    if (_activePresentation == null) {
+      return;
+    }
+    if (notify && mounted) {
+      setState(() {
+        _activePresentation = null;
+      });
+    } else {
+      _activePresentation = null;
+    }
+  }
+
+  String _formatCapturedTime(BuildContext context, DateTime capturedAt) {
+    final localizations = MaterialLocalizations.of(context);
+    final use24h = MediaQuery.alwaysUse24HourFormatOf(context);
+    return localizations.formatTimeOfDay(
+      TimeOfDay.fromDateTime(capturedAt.toLocal()),
+      alwaysUse24HourFormat: use24h,
+    );
+  }
+
+  void _debugMotion(String message) {
+    assert(() {
+      debugPrint('[immersive-motion] $message');
+      return true;
+    }());
+  }
+
   @override
   void dispose() {
     _uiTick?.cancel();
-    _toastTimer?.cancel();
+    _presentationTimer?.cancel();
+    unawaited(_stopMotion(resetDetector: true));
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
     unawaited(_mdnsSub?.cancel() ?? Future<void>.value());
@@ -461,6 +793,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _wakelockOn = false;
       unawaited(WakelockPlus.disable());
     }
+    unawaited(_immersive.restore());
     super.dispose();
   }
 
@@ -501,6 +834,42 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       hasResumeIdentity: hasResume,
       socketState: client?.state,
     );
+  }
+
+  /// Host and client share the same session-active predicate for immersive /
+  /// motion lifecycle ownership.
+  bool _isSessionActive() {
+    if (_isHost) {
+      final room = ref.read(hostRoomControllerProvider).room;
+      if (room == null) {
+        return false;
+      }
+      return room.gamePhase == GameRoomPhase.inGame ||
+          room.gamePhase == GameRoomPhase.betweenRounds;
+    }
+    return _isClientSessionActive();
+  }
+
+  void _onAppPaused() {
+    _appInForeground = false;
+    unawaited(_stopMotion(resetDetector: true));
+    if (!_isHost) {
+      ref.read(clientSyncProvider.notifier).onPaused();
+    }
+  }
+
+  void _onAppResumed() {
+    _appInForeground = true;
+    final phase = _cachedPhase;
+    if (phase == GameRoomPhase.inGame) {
+      unawaited(_immersive.apply());
+    }
+    if (phase != null) {
+      _syncMotionSubscription(phase);
+    }
+    if (!_isHost) {
+      _onClientResumed();
+    }
   }
 
   Map<String, dynamic>? _newestGameState(
@@ -586,12 +955,17 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       });
     }
     if (_isHost) {
-      return _buildHost(context);
+      return SessionLifecycleListener(
+        isSessionActive: _isSessionActive,
+        onResumed: _onAppResumed,
+        onPaused: _onAppPaused,
+        child: _buildHost(context),
+      );
     }
     return SessionLifecycleListener(
-      isSessionActive: _isClientSessionActive,
-      onResumed: _onClientResumed,
-      onPaused: () => ref.read(clientSyncProvider.notifier).onPaused(),
+      isSessionActive: _isSessionActive,
+      onResumed: _onAppResumed,
+      onPaused: _onAppPaused,
       child: _buildClient(context),
     );
   }
@@ -703,6 +1077,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final controller = ref.watch(hostRoomControllerProvider);
     final room = controller.room;
     if (room == null) {
+      // Demotion / lost authority / intentional exit: tear down in-game surface
+      // immediately so sensors/immersive/wakelock do not linger until dispose.
+      _leaveEffectiveInGameSurface();
       if (_intentionalHostExit) {
         return Scaffold(
           body: Center(
@@ -723,7 +1100,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     _maybePersistHostResume(room);
-    _syncWakelock(room.gamePhase);
+    _syncInGameChrome(room.gamePhase);
 
     final serverNow = DateTime.now().millisecondsSinceEpoch;
     TurnEngine.refreshPhase(room, serverNow);
@@ -807,7 +1184,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final canPass = gamePhase == GameRoomPhase.inGame &&
         localPlayerId != null &&
         localPlayerId == activeId;
-    _syncWakelock(gamePhase);
+    _syncInGameChrome(gamePhase);
     final onBlackBackground = gamePhase == GameRoomPhase.inGame;
 
     Future<void> exitAsClient() async {
@@ -974,8 +1351,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       canHostPassForDisconnectedActive:
                           canHostPassForDisconnectedActive,
                       gamePhase: gamePhase,
-                      activeName: activeName,
-                      activeColor: color,
                       onPass: onPass,
                     );
               },
@@ -994,7 +1369,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             fit: StackFit.expand,
             children: [
               Positioned.fill(child: BlinkFeedbackLayer(visual: visual)),
-              if (_activeToastName != null)
+              if (_activePresentation != null)
                 Positioned(
                   top: 24,
                   left: 24,
@@ -1010,30 +1385,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           color: Colors.black.withValues(alpha: 0.65),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Text.rich(
-                          key: const Key('active-turn-toast'),
-                          TextSpan(
-                            children: [
-                              const TextSpan(
-                                text: 'Turno de ',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                ),
-                              ),
-                              TextSpan(
-                                text: '"$_activeToastName"',
-                                style: TextStyle(
-                                  color: _activeToastColor ?? Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                ),
-                              ),
-                            ],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
+                        child: _buildTurnInfoPresentationContent(context),
                       ),
                     ),
                   ),
@@ -1053,6 +1405,59 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             exitActionLabel: exitActionLabel,
             onExit: onExit,
           ),
+      ],
+    );
+  }
+
+  Widget _buildTurnInfoPresentationContent(BuildContext context) {
+    final presentation = _activePresentation!;
+    final timeText = _formatCapturedTime(context, presentation.capturedAt);
+    const baseStyle = TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.bold,
+      fontSize: 18,
+    );
+
+    final Widget message;
+    switch (presentation) {
+      case OwnTurnPresentation():
+        message = Text(
+          presentation.message,
+          style: baseStyle,
+          textAlign: TextAlign.center,
+        );
+      case WhoseTurnPresentation(:final activePlayerName, :final activeColorId):
+        final nameColor =
+            ColorCatalog.byId(activeColorId ?? '')?.color ?? Colors.white;
+        message = Text.rich(
+          TextSpan(
+            children: [
+              const TextSpan(text: 'Turno de ', style: baseStyle),
+              TextSpan(
+                text: '"$activePlayerName"',
+                style: baseStyle.copyWith(color: nameColor),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+        );
+    }
+
+    return Column(
+      key: turnInfoPresentationKey,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          timeText,
+          key: turnInfoTimeKey,
+          style: baseStyle.copyWith(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 4),
+        message,
       ],
     );
   }
@@ -1168,12 +1573,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   void _openInfoPanel() {
-    _toastTimer?.cancel();
+    _presentationTimer?.cancel();
     setState(() {
       _panelOpen = true;
-      _activeToastName = null;
-      _activeToastColor = null;
+      _activePresentation = null;
     });
+    // Panel open suppresses motion until dismissed.
+    final phase = _cachedPhase;
+    if (phase != null) {
+      _syncMotionSubscription(phase);
+    }
   }
 
   void _dismissInfoPanel() {
@@ -1183,17 +1592,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     setState(() {
       _panelOpen = false;
     });
+    final phase = _cachedPhase;
+    if (phase != null) {
+      _syncMotionSubscription(phase);
+    }
   }
 
   /// Resolves the tap intent (Phase 1) and either passes the turn (active
   /// device, or host when the active seat is disconnected) or shows a
-  /// transient 'whose turn' toast (non-active device).
+  /// transient turn-info presentation (non-active device).
   void _handleInGameTap({
     required bool isMyDeviceActive,
     bool canHostPassForDisconnectedActive = false,
     required GameRoomPhase gamePhase,
-    required String activeName,
-    required Color activeColor,
     required VoidCallback onPass,
   }) {
     if (_panelOpen) {
@@ -1208,26 +1619,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       case GestureIntent.pass:
         onPass();
       case GestureIntent.showActiveToast:
-        _showActiveToast(activeName, activeColor);
+        // Shared read-only path with motion (TurnInfoPresentation).
+        _dispatchTurnInfoPresentation();
       case GestureIntent.none:
         break;
     }
-  }
-
-  void _showActiveToast(String activeName, Color activeColor) {
-    _toastTimer?.cancel();
-    setState(() {
-      _activeToastName = activeName;
-      _activeToastColor = activeColor;
-    });
-    _toastTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _activeToastName = null;
-          _activeToastColor = null;
-        });
-      }
-    });
   }
 }
 

@@ -86,10 +86,11 @@ class AppLifecycleSync with WidgetsBindingObserver {
         onResumed();
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
-        onPaused();
-      case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
-        break;
+      case AppLifecycleState.detached:
+        // Background / non-foreground states cancel sensors and reset armed
+        // pickup state (host and client share this path).
+        onPaused();
     }
   }
 }

@@ -9,13 +9,17 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 import 'package:turnos_juegos/core/catalogs/color_catalog.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
+import 'package:turnos_juegos/core/lifecycle/immersive_system_ui.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/player.dart';
 import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
+import 'package:turnos_juegos/core/sensors/motion_sensor_source.dart';
 import 'package:turnos_juegos/features/game/game_screen.dart';
 import 'package:turnos_juegos/server/host_room_controller.dart';
+
+import 'fake_motion_sensor_source.dart';
 
 /// No-op wakelock backend so `WakelockPlus.enable()/disable()` (called from
 /// every `GameScreen` build while `inGame`) never hits a real platform
@@ -42,12 +46,23 @@ class _FakeWakelockPlatform extends WakelockPlusPlatformInterface {
 
 /// Shared across tests in this file — reassigned in [setUp].
 late _FakeWakelockPlatform _wakelock;
+late FakeMotionSensorSource _motion;
+late ImmersiveSystemUi _immersive;
+DateTime _fixedNow = DateTime(2026, 7, 16, 15, 30);
 
-Finder get _activeTurnToast => find.byKey(const Key('active-turn-toast'));
+Finder get _activeTurnToast => find.byKey(turnInfoPresentationKey);
+Finder get _turnInfoTime => find.byKey(turnInfoTimeKey);
 
-TextSpan _toastSpanTree(WidgetTester tester) {
-  final text = tester.widget<Text>(_activeTurnToast);
-  return text.textSpan! as TextSpan;
+TextSpan _whoseTurnSpanTree(WidgetTester tester) {
+  final rich = tester.widget<Text>(
+    find.descendant(
+      of: _activeTurnToast,
+      matching: find.byWidgetPredicate(
+        (w) => w is Text && w.textSpan != null,
+      ),
+    ),
+  );
+  return rich.textSpan! as TextSpan;
 }
 
 /// Records outbound intents instead of touching a real socket — the client
@@ -81,12 +96,16 @@ class _RecordingSocketClient extends GameSocketClient {
 class _FakeHostRoomController extends HostRoomController {
   _FakeHostRoomController(this._fakeRoom);
 
-  final GameRoom _fakeRoom;
+  GameRoom? _fakeRoom;
   final List<String> passTurnCalls = [];
   int endGameCalls = 0;
 
   @override
   GameRoom? get room => _fakeRoom;
+
+  void clearRoom() {
+    _fakeRoom = null;
+  }
 
   @override
   bool passTurn(String senderPlayerId) {
@@ -207,25 +226,47 @@ _RecordingSocketClient _clientAs(String localPlayerId) {
   return client;
 }
 
-Widget _wrapHost(HostRoomController controller) {
+Widget _wrapHost(
+  HostRoomController controller, {
+  MotionSensorSource? motionSensorSource,
+  ImmersiveSystemUi? immersiveSystemUi,
+  DateTime Function()? now,
+}) {
   return ProviderScope(
     overrides: [
       hostRoomControllerProvider.overrideWith((ref) => controller),
     ],
-    child: const MaterialApp(home: GameScreen(role: 'host')),
+    child: MaterialApp(
+      home: GameScreen(
+        role: 'host',
+        motionSensorSource: motionSensorSource ?? _motion,
+        immersiveSystemUi: immersiveSystemUi ?? _immersive,
+        now: now ?? () => _fixedNow,
+      ),
+    ),
   );
 }
 
 /// Host wrap with [GoRouter] so `context.go('/ended')` from Salir/Terminar
 /// can be asserted without throwing.
-Widget _wrapHostRouted(HostRoomController controller) {
+Widget _wrapHostRouted(
+  HostRoomController controller, {
+  MotionSensorSource? motionSensorSource,
+  ImmersiveSystemUi? immersiveSystemUi,
+  DateTime Function()? now,
+}) {
   final router = GoRouter(
     initialLocation: '/game',
     routes: [
       GoRoute(path: '/', builder: (_, __) => const Text('Home')),
       GoRoute(
         path: '/game',
-        builder: (_, __) => const GameScreen(role: 'host'),
+        builder: (_, __) => GameScreen(
+          role: 'host',
+          motionSensorSource: motionSensorSource ?? _motion,
+          immersiveSystemUi: immersiveSystemUi ?? _immersive,
+          now: now ?? () => _fixedNow,
+        ),
       ),
       GoRoute(path: '/ended', builder: (_, __) => const Text('Ended')),
     ],
@@ -241,6 +282,10 @@ Widget _wrapHostRouted(HostRoomController controller) {
 Widget _wrapClient({
   required GameSocketClient client,
   required ClientSyncState syncState,
+  MotionSensorSource? motionSensorSource,
+  ImmersiveSystemUi? immersiveSystemUi,
+  DateTime Function()? now,
+  bool alwaysUse24HourFormat = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -250,13 +295,30 @@ Widget _wrapClient({
     ],
     // role defaults to 'client'; host/port stay null so `_ensureClientConnected`
     // no-ops instead of attempting a real socket connection.
-    child: const MaterialApp(home: GameScreen(role: 'client')),
+    child: MaterialApp(
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(alwaysUse24HourFormat: alwaysUse24HourFormat),
+          child: child!,
+        );
+      },
+      home: GameScreen(
+        role: 'client',
+        motionSensorSource: motionSensorSource ?? _motion,
+        immersiveSystemUi: immersiveSystemUi ?? _immersive,
+        now: now ?? () => _fixedNow,
+      ),
+    ),
   );
 }
 
 Widget _wrapClientRouted({
   required GameSocketClient client,
   required ClientSyncState syncState,
+  MotionSensorSource? motionSensorSource,
+  ImmersiveSystemUi? immersiveSystemUi,
+  DateTime Function()? now,
 }) {
   final router = GoRouter(
     initialLocation: '/game',
@@ -264,7 +326,12 @@ Widget _wrapClientRouted({
       GoRoute(path: '/', builder: (_, __) => const Text('Home')),
       GoRoute(
         path: '/game',
-        builder: (_, __) => const GameScreen(role: 'client'),
+        builder: (_, __) => GameScreen(
+          role: 'client',
+          motionSensorSource: motionSensorSource ?? _motion,
+          immersiveSystemUi: immersiveSystemUi ?? _immersive,
+          now: now ?? () => _fixedNow,
+        ),
       ),
     ],
   );
@@ -313,6 +380,17 @@ void main() {
     // wakelock_plus routes through this exported var (not only PlatformInterface).
     WakelockPlusPlatformInterface.instance = _wakelock;
     wakelockPlusPlatformInstance = _wakelock;
+    _motion = FakeMotionSensorSource();
+    _immersive = fakeImmersiveSystemUi();
+    _fixedNow = DateTime(2026, 7, 16, 15, 30);
+  });
+
+  tearDown(() async {
+    await _motion.dispose();
+    final binding = WidgetsBinding.instance;
+    if (binding is TestWidgetsFlutterBinding) {
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    }
   });
 
   group('Visual states (Requirement: turn-visual-feedback)', () {
@@ -505,7 +583,8 @@ void main() {
 
       expect(client.passTurnCalls, isEmpty);
       expect(_activeTurnToast, findsOneWidget);
-      final root = _toastSpanTree(tester);
+      expect(_turnInfoTime, findsOneWidget);
+      final root = _whoseTurnSpanTree(tester);
       expect(root.toPlainText(), 'Turno de "$_clientName"');
       expect(root.children, hasLength(2));
       expect((root.children![0] as TextSpan).text, 'Turno de ');
@@ -785,6 +864,369 @@ void main() {
         flashBox().color,
         isNot(Colors.black),
         reason: 'mid-cycle should lerp toward the player color',
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('PR5 motion + presentation + immersive', () {
+    testWidgets(
+        'motion pickup shows own-turn presentation and never passes (host)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_infoPanel, findsNothing);
+      expect(_activeTurnToast, findsOneWidget);
+      expect(find.text('Es tu turno!!'), findsOneWidget);
+      expect(_turnInfoTime, findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'motion pickup shows whose-turn for non-active and never passes (client)',
+        (tester) async {
+      final client = _clientAs(_hostId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await tester.pump();
+
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+
+      expect(client.passTurnCalls, isEmpty);
+      expect(_infoPanel, findsNothing);
+      expect(_activeTurnToast, findsOneWidget);
+      expect(find.text('Es tu turno!!'), findsNothing);
+      final root = _whoseTurnSpanTree(tester);
+      expect(root.toPlainText(), 'Turno de "$_clientName"');
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host motion never passes for disconnected active seat (tap-only exception)',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_activeTurnToast, findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'visible presentation keeps dispatch-time snapshot through turn change',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+      expect(_activeTurnToast, findsOneWidget);
+      final timeBefore = tester.widget<Text>(_turnInfoTime).data;
+      final whoseBefore = _whoseTurnSpanTree(tester).toPlainText();
+
+      // Turn flips while overlay is still visible.
+      room.turnState.activePlayerId = _hostId;
+      _fixedNow = DateTime(2026, 7, 16, 16, 45);
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(_activeTurnToast, findsOneWidget);
+      expect(tester.widget<Text>(_turnInfoTime).data, timeBefore);
+      expect(_whoseTurnSpanTree(tester).toPlainText(), whoseBefore);
+      expect(find.text('Es tu turno!!'), findsNothing);
+
+      await tester.pump(turnInfoPresentationTimeout);
+      expect(_activeTurnToast, findsNothing);
+
+      // Post-timeout event uses latest ownership + new captured time.
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+      // Host is now active — tap passes, no presentation.
+      expect(controller.passTurnCalls, [_hostId]);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('panel open suppresses motion subscription; close restarts',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+      final listensBeforePanel = _motion.listenCount;
+
+      await _longPressOpenPanel(tester);
+      expect(_infoPanel, findsOneWidget);
+      expect(_motion.hasListener, isFalse);
+
+      await tester.tap(find.byTooltip('Cerrar'));
+      await tester.pumpAndSettle();
+      expect(_infoPanel, findsNothing);
+      // Flush motion start chained after panel-open cancel.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        _motion.hasListener,
+        isTrue,
+        reason: 'listen=${_motion.listenCount} cancel=${_motion.cancelCount}',
+      );
+      expect(_motion.listenCount, greaterThan(listensBeforePanel));
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('immersive applies on inGame and restores on leave/dispose',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_immersive.isActive, isTrue);
+      expect(_immersive.applyCallCount, greaterThan(0));
+
+      room.gamePhase = GameRoomPhase.betweenRounds;
+      await tester.pump(const Duration(seconds: 1));
+      expect(_immersive.isActive, isFalse);
+      expect(_immersive.restoreCallCount, greaterThan(0));
+      expect(find.byType(AppBar), findsOneWidget);
+
+      room.gamePhase = GameRoomPhase.inGame;
+      await tester.pump(const Duration(seconds: 1));
+      expect(_immersive.isActive, isTrue);
+
+      final restoresBeforeDispose = _immersive.restoreCallCount;
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(
+        _immersive.restoreCallCount,
+        greaterThan(restoresBeforeDispose),
+      );
+    });
+
+    testWidgets('locale 24h preference formats captured presentation time',
+        (tester) async {
+      final client = _clientAs(_hostId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      _fixedNow = DateTime(2026, 7, 16, 15, 30);
+      await _mount(
+        tester,
+        _wrapClient(
+          client: client,
+          syncState: sync,
+          alwaysUse24HourFormat: true,
+        ),
+      );
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+
+      final timeText = tester.widget<Text>(_turnInfoTime).data!;
+      // 24h format should include 15 (hour) rather than AM/PM markers alone.
+      expect(timeText.contains('15'), isTrue);
+      expect(timeText.toLowerCase().contains('p'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('sensor error degrades silently; tap still works',
+        (tester) async {
+      final client = _clientAs(_hostId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+
+      _motion.emitError(StateError('sensor unavailable'));
+      await tester.pump();
+      expect(_motion.hasListener, isFalse);
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+      expect(client.passTurnCalls, isEmpty);
+      expect(_activeTurnToast, findsOneWidget);
+
+      await _longPressOpenPanel(tester);
+      expect(_infoPanel, findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'app lifecycle pause cancels motion; resume resubscribes when inGame',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      expect(_motion.hasListener, isFalse);
+      expect(_activeTurnToast, findsNothing);
+
+      // Late emissions after pause must not surface a toast.
+      _motion.emit(fakePickupSample(5000, tilt: 30));
+      await tester.pump();
+      expect(_activeTurnToast, findsNothing);
+
+      final listensBeforeResume = _motion.listenCount;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+      expect(_motion.listenCount, greaterThan(listensBeforeResume));
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('leaving inGame cancels motion subscription', (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+
+      room.gamePhase = GameRoomPhase.betweenRounds;
+      await tester.pump(const Duration(seconds: 1));
+      expect(_motion.hasListener, isFalse);
+      expect(_immersive.isActive, isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'immersive resume reapplies while still inGame (apply count increases)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_immersive.isActive, isTrue);
+      final appliesBefore = _immersive.applyCallCount;
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(_immersive.isActive, isTrue);
+      expect(_immersive.applyCallCount, greaterThan(appliesBefore));
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('client immersive apply/restore at least once', (tester) async {
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await tester.pump();
+
+      expect(_immersive.applyCallCount, greaterThan(0));
+      expect(_immersive.isActive, isTrue);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(_immersive.restoreCallCount, greaterThan(0));
+      expect(_immersive.isActive, isFalse);
+    });
+
+    testWidgets(
+        'host room null (demotion) stops motion, wakelock, and immersive',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      // Routed wrap so demotion's context.go('/') does not throw.
+      await _mount(tester, _wrapHostRouted(controller));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+      expect(_immersive.isActive, isTrue);
+      expect(_wakelock.enabledValue, isTrue);
+
+      controller.clearRoom();
+      // Provider watch does not see mutable room clears — uiTick rebuilds.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(_motion.hasListener, isFalse);
+      expect(_immersive.isActive, isFalse);
+      expect(_wakelock.enabledValue, isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'concurrent panel-close and resume starts leave a single listener',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+
+      await _longPressOpenPanel(tester);
+      expect(_motion.hasListener, isFalse);
+      expect(_infoPanel, findsOneWidget);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      expect(_motion.hasListener, isFalse);
+
+      // Fire dismiss (start) and resume (start) in the same turn so both
+      // enqueue before either listen completes — mutex must collapse to one.
+      await tester.tap(find.byTooltip('Cerrar'));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(_infoPanel, findsNothing);
+      expect(_motion.hasListener, isTrue);
+      expect(
+        _motion.listenCount - _motion.cancelCount,
+        1,
+        reason: 'exactly one live subscription',
+      );
+      expect(
+        _motion.maxConcurrentListeners,
+        1,
+        reason: 'starts must not overlap listens',
       );
 
       await tester.pumpWidget(const SizedBox());
