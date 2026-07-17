@@ -21,17 +21,32 @@ class AccelerationVector {
   }
 }
 
-/// Raw (gravity included) and user (gravity removed) acceleration at a
+/// Immutable 3-axis angular rate in rad/s (gyroscope).
+class AngularRateVector {
+  const AngularRateVector(this.x, this.y, this.z);
+
+  final double x;
+  final double y;
+  final double z;
+
+  double get magnitude => math.sqrt(x * x + y * y + z * z);
+
+  bool get isFinite => x.isFinite && y.isFinite && z.isFinite;
+}
+
+/// Raw (gravity included), user (gravity removed), and gyro rates at a
 /// monotonic [timestamp]. Prefer elapsed/`Stopwatch` time, never wall clock.
 class PickupSample {
   const PickupSample({
     required this.raw,
     required this.user,
+    required this.gyro,
     required this.timestamp,
   });
 
   final AccelerationVector raw;
   final AccelerationVector user;
+  final AngularRateVector gyro;
   final Duration timestamp;
 }
 
@@ -46,19 +61,25 @@ enum PickupDetectorPhase { idle, qualifyingRest, armed, cooldown }
 
 /// Provisional calibration thresholds for physical E2E tuning.
 ///
-/// Defaults are starting points only; device/OEM variance may require
-/// adjusting rest, tilt, lift, settle, gap, timeout, or cooldown values.
+/// Motion starts only when gravity-direction tilt AND gyroscope rate both
+/// exceed thresholds — never on linear lift/shake or gravity-estimate noise
+/// alone (e.g. table bang). If false triggers appear at rest, raise
+/// [restMagnitudeThreshold], [restGyroThreshold], or
+/// [restQualificationDuration]. If intentional tilts are missed, lower
+/// [tiltThresholdDegrees] / [motionGyroThreshold] slightly or raise
+/// [motionTimeout].
 class PickupDetectorConfig {
   const PickupDetectorConfig({
-    this.restQualificationDuration = const Duration(milliseconds: 900),
-    this.maxRestSampleGap = const Duration(milliseconds: 250),
-    this.settleDuration = const Duration(milliseconds: 250),
-    this.motionTimeout = const Duration(milliseconds: 600),
-    this.cooldownDuration = const Duration(milliseconds: 2000),
-    this.restMagnitudeThreshold = 0.6,
-    this.restDirectionToleranceDegrees = 6,
-    this.tiltThresholdDegrees = 22,
-    this.liftImpulseThreshold = 2.5,
+    this.restQualificationDuration = const Duration(milliseconds: 400),
+    this.maxRestSampleGap = const Duration(milliseconds: 400),
+    this.settleDuration = const Duration(milliseconds: 100),
+    this.motionTimeout = const Duration(milliseconds: 1800),
+    this.cooldownDuration = const Duration(milliseconds: 1500),
+    this.restMagnitudeThreshold = 1.2,
+    this.restGyroThreshold = 0.4,
+    this.restDirectionToleranceDegrees = 12,
+    this.tiltThresholdDegrees = 16,
+    this.motionGyroThreshold = 0.7,
     this.minimumRawMagnitude = 1,
   });
 
@@ -81,24 +102,31 @@ class PickupDetectorConfig {
   /// Maximum user-acceleration magnitude treated as rest/settle.
   final double restMagnitudeThreshold;
 
+  /// Maximum gyro magnitude (rad/s) treated as rest/settle.
+  final double restGyroThreshold;
+
   /// Maximum gravity-direction drift still counted as the same rest pose.
   final double restDirectionToleranceDegrees;
 
-  /// Baseline-relative tilt that starts a motion candidate.
+  /// Baseline-relative tilt (degrees) that may start a motion candidate.
   final double tiltThresholdDegrees;
 
-  /// User-acceleration impulse that starts a lift candidate.
-  final double liftImpulseThreshold;
+  /// Minimum gyro magnitude (rad/s) required together with tilt to start
+  /// a motion candidate.
+  final double motionGyroThreshold;
 
   /// Reject near-zero/invalid raw vectors below this magnitude.
   final double minimumRawMagnitude;
 }
 
-/// Pure duration-based pickup/tilt detector over raw + user acceleration.
+/// Pure duration-based tilt+gyro detector over raw + user + gyro samples.
 ///
-/// State machine: continuous qualified rest → armed → candidate motion →
-/// one-shot pickup → cooldown → rearm only after cooldown plus fresh
-/// continuous rest. Rejects shake/bump/oscillation via settle + timeout.
+/// State machine: continuous qualified rest → armed → candidate tilt+gyro →
+/// one-shot presentation → cooldown → rearm only after cooldown plus fresh
+/// continuous rest. Starts only when gravity direction tilts past the
+/// threshold AND gyro rate confirms real rotation; linear lift/shake or
+/// accel-only gravity noise never arms a candidate. Rejects oscillation via
+/// settle + timeout.
 class PickupDetector {
   PickupDetector({this.config = const PickupDetectorConfig()});
 
@@ -186,16 +214,18 @@ class PickupDetector {
     if (_motionStartedAt == null) {
       final exceedsTilt = sample.raw.angleDegreesTo(_baseline!.raw) >=
           config.tiltThresholdDegrees;
-      final exceedsLift = sample.user.magnitude >= config.liftImpulseThreshold;
-      if (exceedsTilt || exceedsLift) {
-        _motionStartedAt = sample.timestamp;
-        _settleAnchor = null;
-        _settleStreakStartAt = null;
+      final exceedsGyro =
+          sample.gyro.magnitude >= config.motionGyroThreshold;
+      if (!exceedsTilt || !exceedsGyro) {
+        return null;
       }
+      _motionStartedAt = sample.timestamp;
+      _settleAnchor = null;
+      _settleStreakStartAt = null;
       return null;
     }
 
-    if (_hasLowUserMagnitude(sample)) {
+    if (_isQuietSample(sample)) {
       final settleAnchor = _settleAnchor;
       if (settleAnchor == null ||
           sample.raw.angleDegreesTo(settleAnchor.raw) >
@@ -272,14 +302,16 @@ class PickupDetector {
   }
 
   bool _isRestCandidate(PickupSample sample) =>
-      _isValidSample(sample) && _hasLowUserMagnitude(sample);
+      _isValidSample(sample) && _isQuietSample(sample);
 
-  bool _hasLowUserMagnitude(PickupSample sample) =>
-      sample.user.magnitude <= config.restMagnitudeThreshold;
+  bool _isQuietSample(PickupSample sample) =>
+      sample.user.magnitude <= config.restMagnitudeThreshold &&
+      sample.gyro.magnitude <= config.restGyroThreshold;
 
   bool _isValidSample(PickupSample sample) {
     return sample.raw.isFinite &&
         sample.user.isFinite &&
+        sample.gyro.isFinite &&
         sample.raw.magnitude >= config.minimumRawMagnitude;
   }
 

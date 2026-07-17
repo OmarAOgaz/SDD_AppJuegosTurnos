@@ -33,13 +33,13 @@ import '../../core/sensors/motion_sensor_source.dart';
 @visibleForTesting
 const inGameGestureLayerKey = Key('inGameGestureLayer');
 
-/// Persistent dismissible turn info / exit panel opened by a 2s long-press.
+/// Persistent dismissible turn info / exit panel opened by a 500ms long-press.
 @visibleForTesting
 const inGameInfoPanelKey = Key('inGameInfoPanel');
 
-/// Long-press duration that opens the in-game info panel (spec: 2s).
+/// Long-press duration that opens the in-game info panel (spec: 500ms).
 @visibleForTesting
-const inGameInfoPanelLongPress = Duration(seconds: 2);
+const inGameInfoPanelLongPress = Duration(milliseconds: 500);
 
 /// Transient turn-info overlay (tap or motion). Kept for existing finders.
 @visibleForTesting
@@ -106,6 +106,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _appInForeground = true;
   bool _motionDegraded = false;
   GameRoomPhase? _cachedPhase;
+  TurnPhase _cachedTurnPhase = TurnPhase.normal;
   late final MotionSensorSource _motionSource;
   late final PickupDetector _pickupDetector;
   late final ImmersiveSystemUi _immersive;
@@ -498,15 +499,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   /// Coordinates wakelock, immersive System UI, and motion subscription for
   /// the current phase. Called from host/client build paths (outside stream
   /// creation in `build` body widgets) and from lifecycle / panel edges.
-  void _syncInGameChrome(GameRoomPhase gamePhase) {
+  void _syncInGameChrome(
+    GameRoomPhase gamePhase, {
+    TurnPhase turnPhase = TurnPhase.normal,
+  }) {
     final leftInGame = _cachedPhase == GameRoomPhase.inGame &&
         gamePhase != GameRoomPhase.inGame;
+    final enteredInGame = _cachedPhase != GameRoomPhase.inGame &&
+        gamePhase == GameRoomPhase.inGame;
     _cachedPhase = gamePhase;
+    _cachedTurnPhase = turnPhase;
     _syncWakelock(gamePhase);
     _syncImmersive(gamePhase);
     if (leftInGame) {
       // Avoid setState during build; overlay is already off-tree outside inGame.
       _clearPresentation(notify: false);
+    }
+    if (enteredInGame && _motionDegraded) {
+      _motionDegraded = false;
+      _debugMotion('degraded cleared on enter inGame');
     }
     _syncMotionSubscription(gamePhase);
   }
@@ -523,6 +534,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
     final wasInGame = _cachedPhase == GameRoomPhase.inGame;
     _cachedPhase = null;
+    _cachedTurnPhase = TurnPhase.normal;
     _syncWakelock(GameRoomPhase.lobby);
     unawaited(_immersive.restore());
     if (wasInGame) {
@@ -556,6 +568,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return mounted &&
         _appInForeground &&
         gamePhase == GameRoomPhase.inGame &&
+        _cachedTurnPhase == TurnPhase.normal &&
         !_panelOpen &&
         !_motionDegraded &&
         _hasUsableLocalIdentity();
@@ -860,6 +873,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   void _onAppResumed() {
     _appInForeground = true;
+    // Transient sensor glitches latch [_motionDegraded]; retry on resume so
+    // pickup/tilt does not stay dead for the whole GameScreen lifetime.
+    if (_motionDegraded) {
+      _motionDegraded = false;
+      _debugMotion('degraded cleared on resume');
+    }
     final phase = _cachedPhase;
     if (phase == GameRoomPhase.inGame) {
       unawaited(_immersive.apply());
@@ -1100,10 +1119,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     _maybePersistHostResume(room);
-    _syncInGameChrome(room.gamePhase);
 
     final serverNow = DateTime.now().millisecondsSinceEpoch;
     TurnEngine.refreshPhase(room, serverNow);
+    _syncInGameChrome(
+      room.gamePhase,
+      turnPhase: room.turnState.phase,
+    );
     final remaining = TurnEngine.remainingSeconds(room, serverNow);
     final active = _playerById(
       room.toGameStatePayload(serverNow: serverNow),
@@ -1184,7 +1206,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final canPass = gamePhase == GameRoomPhase.inGame &&
         localPlayerId != null &&
         localPlayerId == activeId;
-    _syncInGameChrome(gamePhase);
+    _syncInGameChrome(gamePhase, turnPhase: phase);
     final onBlackBackground = gamePhase == GameRoomPhase.inGame;
 
     Future<void> exitAsClient() async {

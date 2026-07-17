@@ -61,11 +61,16 @@ class FakeMotionSensorSource implements MotionSensorSource {
 }
 
 /// Rest / tilt helpers matching pickup_detector_test geometry.
+///
+/// Pass [gyro] above [PickupDetectorConfig.motionGyroThreshold] together with
+/// a qualifying [tilt] to start a motion candidate; settle samples should use
+/// `gyro: 0`. Prefer [emitTiltPickup] for the full path.
 PickupSample fakePickupSample(
   int ms, {
   double tilt = 0,
   double user = 0,
   double gravity = 9.8,
+  double gyro = 0,
 }) {
   final radians = tilt * math.pi / 180;
   return PickupSample(
@@ -75,6 +80,7 @@ PickupSample fakePickupSample(
       gravity * math.cos(radians),
     ),
     user: AccelerationVector(user, 0, 0),
+    gyro: AngularRateVector(gyro, 0, 0),
     timestamp: Duration(milliseconds: ms),
   );
 }
@@ -99,10 +105,11 @@ Future<void> emitTiltPickup(
   int start, {
   double tilt = 30,
 }) async {
-  source.emit(fakePickupSample(start, tilt: tilt));
+  // Opening sample carries gyro; settle samples are quiet on gyro.
+  source.emit(fakePickupSample(start, tilt: tilt, gyro: 1.2));
   await tester.pump();
   for (var t = start + 100; t <= start + 400; t += 100) {
-    source.emit(fakePickupSample(t, tilt: tilt));
+    source.emit(fakePickupSample(t, tilt: tilt, gyro: 0));
     await tester.pump();
   }
 }

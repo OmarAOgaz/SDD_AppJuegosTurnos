@@ -603,7 +603,7 @@ void main() {
     });
 
     testWidgets(
-        '2s long-press opens info panel without passing, even for the active player (host)',
+        '500ms long-press opens info panel without passing, even for the active player (host)',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
@@ -624,7 +624,7 @@ void main() {
     });
 
     testWidgets(
-        '2s long-press opens info panel without passing (client, non-active)',
+        '500ms long-press opens info panel without passing (client, non-active)',
         (tester) async {
       final client = _clientAs(_hostId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
@@ -890,6 +890,52 @@ void main() {
       expect(_activeTurnToast, findsOneWidget);
       expect(find.text('Es tu turno!!'), findsOneWidget);
       expect(_turnInfoTime, findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'motion is suppressed during warning and exceeded (no cartel)',
+        (tester) async {
+      // Warning (≤15s): no subscription, no presentation.
+      final warningController = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 10),
+      );
+      await _mount(tester, _wrapHost(warningController));
+      await tester.pump();
+      expect(_motion.hasListener, isFalse);
+
+      await emitTiltPickup(_motion, tester, 0);
+      await tester.pump();
+      expect(find.text('Es tu turno!!'), findsNothing);
+      expect(_activeTurnToast, findsNothing);
+      expect(warningController.passTurnCalls, isEmpty);
+
+      // Exceeded: still suppressed.
+      final exceededController = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: -5),
+      );
+      await _mount(tester, _wrapHost(exceededController));
+      await tester.pump();
+      expect(_motion.hasListener, isFalse);
+
+      await emitTiltPickup(_motion, tester, 0);
+      await tester.pump();
+      expect(find.text('Es tu turno!!'), findsNothing);
+      expect(_activeTurnToast, findsNothing);
+
+      // Returning to normal re-enables motion.
+      final normalController = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(normalController));
+      await tester.pump();
+      expect(_motion.hasListener, isTrue);
+
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+      expect(find.text('Es tu turno!!'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });

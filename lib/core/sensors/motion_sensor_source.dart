@@ -4,12 +4,12 @@ import 'package:sensors_plus/sensors_plus.dart';
 
 import '../domain/pickup_detector.dart';
 
-/// Injectable fused raw+user acceleration stream for [PickupDetector].
+/// Injectable fused raw+user+gyro stream for [PickupDetector].
 abstract class MotionSensorSource {
   Stream<PickupSample> pickupSamples();
 }
 
-enum MotionSensorKind { rawAccelerometer, userAccelerometer }
+enum MotionSensorKind { rawAccelerometer, userAccelerometer, gyroscope }
 
 /// Terminal upstream sensor failure. Callers should degrade to tap/long-press.
 class MotionSensorException implements Exception {
@@ -44,34 +44,40 @@ class MotionSensorCleanupException implements Exception {
       'MotionSensorCleanupException(${failures.map((f) => f.source).join(', ')})';
 }
 
-/// `sensors_plus` adapter that pairs accelerometer + user-accelerometer into
-/// [PickupSample]s. Default sampling is [SensorInterval.uiInterval] (~60 Hz),
-/// well under Android's 200 Hz high-sampling-rate permission threshold.
+/// `sensors_plus` adapter that triples accelerometer + user-accelerometer +
+/// gyroscope into [PickupSample]s. Default sampling is
+/// [SensorInterval.uiInterval] (~60 Hz), well under Android's 200 Hz
+/// high-sampling-rate permission threshold.
 class SensorsPlusMotionSource implements MotionSensorSource {
   SensorsPlusMotionSource({
     Duration samplingPeriod = SensorInterval.uiInterval,
-    this.maximumPairSkew = const Duration(milliseconds: 100),
+    this.maximumPairSkew = const Duration(milliseconds: 150),
     this.useEventTimestamps = true,
     Stream<AccelerometerEvent>? rawStream,
     Stream<UserAccelerometerEvent>? userStream,
+    Stream<GyroscopeEvent>? gyroStream,
     Duration Function()? monotonicNow,
   })  : assert(!maximumPairSkew.isNegative),
         _rawStream = rawStream ??
             accelerometerEventStream(samplingPeriod: samplingPeriod),
         _userStream = userStream ??
             userAccelerometerEventStream(samplingPeriod: samplingPeriod),
+        _gyroStream = gyroStream ??
+            gyroscopeEventStream(samplingPeriod: samplingPeriod),
         _monotonicNow = monotonicNow ?? _defaultMonotonicClock();
 
-  /// Max allowed skew between raw and user event clocks before dropping the
-  /// older unmatched sample. Never fabricates pairs from stale+fresh values.
+  /// Max allowed span across raw/user/gyro event clocks before dropping
+  /// samples older than (newest − skew). Never fabricates triples from
+  /// stale+fresh values.
   final Duration maximumPairSkew;
 
-  /// When true, pair using platform event timestamps. When false, both streams
+  /// When true, pair using platform event timestamps. When false, all streams
   /// use the injected monotonic receipt clock (for unreliable platform clocks).
   final bool useEventTimestamps;
 
   final Stream<AccelerometerEvent> _rawStream;
   final Stream<UserAccelerometerEvent> _userStream;
+  final Stream<GyroscopeEvent> _gyroStream;
   final Duration Function() _monotonicNow;
 
   static Duration Function() _defaultMonotonicClock() {
@@ -115,27 +121,36 @@ class SensorsPlusMotionSource implements MotionSensorSource {
     void pairIfFresh(_SensorSession session) {
       final raw = session.latestRaw;
       final user = session.latestUser;
-      if (!isCurrent(session) || raw == null || user == null) {
+      final gyro = session.latestGyro;
+      if (!isCurrent(session) || raw == null || user == null || gyro == null) {
         return;
       }
-      final skew = raw.time - user.time;
-      if (skew.abs() > maximumPairSkew) {
-        if (skew.isNegative) {
+      final newest = _maxDuration(raw.time, _maxDuration(user.time, gyro.time));
+      final oldest = _minDuration(raw.time, _minDuration(user.time, gyro.time));
+      if (newest - oldest > maximumPairSkew) {
+        final floor = newest - maximumPairSkew;
+        if (raw.time < floor) {
           session.latestRaw = null;
-        } else {
+        }
+        if (user.time < floor) {
           session.latestUser = null;
+        }
+        if (gyro.time < floor) {
+          session.latestGyro = null;
         }
         return;
       }
 
       session.clearSamples();
+      final receiptTime = useEventTimestamps
+          ? _monotonicNow()
+          : newest;
       controller.add(
         PickupSample(
           raw: AccelerationVector(raw.event.x, raw.event.y, raw.event.z),
           user: AccelerationVector(user.event.x, user.event.y, user.event.z),
-          timestamp: useEventTimestamps
-              ? _monotonicNow()
-              : (raw.time > user.time ? raw.time : user.time),
+          gyro: AngularRateVector(gyro.event.x, gyro.event.y, gyro.event.z),
+          timestamp: receiptTime,
         ),
       );
     }
@@ -162,11 +177,14 @@ class SensorsPlusMotionSource implements MotionSensorSource {
       session.clearSamples();
       final rawSub = session.rawSub;
       final userSub = session.userSub;
+      final gyroSub = session.gyroSub;
       session.rawSub = null;
       session.userSub = null;
+      session.gyroSub = null;
       final failures = await Future.wait([
         cancelSubscription(MotionSensorKind.rawAccelerometer, rawSub),
         cancelSubscription(MotionSensorKind.userAccelerometer, userSub),
+        cancelSubscription(MotionSensorKind.gyroscope, gyroSub),
       ]);
       return failures.whereType<MotionSensorCancellationFailure>().toList();
     }
@@ -290,6 +308,30 @@ class SensorsPlusMotionSource implements MotionSensorSource {
         ),
         onDone: () => requestTermination(session, const _Termination.done()),
       );
+      if (session.pendingTermination != null) {
+        session.setupComplete = true;
+        beginTermination(session, session.pendingTermination!);
+        return;
+      }
+
+      session.gyroSub = _gyroStream.listen(
+        (event) {
+          if (!isCurrent(session)) {
+            return;
+          }
+          session.latestGyro = _Timed(event, freshnessTime(event.timestamp));
+          pairIfFresh(session);
+        },
+        onError: (Object error, StackTrace stackTrace) => requestTermination(
+          session,
+          _Termination.error(
+            MotionSensorKind.gyroscope,
+            error,
+            stackTrace,
+          ),
+        ),
+        onDone: () => requestTermination(session, const _Termination.done()),
+      );
       session.setupComplete = true;
       if (session.pendingTermination case final pending?) {
         beginTermination(session, pending);
@@ -352,6 +394,10 @@ class SensorsPlusMotionSource implements MotionSensorSource {
   }
 }
 
+Duration _maxDuration(Duration a, Duration b) => a >= b ? a : b;
+
+Duration _minDuration(Duration a, Duration b) => a <= b ? a : b;
+
 class _Timed<T> {
   const _Timed(this.event, this.time);
 
@@ -365,8 +411,10 @@ class _SensorSession {
   final int generation;
   StreamSubscription<AccelerometerEvent>? rawSub;
   StreamSubscription<UserAccelerometerEvent>? userSub;
+  StreamSubscription<GyroscopeEvent>? gyroSub;
   _Timed<AccelerometerEvent>? latestRaw;
   _Timed<UserAccelerometerEvent>? latestUser;
+  _Timed<GyroscopeEvent>? latestGyro;
   _Termination? pendingTermination;
   bool setupComplete = false;
   bool stopping = false;
@@ -374,6 +422,7 @@ class _SensorSession {
   void clearSamples() {
     latestRaw = null;
     latestUser = null;
+    latestGyro = null;
   }
 }
 
