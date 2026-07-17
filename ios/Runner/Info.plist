@@ -34,6 +34,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMotionUsageDescription</key>
+	<string>Turnos Juegos de mesa uses motion sensors to detect when you pick up or tilt your device so it can show whose turn it is during a match.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Turnos Juegos de mesa needs local network access to discover and connect to game rooms on the same Wi-Fi.</string>
 	<key>NSBonjourServices</key>
