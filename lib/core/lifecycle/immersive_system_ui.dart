@@ -80,12 +80,23 @@ class ImmersiveSystemUi {
     if (restoreGen != _generation || _wantImmersive) {
       // A newer apply won while we were awaiting. Re-assert immersive so the
       // late platform restore cannot leave overlays restored under a wanted
-      // immersive session.
+      // immersive session. The compensatory apply is generation-guarded: if a
+      // restore supersedes it mid-flight, restore overlays again so the late
+      // apply cannot leave the platform stuck immersive.
       if (_wantImmersive) {
+        final reapplyGen = _generation;
         await _applyImmersive();
-        if (_wantImmersive) {
-          _active = true;
+        if (reapplyGen != _generation || !_wantImmersive) {
+          if (!_wantImmersive) {
+            restoreCallCount++;
+            await _restoreOverlays();
+            if (!_wantImmersive) {
+              _active = false;
+            }
+          }
+          return;
         }
+        _active = true;
       }
       return;
     }

@@ -125,6 +125,58 @@ void main() {
       expect(ui.isActive, isTrue);
       expect(platformImmersive, isTrue);
     });
+
+    test(
+        'compensatory re-apply superseded by restore leaves platform non-immersive',
+        () async {
+      final restoreStarted = Completer<void>();
+      final allowRestoreFinish = Completer<void>();
+      final compensatoryApplyStarted = Completer<void>();
+      final allowCompensatoryApplyFinish = Completer<void>();
+      var applyCalls = 0;
+      var platformImmersive = false;
+
+      final ui = ImmersiveSystemUi(
+        applyImmersive: () async {
+          applyCalls++;
+          platformImmersive = true;
+          // Second apply is the generation-guarded compensatory re-apply.
+          if (applyCalls == 2) {
+            compensatoryApplyStarted.complete();
+            await allowCompensatoryApplyFinish.future;
+          }
+        },
+        restoreOverlays: () async {
+          if (!restoreStarted.isCompleted) {
+            restoreStarted.complete();
+            await allowRestoreFinish.future;
+          }
+          platformImmersive = false;
+        },
+      );
+
+      await ui.apply();
+      expect(ui.isActive, isTrue);
+      expect(applyCalls, 1);
+
+      final restoreFuture = ui.restore();
+      await restoreStarted.future;
+
+      // Newer apply while restore is in flight — sets wantImmersive again.
+      final secondApply = ui.apply();
+      allowRestoreFinish.complete();
+      await restoreFuture;
+      await compensatoryApplyStarted.future;
+
+      // Restore again while compensatory re-apply is still awaiting.
+      final finalRestore = ui.restore();
+      allowCompensatoryApplyFinish.complete();
+      await secondApply;
+      await finalRestore;
+
+      expect(ui.isActive, isFalse);
+      expect(platformImmersive, isFalse);
+    });
   });
 
   group('AppLifecycleSync foreground gates', () {
