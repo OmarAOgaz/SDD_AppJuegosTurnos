@@ -169,7 +169,8 @@ Map<String, dynamic> _clientGameState({
   required int remainingSeconds,
   int durationSeconds = 60,
 }) {
-  final turnStartedAt = _serverNow - (durationSeconds - remainingSeconds) * 1000;
+  final turnStartedAt =
+      _serverNow - (durationSeconds - remainingSeconds) * 1000;
   return {
     'roomId': 'room-1',
     'gamePhase': GameRoomPhase.inGame.wireValue,
@@ -179,7 +180,8 @@ Map<String, dynamic> _clientGameState({
     'currentRound': 1,
     'currentRoundDurationSeconds': durationSeconds,
     'currentRoundTurnDurationSeconds': durationSeconds,
-    'playersById': _players().map((id, player) => MapEntry(id, player.toJson())),
+    'playersById':
+        _players().map((id, player) => MapEntry(id, player.toJson())),
   };
 }
 
@@ -243,7 +245,8 @@ Widget _wrapClient({
   return ProviderScope(
     overrides: [
       gameSocketClientProvider.overrideWith((ref) => client),
-      clientSyncProvider.overrideWith((ref) => _FixedClientSyncNotifier(syncState)),
+      clientSyncProvider
+          .overrideWith((ref) => _FixedClientSyncNotifier(syncState)),
     ],
     // role defaults to 'client'; host/port stay null so `_ensureClientConnected`
     // no-ops instead of attempting a real socket connection.
@@ -268,7 +271,8 @@ Widget _wrapClientRouted({
   return ProviderScope(
     overrides: [
       gameSocketClientProvider.overrideWith((ref) => client),
-      clientSyncProvider.overrideWith((ref) => _FixedClientSyncNotifier(syncState)),
+      clientSyncProvider
+          .overrideWith((ref) => _FixedClientSyncNotifier(syncState)),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
@@ -279,6 +283,15 @@ BlinkFeedbackLayer _blinkLayer(WidgetTester tester) {
 }
 
 final _gestureLayer = find.byKey(inGameGestureLayerKey);
+final _infoPanel = find.byKey(inGameInfoPanelKey);
+
+Future<void> _longPressOpenPanel(WidgetTester tester) async {
+  final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
+  await tester
+      .pump(inGameInfoPanelLongPress + const Duration(milliseconds: 100));
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
 
 /// Always unmounts whatever is currently on screen before mounting [widget].
 /// `ProviderScope` (and Riverpod overrides) only reliably take effect on a
@@ -303,11 +316,13 @@ void main() {
   });
 
   group('Visual states (Requirement: turn-visual-feedback)', () {
-    testWidgets('host: non-active device stays black across normal/warning/exceeded',
+    testWidgets(
+        'host: non-active device stays black across normal/warning/exceeded',
         (tester) async {
       for (final remaining in [30, 10, -5]) {
         final controller = _FakeHostRoomController(
-          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: remaining),
+          _buildHostRoom(
+              activePlayerId: _clientId, remainingSeconds: remaining),
         );
         await _mount(tester, _wrapHost(controller));
 
@@ -329,16 +344,19 @@ void main() {
 
       final visual = _blinkLayer(tester).visual;
       expect(visual.kind, TurnFeedbackKind.black);
-      expect(visual.colorId, isNull, reason: 'no tint at normal — literal black');
+      expect(visual.colorId, isNull,
+          reason: 'no tint at normal — literal black');
 
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('client: non-active device stays black across normal/warning/exceeded',
+    testWidgets(
+        'client: non-active device stays black across normal/warning/exceeded',
         (tester) async {
       for (final remaining in [30, 10, -5]) {
         final client = _clientAs(_hostId);
-        final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: remaining);
+        final sync =
+            _fixedSync(activePlayerId: _clientId, remainingSeconds: remaining);
         await _mount(tester, _wrapClient(client: client, syncState: sync));
 
         expect(
@@ -350,7 +368,8 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('client: active device flashes color at warning, fixed color at exceeded',
+    testWidgets(
+        'client: active device flashes color at warning, fixed color at exceeded',
         (tester) async {
       final cases = {
         10: TurnFeedbackKind.flashing,
@@ -358,17 +377,20 @@ void main() {
       };
       for (final entry in cases.entries) {
         final client = _clientAs(_clientId);
-        final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: entry.key);
+        final sync =
+            _fixedSync(activePlayerId: _clientId, remainingSeconds: entry.key);
         await _mount(tester, _wrapClient(client: client, syncState: sync));
 
         final visual = _blinkLayer(tester).visual;
         expect(visual.kind, entry.value, reason: 'remaining=${entry.key}');
-        expect(visual.colorId, _clientColorId, reason: 'remaining=${entry.key}');
+        expect(visual.colorId, _clientColorId,
+            reason: 'remaining=${entry.key}');
       }
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('client: exceeded renders a solid ColoredBox in the active player color',
+    testWidgets(
+        'client: exceeded renders a solid ColoredBox in the active player color',
         (tester) async {
       final client = _clientAs(_clientId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: -5);
@@ -387,7 +409,8 @@ void main() {
   });
 
   group('Pass affordance (Requirement: turn-interaction-gestures)', () {
-    testWidgets('no Pasar turno text/button anywhere in the inGame tree (host or client)',
+    testWidgets(
+        'no Pasar turno text/button anywhere in the inGame tree (host or client)',
         (tester) async {
       final hostController = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
@@ -471,7 +494,8 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('tap on non-active device shows toast and does not pass', (tester) async {
+    testWidgets('tap on non-active device shows toast and does not pass',
+        (tester) async {
       final client = _clientAs(_hostId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
       await _mount(tester, _wrapClient(client: client, syncState: sync));
@@ -500,43 +524,45 @@ void main() {
     });
 
     testWidgets(
-        '500ms long-press opens Salir partida without passing, even for the active player (host)',
+        '2s long-press opens info panel without passing, even for the active player (host)',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
       );
       await _mount(tester, _wrapHost(controller));
 
-      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
-      await tester.pump(const Duration(seconds: 3));
-      await gesture.up();
-      await tester.pumpAndSettle();
+      await _longPressOpenPanel(tester);
 
-      expect(find.text('Salir partida'), findsOneWidget);
+      expect(_infoPanel, findsOneWidget);
+      expect(find.text('Terminar partida'), findsOneWidget);
+      expect(find.text('Turno de $_hostName'), findsOneWidget);
+      expect(find.text('Ronda 1'), findsOneWidget);
+      expect(find.text('30s'), findsOneWidget);
+      expect(find.text('Turno en curso'), findsOneWidget);
       expect(controller.passTurnCalls, isEmpty);
 
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('500ms long-press opens Salir partida without passing (client, non-active)',
+    testWidgets(
+        '2s long-press opens info panel without passing (client, non-active)',
         (tester) async {
       final client = _clientAs(_hostId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
       await _mount(tester, _wrapClient(client: client, syncState: sync));
 
-      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
-      await tester.pump(const Duration(seconds: 3));
-      await gesture.up();
-      await tester.pumpAndSettle();
+      await _longPressOpenPanel(tester);
 
+      expect(_infoPanel, findsOneWidget);
       expect(find.text('Salir partida'), findsOneWidget);
+      expect(find.text('Turno de $_clientName'), findsOneWidget);
       expect(client.passTurnCalls, isEmpty);
 
       await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets(
-        'long-press right after a non-active tap still opens the menu (toast is pointer-transparent)',
+        'long-press right after a non-active tap still opens the panel (toast is pointer-transparent)',
         (tester) async {
       final client = _clientAs(_hostId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
@@ -546,13 +572,32 @@ void main() {
       await tester.pump();
       expect(_activeTurnToast, findsOneWidget);
 
-      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
-      await tester.pump(const Duration(seconds: 3));
-      await gesture.up();
+      await _longPressOpenPanel(tester);
+
+      expect(_infoPanel, findsOneWidget);
+      expect(find.text('Salir partida'), findsOneWidget);
+      expect(_activeTurnToast, findsNothing);
+      expect(client.passTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('dismissing the panel does not exit the match (host)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      expect(_infoPanel, findsOneWidget);
+
+      await tester.tap(find.byTooltip('Cerrar'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Salir partida'), findsOneWidget);
-      expect(client.passTurnCalls, isEmpty);
+      expect(_infoPanel, findsNothing);
+      expect(controller.endGameCalls, 0);
+      expect(find.byType(BlinkFeedbackLayer), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -564,7 +609,8 @@ void main() {
         (tester) async {
       expect(_wakelock.enabledValue, isFalse);
 
-      final room = _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
       await tester.pump();
@@ -607,19 +653,16 @@ void main() {
     });
 
     testWidgets(
-        'long-press Salir partida on host calls endGame and navigates to /ended',
+        'long-press Terminar partida on host calls endGame and navigates to /ended',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
       );
       await _mount(tester, _wrapHostRouted(controller));
 
-      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
-      await tester.pump(const Duration(seconds: 3));
-      await gesture.up();
-      await tester.pumpAndSettle();
+      await _longPressOpenPanel(tester);
 
-      await tester.tap(find.text('Salir partida'));
+      await tester.tap(find.text('Terminar partida'));
       await tester.pumpAndSettle();
 
       expect(controller.endGameCalls, 1);
@@ -634,10 +677,7 @@ void main() {
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
       await _mount(tester, _wrapClientRouted(client: client, syncState: sync));
 
-      final gesture = await tester.startGesture(tester.getCenter(_gestureLayer));
-      await tester.pump(const Duration(seconds: 3));
-      await gesture.up();
-      await tester.pumpAndSettle();
+      await _longPressOpenPanel(tester);
 
       await tester.tap(find.text('Salir partida'));
       await tester.pumpAndSettle();
@@ -648,40 +688,64 @@ void main() {
       expect(find.text('Home'), findsOneWidget);
     });
 
-    testWidgets('AppBar and status text stay white/legible on black inGame background',
+    testWidgets(
+        'inGame hides AppBar/chrome; panel shows legible turn/round/timer/status',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
       );
       await _mount(tester, _wrapHost(controller));
 
-      final appBar = tester.widget<AppBar>(find.byType(AppBar));
-      expect(appBar.backgroundColor, Colors.black);
-      expect(appBar.foregroundColor, Colors.white);
+      expect(find.byType(AppBar), findsNothing);
+      expect(find.text('Terminar'), findsNothing);
+      expect(find.text('Turno en curso'), findsNothing);
+      expect(find.text('Turno de $_hostName'), findsNothing);
+      expect(find.text('30s'), findsNothing);
+      expect(find.byType(BlinkFeedbackLayer), findsOneWidget);
 
-      final terminar = tester.widget<TextButton>(
-        find.widgetWithText(TextButton, 'Terminar'),
-      );
-      expect(
-        terminar.style?.foregroundColor?.resolve(const <WidgetState>{}),
-        Colors.white,
-      );
+      await _longPressOpenPanel(tester);
 
-      final status = tester.widget<Text>(find.text('Turno en curso'));
-      expect(status.style?.color, Colors.white);
+      expect(_infoPanel, findsOneWidget);
+      expect(find.text('Turno de $_hostName'), findsOneWidget);
+      expect(find.text('Ronda 1'), findsOneWidget);
+      expect(find.text('30s'), findsOneWidget);
+      expect(find.text('Turno en curso'), findsOneWidget);
+      expect(find.text('Terminar partida'), findsOneWidget);
 
-      final title = tester.widget<Text>(find.text('Turno de $_hostName'));
-      expect(title.style?.color, Colors.white);
-
-      expect(find.byType(TextButton), findsOneWidget);
-      expect(terminar.onPressed, isNotNull);
+      final turnLabel = tester.widget<Text>(find.text('Turno de $_hostName'));
+      expect(turnLabel.style?.color, Colors.white);
 
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('fixed color clears to black when active seat changes (turn passed)',
+    testWidgets('info panel live-updates timer/status while open',
         (tester) async {
-      final room = _buildHostRoom(activePlayerId: _hostId, remainingSeconds: -5);
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      expect(find.text('30s'), findsOneWidget);
+      expect(find.text('Turno en curso'), findsOneWidget);
+
+      // Move into warning window without closing the panel.
+      room.turnState.turnStartedAtMs =
+          DateTime.now().millisecondsSinceEpoch - (60 - 10) * 1000;
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(_infoPanel, findsOneWidget);
+      expect(find.textContaining('s'), findsWidgets);
+      expect(find.text('Quedan ≤ 15s'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'fixed color clears to black when active seat changes (turn passed)',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: -5);
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
 

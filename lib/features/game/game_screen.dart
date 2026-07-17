@@ -29,6 +29,14 @@ import '../../core/providers/network_providers.dart';
 @visibleForTesting
 const inGameGestureLayerKey = Key('inGameGestureLayer');
 
+/// Persistent dismissible turn info / exit panel opened by a 2s long-press.
+@visibleForTesting
+const inGameInfoPanelKey = Key('inGameInfoPanel');
+
+/// Long-press duration that opens the in-game info panel (spec: 2s).
+@visibleForTesting
+const inGameInfoPanelLongPress = Duration(seconds: 2);
+
 /// In-game turn timer UI for host and clients.
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({
@@ -60,6 +68,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   String? _activeToastName;
   Color? _activeToastColor;
   Timer? _toastTimer;
+  bool _panelOpen = false;
 
   bool get _isHost => widget.role == 'host';
 
@@ -166,10 +175,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
     final client = ref.read(gameSocketClientProvider);
     final playerId = client?.localPlayerId;
-    final deviceId = client?.deviceId ??
-        ref.read(deviceIdProvider).asData?.value;
+    final deviceId =
+        client?.deviceId ?? ref.read(deviceIdProvider).asData?.value;
     final roomId = state['roomId'] as String? ?? client?.handshakeRoomId;
-    if (client == null || playerId == null || deviceId == null || roomId == null) {
+    if (client == null ||
+        playerId == null ||
+        deviceId == null ||
+        roomId == null) {
       return;
     }
     unawaited(
@@ -347,7 +359,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final localPlayerId = client.localPlayerId;
     final original = snapshot['originalHostPlayerId'] as String? ??
         snapshot['hostPlayerId'] as String?;
-    if (localPlayerId == null || original == null || localPlayerId != original) {
+    if (localPlayerId == null ||
+        original == null ||
+        localPlayerId != original) {
       return;
     }
 
@@ -386,9 +400,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
 
-    final roomId = state?['roomId'] as String? ??
-        entry?.roomId ??
-        client.handshakeRoomId;
+    final roomId =
+        state?['roomId'] as String? ?? entry?.roomId ?? client.handshakeRoomId;
     final original = entry?.originalHostPlayerId ??
         state?['originalHostPlayerId'] as String?;
     if (roomId == null || original == null || state == null) {
@@ -529,7 +542,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return (remainingMs / 1000).ceil();
   }
 
-  TurnPhase _interpolatedPhase(ClientSyncState sync, Map<String, dynamic>? state) {
+  TurnPhase _interpolatedPhase(
+      ClientSyncState sync, Map<String, dynamic>? state) {
     if (_usesSyncSnapshot(sync, state)) {
       return sync.interpolatedPhase();
     }
@@ -653,8 +667,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         return;
       }
 
-      final deviceId = entry?.deviceId ??
-          ref.read(deviceIdProvider).asData?.value;
+      final deviceId =
+          entry?.deviceId ?? ref.read(deviceIdProvider).asData?.value;
       if (deviceId != null) {
         await store.save(
           GameResumeEntry(
@@ -730,30 +744,30 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: onBlackBackground ? Colors.black : null,
-        foregroundColor: onBlackBackground ? Colors.white : null,
-        title: Text('Ronda ${room.turnState.currentRound}'),
-        actions: [
-          TextButton(
-            onPressed: exitAsHost,
-            style: onBlackBackground
-                ? TextButton.styleFrom(foregroundColor: Colors.white)
-                : null,
-            child: const Text('Terminar'),
-          ),
-        ],
-      ),
+      // Chrome (AppBar + Terminar) only outside inGame; during inGame the
+      // persistent long-press panel owns terminate/leave.
+      appBar: onBlackBackground
+          ? null
+          : AppBar(
+              title: Text('Ronda ${room.turnState.currentRound}'),
+              actions: [
+                TextButton(
+                  onPressed: exitAsHost,
+                  child: const Text('Terminar'),
+                ),
+              ],
+            ),
       body: _gameBody(
         context,
         gamePhase: room.gamePhase,
         phase: room.turnState.phase,
         remaining: remaining,
+        currentRound: room.turnState.currentRound,
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
         isMyDeviceActive: room.turnState.activePlayerId == room.hostPlayerId,
-        canHostPassForDisconnectedActive:
-            active != null && !active.connected,
+        canHostPassForDisconnectedActive: active != null && !active.connected,
+        exitActionLabel: 'Terminar partida',
         onPass: () {
           final passed = controller.passTurn(room.hostPlayerId);
           if (!passed && context.mounted) {
@@ -806,20 +820,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       }
     }
 
+    final currentRound = state?['currentRound'];
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: onBlackBackground ? Colors.black : null,
-        foregroundColor: onBlackBackground ? Colors.white : null,
-        title: Text('Ronda ${state?['currentRound'] ?? '—'}'),
-      ),
+      appBar: onBlackBackground
+          ? null
+          : AppBar(
+              title: Text('Ronda ${currentRound ?? '—'}'),
+            ),
       body: _gameBody(
         context,
         gamePhase: gamePhase,
         phase: phase,
         remaining: remaining,
+        currentRound: currentRound is int ? currentRound : null,
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
         isMyDeviceActive: canPass,
+        exitActionLabel: 'Salir partida',
         onPass: () {
           client?.sendPassTurn(playerId: localPlayerId!);
         },
@@ -833,10 +850,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required GameRoomPhase gamePhase,
     required TurnPhase phase,
     required int? remaining,
+    required int? currentRound,
     required String activeName,
     required String? activeColorId,
     required bool isMyDeviceActive,
     bool canHostPassForDisconnectedActive = false,
+    required String exitActionLabel,
     required VoidCallback onPass,
     required Future<void> Function() onExit,
     List<Widget>? betweenRoundsActions,
@@ -846,6 +865,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       TurnPhase.exceeded => Colors.red,
       TurnPhase.warning => Colors.orange,
       TurnPhase.normal => Theme.of(context).colorScheme.primary,
+    };
+    final statusText = switch (phase) {
+      TurnPhase.exceeded => 'Tiempo excedido',
+      TurnPhase.warning => 'Quedan ≤ ${TurnEngine.warningThresholdSeconds}s',
+      TurnPhase.normal => 'Turno en curso',
     };
 
     if (gamePhase == GameRoomPhase.betweenRounds) {
@@ -875,146 +899,290 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       activeColorId: activeColorId,
     );
 
-    final content = Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(radius: 20, backgroundColor: color),
-              const SizedBox(width: 12),
-              Expanded(
+    // Non-inGame phases keep the always-visible chrome (turn/timer/status).
+    if (!onBlackBackground) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(radius: 20, backgroundColor: color),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Turno de $activeName',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleLarge
+                        ?.copyWith(color: foregroundColor),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: timerColor.withValues(
+                    alpha: phase == TurnPhase.warning ? 0.15 : 0.08,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: timerColor,
+                    width: phase == TurnPhase.exceeded ? 3 : 1,
+                  ),
+                ),
                 child: Text(
-                  'Turno de $activeName',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: foregroundColor),
+                  remaining != null ? '${remaining}s' : '—',
+                  style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                        color: timerColor,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          Center(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: timerColor.withValues(alpha: phase == TurnPhase.warning ? 0.15 : 0.08),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: timerColor, width: phase == TurnPhase.exceeded ? 3 : 1),
-              ),
+            ),
+            const SizedBox(height: 12),
+            Center(
               child: Text(
-                remaining != null ? '${remaining}s' : '—',
-                style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                      color: timerColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                statusText,
+                style: TextStyle(color: foregroundColor),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Center(
-            child: Text(
-              switch (phase) {
-                TurnPhase.exceeded => 'Tiempo excedido',
-                TurnPhase.warning => 'Quedan ≤ ${TurnEngine.warningThresholdSeconds}s',
-                TurnPhase.normal => 'Turno en curso',
-              },
-              style: TextStyle(color: foregroundColor),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (!onBlackBackground) {
-      return content;
+          ],
+        ),
+      );
     }
 
-    // Sole pass affordance during inGame: a full-screen tap (via
-    // resolveTapIntent) replaces the removed 'Pasar turno' button. Long-press
-    // (500ms, wins the gesture arena over tap by default) opens the exit menu
-    // for any player, active or not.
-    return RawGestureDetector(
-      key: inGameGestureLayerKey,
-      behavior: HitTestBehavior.opaque,
-      gestures: {
-        TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-          TapGestureRecognizer.new,
-          (instance) {
-            instance.onTap = () => _handleInGameTap(
-                  isMyDeviceActive: isMyDeviceActive,
-                  canHostPassForDisconnectedActive:
-                      canHostPassForDisconnectedActive,
-                  gamePhase: gamePhase,
-                  activeName: activeName,
-                  activeColor: color,
-                  onPass: onPass,
-                );
+    // inGame: chrome hidden — only ambient feedback + optional toast/panel.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        RawGestureDetector(
+          key: inGameGestureLayerKey,
+          behavior: HitTestBehavior.opaque,
+          gestures: {
+            TapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+              TapGestureRecognizer.new,
+              (instance) {
+                instance.onTap = () => _handleInGameTap(
+                      isMyDeviceActive: isMyDeviceActive,
+                      canHostPassForDisconnectedActive:
+                          canHostPassForDisconnectedActive,
+                      gamePhase: gamePhase,
+                      activeName: activeName,
+                      activeColor: color,
+                      onPass: onPass,
+                    );
+              },
+            ),
+            LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                duration: inGameInfoPanelLongPress,
+              ),
+              (instance) {
+                instance.onLongPress = _openInfoPanel;
+              },
+            ),
           },
-        ),
-        LongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-          () => LongPressGestureRecognizer(
-            duration: const Duration(milliseconds: 500),
-          ),
-          (instance) {
-            instance.onLongPress = () => _showExitMenu(context, onExit);
-          },
-        ),
-      },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(child: BlinkFeedbackLayer(visual: visual)),
-          content,
-          if (_activeToastName != null)
-            Positioned(
-              top: 24,
-              left: 24,
-              right: 24,
-              child: IgnorePointer(
-                child: Center(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text.rich(
-                      key: const Key('active-turn-toast'),
-                      TextSpan(
-                        children: [
-                          const TextSpan(
-                            text: 'Turno de ',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                            ),
-                          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(child: BlinkFeedbackLayer(visual: visual)),
+              if (_activeToastName != null)
+                Positioned(
+                  top: 24,
+                  left: 24,
+                  right: 24,
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text.rich(
+                          key: const Key('active-turn-toast'),
                           TextSpan(
-                            text: '"$_activeToastName"',
-                            style: TextStyle(
-                              color: _activeToastColor ?? Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                            ),
+                            children: [
+                              const TextSpan(
+                                text: 'Turno de ',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              TextSpan(
+                                text: '"$_activeToastName"',
+                                style: TextStyle(
+                                  color: _activeToastColor ?? Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                          textAlign: TextAlign.center,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (_panelOpen)
+          _buildInfoPanel(
+            context,
+            activeName: activeName,
+            activeColor: color,
+            currentRound: currentRound,
+            remaining: remaining,
+            timerColor: timerColor,
+            statusText: statusText,
+            exitActionLabel: exitActionLabel,
+            onExit: onExit,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInfoPanel(
+    BuildContext context, {
+    required String activeName,
+    required Color activeColor,
+    required int? currentRound,
+    required int? remaining,
+    required Color timerColor,
+    required String statusText,
+    required String exitActionLabel,
+    required Future<void> Function() onExit,
+  }) {
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.55),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _dismissInfoPanel,
+          child: Center(
+            child: GestureDetector(
+              // Absorb taps on the card so barrier dismiss does not fire.
+              onTap: () {},
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Card(
+                  key: inGameInfoPanelKey,
+                  color: const Color(0xFF1A1A1A),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Información de turno',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(color: Colors.white),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Cerrar',
+                              onPressed: _dismissInfoPanel,
+                              icon:
+                                  const Icon(Icons.close, color: Colors.white),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: activeColor,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Turno de $activeName',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Ronda ${currentRound ?? '—'}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          remaining != null ? '${remaining}s' : '—',
+                          style: TextStyle(
+                            color: timerColor,
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          statusText,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: () {
+                            _dismissInfoPanel();
+                            unawaited(onExit());
+                          },
+                          child: Text(exitActionLabel),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-        ],
+          ),
+        ),
       ),
     );
+  }
+
+  void _openInfoPanel() {
+    _toastTimer?.cancel();
+    setState(() {
+      _panelOpen = true;
+      _activeToastName = null;
+      _activeToastColor = null;
+    });
+  }
+
+  void _dismissInfoPanel() {
+    if (!_panelOpen) {
+      return;
+    }
+    setState(() {
+      _panelOpen = false;
+    });
   }
 
   /// Resolves the tap intent (Phase 1) and either passes the turn (active
@@ -1028,6 +1196,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required Color activeColor,
     required VoidCallback onPass,
   }) {
+    if (_panelOpen) {
+      return;
+    }
     final intent = resolveTapIntent(
       isMyDeviceActive: isMyDeviceActive,
       canHostPassForDisconnectedActive: canHostPassForDisconnectedActive,
@@ -1057,28 +1228,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         });
       }
     });
-  }
-
-  /// Opens the 500ms-long-press menu. Only 'Salir partida' exists today; the
-  /// dialog is a list so future options can be appended without restructuring.
-  Future<void> _showExitMenu(
-    BuildContext context,
-    Future<void> Function() onExit,
-  ) {
-    return showDialog<void>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        children: [
-          SimpleDialogOption(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              unawaited(onExit());
-            },
-            child: const Text('Salir partida'),
-          ),
-        ],
-      ),
-    );
   }
 }
 
