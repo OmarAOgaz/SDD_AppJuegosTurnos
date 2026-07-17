@@ -568,15 +568,35 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     return mounted &&
         _appInForeground &&
         gamePhase == GameRoomPhase.inGame &&
-        _cachedTurnPhase == TurnPhase.normal &&
         !_panelOpen &&
         !_motionDegraded &&
         _hasUsableLocalIdentity();
   }
 
-  /// True only while a live subscription may dispatch presentations.
+  /// True only while a live subscription may feed the detector.
   bool _motionDispatchAllowed() {
     return _shouldRunMotion(_cachedPhase) && _motionSub != null;
+  }
+
+  /// Warning/exceeded: suppress motion cartels only for the active local seat.
+  /// Non-active devices may still show whose-turn + time over those backgrounds.
+  bool _shouldSuppressActiveMotionPresentation() {
+    if (_cachedTurnPhase == TurnPhase.normal) {
+      return false;
+    }
+    final snapshot = _latestTurnInfoSnapshot();
+    if (snapshot == null) {
+      return true;
+    }
+    final localId = snapshot.localPlayerId?.trim();
+    final activeId = snapshot.activePlayerId?.trim();
+    if (localId == null ||
+        localId.isEmpty ||
+        activeId == null ||
+        activeId.isEmpty) {
+      return true;
+    }
+    return localId == activeId;
   }
 
   TurnInfoSnapshot? _latestTurnInfoSnapshot() {
@@ -726,6 +746,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
     if (!_motionDispatchAllowed()) {
+      return;
+    }
+    if (_shouldSuppressActiveMotionPresentation()) {
+      _debugMotion('pickup suppressed (active + warning/exceeded)');
       return;
     }
     _debugMotion('pickupFromRest');
