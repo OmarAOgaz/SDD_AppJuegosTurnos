@@ -39,19 +39,19 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Host integration (PR2)
 
-- [ ] 2.1 `host_room_controller.dart`: pass `serverNow` to `endGame`; capture/broadcast final payload with all summary fields.
-- [ ] 2.2 `game_screen.dart` `exitAsHost`: seed `clientSync.lastGameState` from final payload before `go('/ended')`.
-- [ ] 2.3 Controller test in `test/server/host_room_controller_test.dart`: final `GAME_STATE` includes match + per-player summary counters (host snapshot scenario).
+- [x] 2.1 `host_room_controller.dart`: pass `serverNow` to `endGame`; capture/broadcast final payload with all summary fields.
+- [x] 2.2 `game_screen.dart` `exitAsHost`: seed `clientSync.lastGameState` from final payload before `go('/ended')`.
+- [x] 2.3 Controller test in `test/server/host_room_controller_test.dart`: final `GAME_STATE` includes match + per-player summary counters (host snapshot scenario).
 
 ## Phase 3: Summary UI (PR2)
 
-- [ ] 3.1 Create `lib/core/utils/duration_format.dart` — `formatDurationMs(int)` → `mm:ss` for Spanish labels.
-- [ ] 3.2 Create `lib/features/game/widgets/player_summary_card.dart` — color-backed card (pattern from `LobbyPlayerRow`).
-- [ ] 3.3 Rewrite `lib/features/game/ended_screen.dart`: read `clientSync.lastGameState` → `GameRoom.fromSnapshot`; no client-side reconstruction.
-- [ ] 3.4 AppBar trailing `Salir` → existing `_goHome` teardown (clear resume, disconnect, reset sync, Home).
-- [ ] 3.5 General card: `Tiempo total` (`matchEndedAtMs - matchStartedAtMs`, guard missing); `Rondas jugadas` = `currentRound`.
-- [ ] 3.6 Player list in `turnSequence` order: name, turnos, tiempo total, promedio (`totalTurnMs/turnCount`, guard 0), overtime count/duration.
-- [ ] 3.7 Widget tests in `test/features/ended_screen_smoke_test.dart`: snapshot render; totals; player cards; top Exit teardown; zero-turn average safe.
+- [x] 3.1 Create `lib/core/utils/duration_format.dart` — `formatDurationMs(int)` → `mm:ss` for Spanish labels.
+- [x] 3.2 Create `lib/features/game/widgets/player_summary_card.dart` — color-backed card (pattern from `LobbyPlayerRow`).
+- [x] 3.3 Rewrite `lib/features/game/ended_screen.dart`: read `clientSync.lastGameState` → `GameRoom.fromSnapshot`; no client-side reconstruction.
+- [x] 3.4 AppBar trailing `Salir` → existing `_goHome` teardown (clear resume, disconnect, reset sync, Home).
+- [x] 3.5 General card: `Tiempo total` (`matchEndedAtMs - matchStartedAtMs`, guard missing); `Rondas jugadas` = `currentRound`.
+- [x] 3.6 Player list in `turnSequence` order: name, turnos, tiempo total, promedio (`totalTurnMs/turnCount`, guard 0), overtime count/duration.
+- [x] 3.7 Widget tests in `test/features/ended_screen_smoke_test.dart`: snapshot render; totals; player cards; top Exit teardown; zero-turn average safe.
 
 ## Phase 4: Edge cases & verification (PR3)
 

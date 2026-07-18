@@ -1291,7 +1291,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     Future<void> exitAsHost() async {
       _intentionalHostExit = true;
-      await controller.endGame();
+      final finalPayload = await controller.endGame();
+      if (finalPayload != null) {
+        ref.read(clientSyncProvider.notifier).applyEnvelope(
+              WsEnvelope(
+                type: MessageTypes.gameState,
+                payload: finalPayload,
+              ),
+            );
+      }
       await _clearResumeStore();
       if (context.mounted) {
         context.go('/ended');

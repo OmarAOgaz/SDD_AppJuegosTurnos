@@ -159,8 +159,9 @@ class _FakeHostRoomController extends HostRoomController {
   }
 
   @override
-  Future<void> endGame() async {
+  Future<Map<String, dynamic>?> endGame() async {
     endGameCalls++;
+    return null;
   }
 
   @override
