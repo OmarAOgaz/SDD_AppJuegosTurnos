@@ -47,6 +47,62 @@ void main() {
     });
   });
 
+  group('TurnEngine.refreshPhase', () {
+    test('sets warning when remaining is at or under threshold', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+
+      TurnEngine.refreshPhase(room, start + 45_000);
+      expect(room.turnState.phase, TurnPhase.warning);
+
+      TurnEngine.refreshPhase(room, start + 59_000);
+      expect(room.turnState.phase, TurnPhase.warning);
+    });
+
+    test('stays normal when remaining is above threshold', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+
+      TurnEngine.refreshPhase(room, start + 44_000);
+      expect(room.turnState.phase, TurnPhase.normal);
+    });
+
+    test('sets exceeded when remaining is zero or negative', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+
+      TurnEngine.refreshPhase(room, start + 60_000);
+      expect(room.turnState.phase, TurnPhase.exceeded);
+
+      TurnEngine.refreshPhase(room, start + 75_000);
+      expect(room.turnState.phase, TurnPhase.exceeded);
+    });
+
+    test('resets to normal outside inGame', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
+      room.turnState.phase = TurnPhase.warning;
+
+      TurnEngine.refreshPhase(room, start + 3000);
+      expect(room.turnState.phase, TurnPhase.normal);
+    });
+  });
+
   group('TurnEngine.tryPassTurn', () {
     test('active player pass advances with full duration reset', () {
       final room = _roomWithTwoPlayers();
