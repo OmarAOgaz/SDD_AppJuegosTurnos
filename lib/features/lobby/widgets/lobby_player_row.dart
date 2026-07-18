@@ -69,24 +69,11 @@ class LobbyPlayerRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Jugador ${player.slotNumber}${isSelf ? " (Tú)" : ""}',
-                          style: Theme.of(context).textTheme.labelLarge,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Icon(
-                        Icons.circle,
-                        size: 10,
-                        color: player.connected ? Colors.green : Colors.grey,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(player.connected ? 'Conectado' : 'Desconectado'),
-                    ],
+                  Text(
+                    'Jugador ${player.slotNumber}${isSelf ? " (Tú)" : ""}',
+                    style: Theme.of(context).textTheme.labelLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Container(

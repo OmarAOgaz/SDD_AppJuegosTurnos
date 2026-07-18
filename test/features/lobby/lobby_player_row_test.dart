@@ -38,10 +38,6 @@ Future<void> _pump(
     player: player,
     isSelf: isSelf,
     showHostAdminSlot: showHostAdminSlot,
-    reorderIndex: 0,
-    reorderCount: 2,
-    onMoveUp: () {},
-    onMoveDown: () {},
     onNameChanged: onNameChanged,
     onColorChanged: onColorChanged,
     onSoundChanged: onSoundChanged,
@@ -72,12 +68,15 @@ void main() {
 
       await _pump(tester, player, isSelf: false, showHostAdminSlot: true);
       expect(find.text('Jugador 1'), findsOneWidget);
-      expect(find.text('Conectado'), findsOneWidget);
+      expect(find.text('Conectado'), findsNothing);
+      expect(find.text('Desconectado'), findsNothing);
       expect(find.byKey(const Key('lobby-admin-slot')), findsOneWidget);
       expect(find.byKey(const Key('lobby-reorder-up-0')), findsOneWidget);
       expect(find.byKey(const Key('lobby-reorder-drag')), findsOneWidget);
 
       await _pump(tester, player, isSelf: false, showHostAdminSlot: false);
+      expect(find.text('Conectado'), findsNothing);
+      expect(find.text('Desconectado'), findsNothing);
       expect(find.byKey(const Key('lobby-admin-slot')), findsNothing);
       expect(find.byKey(const Key('lobby-reorder-up-0')), findsNothing);
     },
@@ -126,7 +125,26 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.byKey(const Key('lobby-color-button')), findsNothing);
     expect(find.byKey(const Key('lobby-sound-button')), findsNothing);
-    expect(find.text('Desconectado'), findsOneWidget);
+    expect(find.text('Conectado'), findsNothing);
+    expect(find.text('Desconectado'), findsNothing);
+    expect(find.text('Ana'), findsOneWidget);
+  });
+
+  testWidgets('row never shows connection-status identifier', (tester) async {
+    await _pump(tester, _player(), isSelf: true, showHostAdminSlot: false);
+    expect(find.text('Conectado'), findsNothing);
+    expect(find.text('Desconectado'), findsNothing);
+    expect(find.byIcon(Icons.circle), findsNothing);
+
+    await _pump(
+      tester,
+      _player(connected: false),
+      isSelf: false,
+      showHostAdminSlot: true,
+    );
+    expect(find.text('Conectado'), findsNothing);
+    expect(find.text('Desconectado'), findsNothing);
+    expect(find.byIcon(Icons.circle), findsNothing);
   });
 
   testWidgets('Color and Sound controls only on own connected row',
@@ -135,37 +153,29 @@ void main() {
     final sound = find.byKey(const Key('lobby-sound-button'));
     final preview =
         SoundPreviewService(player: _Noop(), audioContext: AudioContext());
-    addTearDown(preview.dispose);
-    await _pump(
-      tester,
-      _player(),
-      isSelf: true,
-      showHostAdminSlot: false,
-      onColorChanged: (_) {},
-      onSoundChanged: (_) {},
-      previewService: preview,
-    );
+    await _pump(tester, _player(),
+        isSelf: true,
+        showHostAdminSlot: false,
+        onColorChanged: (_) {},
+        onSoundChanged: (_) {},
+        previewService: preview);
     expect(color, findsOneWidget);
     expect(sound, findsOneWidget);
     await tester.tap(sound);
     await tester.pumpAndSettle();
     expect(find.byType(SoundPickerSheet), findsOneWidget);
-
     await _pump(tester, _player(), isSelf: false, showHostAdminSlot: false);
     expect(color, findsNothing);
     expect(sound, findsNothing);
-
-    await _pump(
-      tester,
-      _player(connected: false),
-      isSelf: true,
-      showHostAdminSlot: false,
-      onColorChanged: (_) {},
-      onSoundChanged: (_) {},
-      previewService: preview,
-    );
+    await _pump(tester, _player(connected: false),
+        isSelf: true,
+        showHostAdminSlot: false,
+        onColorChanged: (_) {},
+        onSoundChanged: (_) {},
+        previewService: preview);
     expect(color, findsNothing);
     expect(sound, findsNothing);
+    await preview.dispose();
   });
 
   testWidgets('Color opens sheet and reports selection', (tester) async {
@@ -227,13 +237,11 @@ class _Noop implements SoundPreviewPlayer {
   @override
   Future<void> stop() async {}
   @override
-  Future<void> playAsset(
-    String p, {
-    required double volume,
-    required PlayerMode mode,
-    AudioContext? ctx,
-    ReleaseMode releaseMode = ReleaseMode.release,
-  }) async {}
+  Future<void> playAsset(String p,
+      {required double volume,
+      required PlayerMode mode,
+      AudioContext? ctx,
+      ReleaseMode releaseMode = ReleaseMode.release}) async {}
   @override
   Future<void> dispose() async => _s.close();
 }
