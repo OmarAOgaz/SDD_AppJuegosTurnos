@@ -5,6 +5,8 @@
 **Mode**: Standard (strict_tdd: false)
 **Chain**: stacked-to-main
 **Branch**: `feat/turn-start-and-touch-fx-01-cue`
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/44
+**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/43
 **Date**: 2026-07-17
 
 ## Completed Tasks
@@ -58,4 +60,9 @@ None blocking. Ambient resolvers and TurnEngine/protocol untouched.
 - Mode: stacked PR slice to main
 - Current work unit: Unit 1 — TurnStartCue + sound
 - Boundary: cue helpers → widget → GameScreen wire → tests; stop before TouchFxOverlay
-- Estimated review budget: aim ≤400 lines; note if slightly over
+- Review budget: **654 insertions / 8 files** (over 400-line target; noted — did not expand into Phase 2)
+
+## Commits
+
+- `7bf0146` feat(turn-cue): add TurnStartCueKey fire/dedupe helpers
+- `43e499f` feat(turn-cue): mount TurnStartCue and seat sound on GameScreen
