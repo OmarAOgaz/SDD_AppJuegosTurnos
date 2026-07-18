@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:turnos_juegos/core/audio/sound_preview_service.dart';
 import 'package:turnos_juegos/core/catalogs/color_catalog.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
@@ -17,9 +19,44 @@ import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 import 'package:turnos_juegos/core/sensors/motion_sensor_source.dart';
 import 'package:turnos_juegos/features/game/game_screen.dart';
+import 'package:turnos_juegos/features/game/turn_start_cue.dart';
 import 'package:turnos_juegos/server/host_room_controller.dart';
 
 import 'fake_motion_sensor_source.dart';
+
+/// Records [preview] ids without touching the audio platform channel.
+class _RecordingSoundPreviewService extends SoundPreviewService {
+  _RecordingSoundPreviewService()
+      : super(player: _SilentPreviewPlayer(), audioContext: AudioContext());
+
+  final List<String> previewedIds = [];
+
+  @override
+  Future<SoundPreviewResult> preview(String soundId) async {
+    previewedIds.add(soundId);
+    return SoundPreviewStarted(soundId);
+  }
+}
+
+class _SilentPreviewPlayer implements SoundPreviewPlayer {
+  @override
+  Stream<PlayerState> get onPlayerStateChanged => const Stream.empty();
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  Future<void> playAsset(
+    String assetSourcePath, {
+    required double volume,
+    required PlayerMode mode,
+    AudioContext? ctx,
+    ReleaseMode releaseMode = ReleaseMode.release,
+  }) async {}
+
+  @override
+  Future<void> dispose() async {}
+}
 
 /// No-op wakelock backend so `WakelockPlus.enable()/disable()` (called from
 /// every `GameScreen` build while `inGame`) never hits a real platform
@@ -48,6 +85,7 @@ class _FakeWakelockPlatform extends WakelockPlusPlatformInterface {
 late _FakeWakelockPlatform _wakelock;
 late FakeMotionSensorSource _motion;
 late ImmersiveSystemUi _immersive;
+late _RecordingSoundPreviewService _sounds;
 DateTime _fixedNow = DateTime(2026, 7, 16, 15, 30);
 
 Finder get _activeTurnToast => find.byKey(turnInfoPresentationKey);
@@ -231,6 +269,7 @@ Widget _wrapHost(
   MotionSensorSource? motionSensorSource,
   ImmersiveSystemUi? immersiveSystemUi,
   DateTime Function()? now,
+  SoundPreviewService? soundPreviewService,
 }) {
   return ProviderScope(
     overrides: [
@@ -242,6 +281,7 @@ Widget _wrapHost(
         motionSensorSource: motionSensorSource ?? _motion,
         immersiveSystemUi: immersiveSystemUi ?? _immersive,
         now: now ?? () => _fixedNow,
+        soundPreviewService: soundPreviewService ?? _sounds,
       ),
     ),
   );
@@ -254,6 +294,7 @@ Widget _wrapHostRouted(
   MotionSensorSource? motionSensorSource,
   ImmersiveSystemUi? immersiveSystemUi,
   DateTime Function()? now,
+  SoundPreviewService? soundPreviewService,
 }) {
   final router = GoRouter(
     initialLocation: '/game',
@@ -266,6 +307,7 @@ Widget _wrapHostRouted(
           motionSensorSource: motionSensorSource ?? _motion,
           immersiveSystemUi: immersiveSystemUi ?? _immersive,
           now: now ?? () => _fixedNow,
+          soundPreviewService: soundPreviewService ?? _sounds,
         ),
       ),
       GoRoute(path: '/ended', builder: (_, __) => const Text('Ended')),
@@ -285,6 +327,7 @@ Widget _wrapClient({
   MotionSensorSource? motionSensorSource,
   ImmersiveSystemUi? immersiveSystemUi,
   DateTime Function()? now,
+  SoundPreviewService? soundPreviewService,
   bool alwaysUse24HourFormat = false,
 }) {
   return ProviderScope(
@@ -308,6 +351,7 @@ Widget _wrapClient({
         motionSensorSource: motionSensorSource ?? _motion,
         immersiveSystemUi: immersiveSystemUi ?? _immersive,
         now: now ?? () => _fixedNow,
+        soundPreviewService: soundPreviewService ?? _sounds,
       ),
     ),
   );
@@ -319,6 +363,7 @@ Widget _wrapClientRouted({
   MotionSensorSource? motionSensorSource,
   ImmersiveSystemUi? immersiveSystemUi,
   DateTime Function()? now,
+  SoundPreviewService? soundPreviewService,
 }) {
   final router = GoRouter(
     initialLocation: '/game',
@@ -331,6 +376,7 @@ Widget _wrapClientRouted({
           motionSensorSource: motionSensorSource ?? _motion,
           immersiveSystemUi: immersiveSystemUi ?? _immersive,
           now: now ?? () => _fixedNow,
+          soundPreviewService: soundPreviewService ?? _sounds,
         ),
       ),
     ],
@@ -382,6 +428,7 @@ void main() {
     wakelockPlusPlatformInstance = _wakelock;
     _motion = FakeMotionSensorSource();
     _immersive = fakeImmersiveSystemUi();
+    _sounds = _RecordingSoundPreviewService();
     _fixedNow = DateTime(2026, 7, 16, 15, 30);
   });
 
@@ -1292,6 +1339,140 @@ void main() {
         1,
         reason: 'starts must not overlap listens',
       );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Turn start cue (Requirement: ephemeral color flash / sound / dedupe)',
+      () {
+    testWidgets(
+        'host: cue + seat sound fire once on game-start activation; ambient stays black',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump(); // post-frame cue mount
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(_sounds.previewedIds, ['sound_1']);
+
+      final visual = _blinkLayer(tester).visual;
+      expect(visual.kind, TurnFeedbackKind.black);
+      expect(visual.colorId, isNull);
+
+      await tester.pump(TurnStartCue.defaultDuration);
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.black);
+      expect(_sounds.previewedIds, ['sound_1']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host: mid-round pass activation fires cue once with host sound',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_sounds.previewedIds, isEmpty);
+
+      room.turnState
+        ..activePlayerId = _hostId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(_sounds.previewedIds, ['sound_1']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host: same-key rebuild/resync does not re-fire flash or sound',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_sounds.previewedIds, ['sound_1']);
+
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(_sounds.previewedIds, ['sound_1']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host: new turn key after inactivity re-fires cue and sound',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_sounds.previewedIds, ['sound_1']);
+
+      room.turnState.activePlayerId = _clientId;
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(find.byType(TurnStartCue), findsNothing);
+
+      room.turnState
+        ..activePlayerId = _hostId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch + 50_000;
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(_sounds.previewedIds, ['sound_1', 'sound_1']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'client: activation fires cue with local seat sound; ambient stays black',
+        (tester) async {
+      final client = _clientAs(_clientId);
+      final sync =
+          _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(_sounds.previewedIds, ['sound_2']);
+      expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.black);
+
+      await tester.pump(TurnStartCue.defaultDuration);
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.black);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('non-active device never shows cue or plays sound',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_sounds.previewedIds, isEmpty);
 
       await tester.pumpWidget(const SizedBox());
     });

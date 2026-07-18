@@ -162,4 +162,99 @@ void main() {
       }
     }
   });
+
+  group('shouldFireTurnStartCue', () {
+    const keyA = TurnStartCueKey(
+      activePlayerId: 'p1',
+      turnStartedAtMs: 1000,
+    );
+    const keyB = TurnStartCueKey(
+      activePlayerId: 'p1',
+      turnStartedAtMs: 2000,
+    );
+
+    test('fires on rising edge with current key and no prior fire', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: false,
+          isMyDeviceActive: true,
+          lastFired: null,
+          current: keyA,
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not fire when device is not active', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: false,
+          isMyDeviceActive: false,
+          lastFired: null,
+          current: keyA,
+        ),
+        isFalse,
+      );
+    });
+
+    test('does not fire when current key is null', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: false,
+          isMyDeviceActive: true,
+          lastFired: null,
+          current: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('same-key dedupe skips re-fire while already active (resync)', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: true,
+          isMyDeviceActive: true,
+          lastFired: keyA,
+          current: keyA,
+        ),
+        isFalse,
+      );
+    });
+
+    test('same-key dedupe skips rising edge after already cued', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: false,
+          isMyDeviceActive: true,
+          lastFired: keyA,
+          current: keyA,
+        ),
+        isFalse,
+      );
+    });
+
+    test('new key re-fires on rising edge after inactivity', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: false,
+          isMyDeviceActive: true,
+          lastFired: keyA,
+          current: keyB,
+        ),
+        isTrue,
+      );
+    });
+
+    test('already active with new key does not fire without rising edge', () {
+      expect(
+        shouldFireTurnStartCue(
+          wasActive: true,
+          isMyDeviceActive: true,
+          lastFired: keyA,
+          current: keyB,
+        ),
+        isFalse,
+      );
+    });
+  });
 }
