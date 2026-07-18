@@ -79,3 +79,47 @@ GestureIntent resolveTapIntent({
   }
   return GestureIntent.showActiveToast;
 }
+
+/// Identity of a turn activation used to dedupe the ephemeral turn-start cue.
+class TurnStartCueKey {
+  const TurnStartCueKey({
+    required this.activePlayerId,
+    required this.turnStartedAtMs,
+  });
+
+  final String activePlayerId;
+  final int turnStartedAtMs;
+
+  @override
+  bool operator ==(Object other) {
+    return other is TurnStartCueKey &&
+        other.activePlayerId == activePlayerId &&
+        other.turnStartedAtMs == turnStartedAtMs;
+  }
+
+  @override
+  int get hashCode => Object.hash(activePlayerId, turnStartedAtMs);
+
+  @override
+  String toString() =>
+      'TurnStartCueKey($activePlayerId @ $turnStartedAtMs)';
+}
+
+/// Whether this device should fire the ephemeral turn-start cue.
+///
+/// Fires on the rising edge of [isMyDeviceActive] when [current] is present
+/// and differs from [lastFired] (same turn identity on resync is skipped).
+bool shouldFireTurnStartCue({
+  required bool wasActive,
+  required bool isMyDeviceActive,
+  required TurnStartCueKey? lastFired,
+  required TurnStartCueKey? current,
+}) {
+  if (!isMyDeviceActive || current == null) {
+    return false;
+  }
+  if (lastFired == current) {
+    return false;
+  }
+  return !wasActive;
+}
