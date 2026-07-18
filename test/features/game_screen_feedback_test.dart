@@ -1991,10 +1991,10 @@ void main() {
     });
 
     testWidgets(
-        'acting host mid-break shows host controls (succession smoke)',
+        'acting host mid-break can complete reorder (succession smoke)',
         (tester) async {
       // Acting host = active HostRoomController path (no separate succession
-      // UI branch). Mid-break host must get reorder / increment / start.
+      // UI branch). Mid-break host must get controls and complete a reorder.
       final room = _buildHostBetweenRoundsRoom();
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
@@ -2003,6 +2003,16 @@ void main() {
       expect(find.byType(LobbyReorderControls), findsWidgets);
       expect(find.byKey(betweenRoundsIncrementSliderKey), findsOneWidget);
       expect(find.byKey(betweenRoundsStartKey), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('lobby-reorder-down-0')));
+      await tester.pump();
+
+      expect(controller.reorderBetweenRoundsCalls, isNotEmpty);
+      expect(
+        controller.reorderBetweenRoundsCalls.last,
+        [_clientId, _hostId],
+      );
+      expect(room.turnSequence, [_clientId, _hostId]);
 
       await tester.pumpWidget(const SizedBox());
     });

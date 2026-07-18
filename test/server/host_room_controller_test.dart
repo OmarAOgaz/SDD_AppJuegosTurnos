@@ -559,6 +559,88 @@ void main() {
         payload['betweenRoundsEnteredAt'],
       );
     });
+
+    test(
+        'SYNC_REQUEST during betweenRounds returns GAME_STATE with break stamp',
+        () async {
+      final fixture = await _betweenRoundsFixture();
+      final controller = fixture.controller;
+      final stamp = controller.room!.turnState.betweenRoundsEnteredAtMs;
+      expect(stamp, isNotNull);
+
+      final replies = <WsEnvelope>[];
+      controller.debugDispatchMessageWithSend(
+        'client-session-1',
+        const WsEnvelope(type: MessageTypes.syncRequest, payload: {}),
+        replies.add,
+      );
+
+      expect(replies, hasLength(1));
+      expect(replies.single.type, MessageTypes.gameState);
+      final payload = replies.single.payload;
+      expect(payload['gamePhase'], GameRoomPhase.betweenRounds.wireValue);
+      expect(payload['betweenRoundsEnteredAt'], stamp);
+      expect(payload['serverNow'], isA<int>());
+      expect(payload['serverNow'] as int, greaterThanOrEqualTo(stamp!));
+
+      // Client recomputes elapsed break time from the SYNC_REQUEST reply.
+      final sync = const ClientSyncState().applyEnvelope(
+        WsEnvelope(type: MessageTypes.gameState, payload: payload),
+      );
+      expect(sync.isBetweenRounds, isTrue);
+      expect(sync.betweenRoundsElapsedSeconds(), isNotNull);
+      expect(sync.betweenRoundsElapsedSeconds(), greaterThanOrEqualTo(0));
+    });
+
+    test(
+        'acting host mid-break can reorder and broadcasts GAME_STATE',
+        () async {
+      final seedFixture = await _betweenRoundsFixture();
+      final seed = seedFixture.controller;
+      final seedRoom = seed.room!;
+      expect(seedRoom.gamePhase, GameRoomPhase.betweenRounds);
+      expect(seedRoom.turnState.betweenRoundsEnteredAtMs, isNotNull);
+
+      final originalHostId = seedRoom.originalHostPlayerId;
+      final actingHostId = seedRoom.turnSequence
+          .firstWhere((id) => id != seedRoom.hostPlayerId);
+      final snapshot = seed.exportRoomSnapshot()!;
+      final roomId = seedRoom.roomId;
+      await seed.stopRoom(broadcastDiscarded: false);
+
+      final server = _LobbySyncRecordingServer();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+        foregroundServiceBridge: _FakeForegroundServiceBridge(),
+      );
+      final room = await controller.startFromSnapshot(
+        snapshot: snapshot,
+        actingHostPlayerId: actingHostId,
+      );
+
+      expect(room.roomId, roomId);
+      expect(room.hostPlayerId, actingHostId);
+      expect(room.originalHostPlayerId, originalHostId);
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
+      expect(room.turnState.betweenRoundsEnteredAtMs, isNotNull);
+      expect(controller.hasHostingAuthority, isTrue);
+
+      final reordered = room.turnSequence.reversed.toList();
+      server.broadcasts.clear();
+      expect(controller.reorderTurnOrderBetweenRounds(reordered), isTrue);
+      expect(room.turnSequence, reordered);
+      expect(server.broadcasts, hasLength(1));
+      final envelope = server.broadcasts.single;
+      expect(envelope.type, MessageTypes.gameState);
+      expect(envelope.payload['turnSequence'], reordered);
+      expect(envelope.payload['hostPlayerId'], actingHostId);
+      expect(
+        envelope.payload['gamePhase'],
+        GameRoomPhase.betweenRounds.wireValue,
+      );
+      expect(envelope.payload['betweenRoundsEnteredAt'], isNotNull);
+    });
   });
 
   group('HostRoomController heartbeat', () {
