@@ -315,6 +315,31 @@ class HostRoomController extends ChangeNotifier {
     return true;
   }
 
+  /// Updates the host's own seat directly (no WebSocket round-trip needed
+  /// since the host device owns this seat locally).
+  bool updateLocalPlayer(
+    String playerId, {
+    String? displayName,
+    String? colorId,
+    String? soundId,
+  }) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    final changed = LobbyRules.tryUpdatePlayer(
+      room,
+      playerId,
+      displayName: displayName,
+      colorId: colorId,
+      soundId: soundId,
+    );
+    if (changed) {
+      _broadcastLobbyState();
+    }
+    return changed;
+  }
+
   bool reorderSlots(List<String> orderedPlayerIds) {
     final room = _room;
     if (room == null) {
@@ -333,6 +358,19 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     if (!LobbyRules.tryReorderTurnSequence(room, orderedPlayerIds)) {
+      return false;
+    }
+    _broadcastLobbyState();
+    return true;
+  }
+
+  /// Host-only atomic seat reorder: slots + turnSequence, one LOBBY_STATE.
+  bool reorderSeats(List<String> orderedPlayerIds) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    if (!LobbyRules.tryReorderSeats(room, orderedPlayerIds)) {
       return false;
     }
     _broadcastLobbyState();
@@ -628,7 +666,8 @@ class HostRoomController extends ChangeNotifier {
     if (room == null) {
       return;
     }
-    final playerId = envelope.payload['playerId'] as String? ?? session.playerId;
+    final playerId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
     if (playerId == null) {
       return;
     }
@@ -646,7 +685,8 @@ class HostRoomController extends ChangeNotifier {
     if (room == null) {
       return;
     }
-    final playerId = envelope.payload['playerId'] as String? ?? session.playerId;
+    final playerId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
     if (playerId == null) {
       return;
     }
@@ -689,7 +729,8 @@ class HostRoomController extends ChangeNotifier {
 
     final roomId = envelope.payload['roomId'];
     final originalHostPlayerId = envelope.payload['originalHostPlayerId'];
-    final deviceId = envelope.payload['deviceId'] as String? ?? session.deviceId;
+    final deviceId =
+        envelope.payload['deviceId'] as String? ?? session.deviceId;
     if (roomId is! String ||
         originalHostPlayerId is! String ||
         deviceId == null) {
@@ -857,8 +898,7 @@ class HostRoomController extends ChangeNotifier {
       type: MessageTypes.roundCompleted,
       payload: {
         'currentRound': room.turnState.currentRound,
-        'nextRoundDurationSeconds':
-            TurnEngine.nextRoundDurationPreview(room),
+        'nextRoundDurationSeconds': TurnEngine.nextRoundDurationPreview(room),
         'serverNow': serverNow,
       },
     );

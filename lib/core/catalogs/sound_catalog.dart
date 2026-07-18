@@ -9,26 +9,26 @@ class CatalogSound {
   final String id;
   final String displayName;
 
-  /// Asset path under `assets/` (mute-safe stub until real tones land).
+  /// Flutter asset path including the `assets/` prefix.
   final String assetPath;
 }
 
-/// Eight turn sounds — all map to the same silent stub in PR1.
+/// Eight audibly distinct lobby preview sounds.
 class SoundCatalog {
   SoundCatalog._();
 
-  static const String _stubAsset = 'assets/sounds/sound_stub.wav';
-
+  // dart format off
   static const List<CatalogSound> all = [
-    CatalogSound(id: 'sound_1', displayName: 'Sonido 1', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_2', displayName: 'Sonido 2', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_3', displayName: 'Sonido 3', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_4', displayName: 'Sonido 4', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_5', displayName: 'Sonido 5', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_6', displayName: 'Sonido 6', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_7', displayName: 'Sonido 7', assetPath: _stubAsset),
-    CatalogSound(id: 'sound_8', displayName: 'Sonido 8', assetPath: _stubAsset),
+    CatalogSound(id: 'sound_1', displayName: 'Clic claro', assetPath: 'assets/sounds/click_1.wav'),
+    CatalogSound(id: 'sound_2', displayName: 'Clic grave', assetPath: 'assets/sounds/click_3.wav'),
+    CatalogSound(id: 'sound_3', displayName: 'Deslizar suave', assetPath: 'assets/sounds/rollover_2.wav'),
+    CatalogSound(id: 'sound_4', displayName: 'Deslizar brillante', assetPath: 'assets/sounds/rollover_5.wav'),
+    CatalogSound(id: 'sound_5', displayName: 'Interruptor corto', assetPath: 'assets/sounds/switch_1.wav'),
+    CatalogSound(id: 'sound_6', displayName: 'Interruptor elástico', assetPath: 'assets/sounds/switch_7.wav'),
+    CatalogSound(id: 'sound_7', displayName: 'Interruptor metálico', assetPath: 'assets/sounds/switch_19.wav'),
+    CatalogSound(id: 'sound_8', displayName: 'Interruptor digital', assetPath: 'assets/sounds/switch_32.wav'),
   ];
+  // dart format on
 
   static const defaultPreferredIds = ['sound_1', 'sound_2', 'sound_3'];
 

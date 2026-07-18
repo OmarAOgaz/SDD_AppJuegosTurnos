@@ -1,40 +1,43 @@
 import '../catalogs/color_catalog.dart';
 import '../catalogs/sound_catalog.dart';
 
-/// Catalog ids a player may pick: free ids plus their current assignment.
-List<String> eligibleColorIds({
+/// Catalog id with whether another player currently holds it.
+///
+/// All catalog ids are always included so sheets can show taken options
+/// struck through instead of omitting them.
+typedef PickerOption = ({String id, bool isTaken});
+
+/// All color options; [ownColorId] is never reported as taken.
+List<PickerOption> colorPickerOptions({
   required Set<String> takenColorIds,
   String? ownColorId,
 }) {
-  return _eligibleIds(
+  return _pickerOptions(
     takenIds: takenColorIds,
     ownId: ownColorId,
     allIds: ColorCatalog.allIds(),
   );
 }
 
-/// Catalog ids a player may pick: free ids plus their current assignment.
-List<String> eligibleSoundIds({
+/// All sound options; [ownSoundId] is never reported as taken.
+List<PickerOption> soundPickerOptions({
   required Set<String> takenSoundIds,
   String? ownSoundId,
 }) {
-  return _eligibleIds(
+  return _pickerOptions(
     takenIds: takenSoundIds,
     ownId: ownSoundId,
     allIds: SoundCatalog.allIds(),
   );
 }
 
-List<String> _eligibleIds({
+List<PickerOption> _pickerOptions({
   required Set<String> takenIds,
   required String? ownId,
   required List<String> allIds,
 }) {
-  final eligible = <String>[];
-  for (final id in allIds) {
-    if (!takenIds.contains(id) || id == ownId) {
-      eligible.add(id);
-    }
-  }
-  return eligible;
+  return [
+    for (final id in allIds)
+      (id: id, isTaken: takenIds.contains(id) && id != ownId),
+  ];
 }
