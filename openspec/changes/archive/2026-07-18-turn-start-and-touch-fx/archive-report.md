@@ -6,7 +6,8 @@
 **Status**: ARCHIVED / cycle_closed  
 **Archived to**: `openspec/changes/archive/2026-07-18-turn-start-and-touch-fx/`  
 **Engram**: `sdd/turn-start-and-touch-fx/archive-report`  
-**Implementation**: merged to `main` via stacked PRs #44 (cue) → #46 (FX) → #48 (polish); hybrid OpenSpec sync #50 (`224e91f`)
+**Implementation**: merged to `main` via stacked PRs #44 (cue) → #46 (FX) → #48 (polish); hybrid OpenSpec sync #50 (`224e91f`)  
+**Archive PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/52 (Closes #51)
 
 ## Task Completion Gate
 
