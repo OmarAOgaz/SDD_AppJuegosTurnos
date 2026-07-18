@@ -26,6 +26,9 @@ class ClientSyncState {
 
   bool get isInActiveGame => gamePhaseWire == GameRoomPhase.inGame.wireValue;
 
+  bool get isBetweenRounds =>
+      gamePhaseWire == GameRoomPhase.betweenRounds.wireValue;
+
   bool get isEnded => gamePhaseWire == GameRoomPhase.ended.wireValue;
 
   int estimatedServerNowMs() {
@@ -50,6 +53,22 @@ class ClientSyncState {
     final elapsedMs = estimatedServerNowMs() - startedAt;
     final remainingMs = duration * 1000 - elapsedMs;
     return (remainingMs / 1000).ceil();
+  }
+
+  /// Break elapsed seconds from authoritative stamp + interpolated `serverNow`.
+  ///
+  /// Returns null when not in `BETWEEN_ROUNDS` or when `betweenRoundsEnteredAt`
+  /// is missing. Clamps negative drift to 0.
+  int? betweenRoundsElapsedSeconds() {
+    if (!isBetweenRounds || lastGameState == null) {
+      return null;
+    }
+    final stamp = lastGameState!['betweenRoundsEnteredAt'];
+    if (stamp is! int) {
+      return null;
+    }
+    final elapsedMs = estimatedServerNowMs() - stamp;
+    return (elapsedMs / 1000).floor().clamp(0, 86400 * 7);
   }
 
   TurnPhase interpolatedPhase() {
