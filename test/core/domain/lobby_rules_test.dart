@@ -183,4 +183,57 @@ void main() {
       expect(room.turnState.currentRound, 1);
     });
   });
+
+  group('LobbyRules.tryReorderSeats', () {
+    GameRoom _three() {
+      final room = _hostRoom();
+      LobbyRules.tryJoin(
+        room: room,
+        playerId: 'p2',
+        deviceId: 'device-2',
+        displayName: 'Ana',
+        preferredColorIds: const ['color_2'],
+        preferredSoundIds: const ['sound_2'],
+      );
+      LobbyRules.tryJoin(
+        room: room,
+        playerId: 'p3',
+        deviceId: 'device-3',
+        displayName: 'Bob',
+        preferredColorIds: const ['color_3'],
+        preferredSoundIds: const ['sound_3'],
+      );
+      return room;
+    }
+
+    test('moves slots and turnSequence together and keeps hostPlayerId', () {
+      final room = _three();
+      final hostId = room.hostPlayerId;
+      expect(
+        LobbyRules.tryReorderSeats(room, const ['p2', 'host-1', 'p3']),
+        isTrue,
+      );
+      expect(room.slots, ['p2', 'host-1', 'p3']);
+      expect(room.turnSequence, ['p2', 'host-1', 'p3']);
+      expect(room.hostPlayerId, hostId);
+      expect(room.playersById['p2']!.slotNumber, 1);
+      expect(room.playersById['host-1']!.slotNumber, 2);
+    });
+
+    test('rejects stale occupancy after disconnect compact', () {
+      final room = _three();
+      expect(LobbyRules.tryRemoveDisconnected(room, 'p2'), 'p2');
+      expect(
+        LobbyRules.tryReorderSeats(room, const ['p2', 'host-1', 'p3']),
+        isFalse,
+      );
+      expect(room.slots, ['host-1', 'p3']);
+      expect(
+        LobbyRules.tryReorderSeats(room, const ['p3', 'host-1']),
+        isTrue,
+      );
+      expect(room.slots, ['p3', 'host-1']);
+      expect(room.turnSequence, ['p3', 'host-1']);
+    });
+  });
 }

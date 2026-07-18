@@ -193,7 +193,8 @@ void main() {
       expect(controller.room!.config.turnDurationSeconds, 90);
     });
 
-    test('join broadcasts LOBBY_STATE with new player and notifies host', () async {
+    test('join broadcasts LOBBY_STATE with new player and notifies host',
+        () async {
       final fixture = await _lobbySyncFixture();
       final controller = fixture.controller;
       final server = fixture.server;
@@ -250,6 +251,37 @@ void main() {
       );
     });
 
+    test(
+        'updateLocalPlayer syncs the host own seat without a socket round-trip',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      final hostId = controller.room!.hostPlayerId;
+
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      expect(
+        controller.updateLocalPlayer(hostId, displayName: 'Host renombrado'),
+        isTrue,
+      );
+
+      expect(notifications, 1);
+      expect(server.broadcasts, hasLength(1));
+      final players = server.broadcasts.single.payload['playersById'] as Map;
+      expect(players[hostId]['displayName'], 'Host renombrado');
+
+      server.broadcasts.clear();
+      expect(controller.updateLocalPlayer(hostId, colorId: 'color_5'), isTrue);
+      final afterColor = server.broadcasts.single.payload['playersById'] as Map;
+      expect(afterColor[hostId]['colorId'], 'color_5');
+
+      server.broadcasts.clear();
+      expect(controller.updateLocalPlayer(hostId, soundId: 'sound_4'), isTrue);
+      final afterSound = server.broadcasts.single.payload['playersById'] as Map;
+      expect(afterSound[hostId]['soundId'], 'sound_4');
+    });
+
     test('passTurn broadcasts GAME_STATE and notifies listeners', () async {
       final fixture = await _lobbySyncFixture();
       final controller = fixture.controller;
@@ -277,6 +309,37 @@ void main() {
       expect(server.broadcasts, hasLength(1));
       expect(server.broadcasts.single.type, MessageTypes.gameState);
       expect(server.broadcasts.single.payload['activePlayerId'], isNot(hostId));
+    });
+
+    test('reorderSeats updates both orders, keeps host, one broadcast',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final guestId = server.unicasts.single.$2.payload['playerId'] as String;
+      final hostId = controller.room!.hostPlayerId;
+      server.broadcasts.clear();
+
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      expect(
+        controller.reorderSeats([guestId, hostId]),
+        isTrue,
+      );
+      expect(notifications, 1);
+      expect(server.broadcasts, hasLength(1));
+      expect(server.broadcasts.single.type, MessageTypes.lobbyState);
+      expect(controller.room!.slots, [guestId, hostId]);
+      expect(controller.room!.turnSequence, [guestId, hostId]);
+      expect(controller.room!.hostPlayerId, hostId);
+
+      server.broadcasts.clear();
+      expect(controller.reorderSeats([guestId]), isFalse);
+      expect(server.broadcasts, isEmpty);
     });
 
     test('heartbeat rebinds session playerId after reconnect', () async {
@@ -323,7 +386,8 @@ void main() {
       );
     });
 
-    test('session close with deviceId only marks player disconnected for host pass',
+    test(
+        'session close with deviceId only marks player disconnected for host pass',
         () async {
       final fixture = await _lobbySyncFixture();
       final controller = fixture.controller;
@@ -692,8 +756,7 @@ void main() {
       );
       final room = controller.room!;
       final originalHostId = room.hostPlayerId;
-      final originalDeviceId =
-          room.playersById[originalHostId]!.deviceId;
+      final originalDeviceId = room.playersById[originalHostId]!.deviceId;
       expect(TurnEngine.startGame(room, 1), isTrue);
 
       // Simulate succession: acting host is the joined client.

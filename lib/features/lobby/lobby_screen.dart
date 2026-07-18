@@ -4,10 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/catalogs/color_catalog.dart';
-import '../../core/catalogs/sound_catalog.dart';
+import '../../core/audio/sound_preview_service.dart';
 import '../../core/constants/message_types.dart';
-import '../../core/domain/eligible_picker.dart';
 import '../../core/models/game_phase.dart';
 import '../../core/models/local_player_profile.dart';
 import '../../core/models/player.dart';
@@ -16,6 +14,8 @@ import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/providers/profile_providers.dart';
+import '../../server/host_room_controller.dart';
+import 'widgets/lobby_player_row.dart';
 
 /// Pre-game lobby for host and joining clients.
 class LobbyScreen extends ConsumerStatefulWidget {
@@ -41,15 +41,18 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   String? _statusMessage;
   bool _joinSent = false;
   bool _roomDiscarded = false;
+
   /// When true, dispose must not tear down the socket (lobby → game).
   bool _retainClientSession = false;
   final _roomNameController = TextEditingController();
+  late final SoundPreviewService _soundPreview;
 
   bool get _isHost => widget.role == 'host';
 
   @override
   void initState() {
     super.initState();
+    _soundPreview = SoundPreviewService();
     if (!_isHost) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connectClient());
     } else {
@@ -60,6 +63,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   @override
   void dispose() {
+    unawaited(_soundPreview.dispose());
     unawaited(_messageSub?.cancel());
     unawaited(_stateSub?.cancel());
     if (!_isHost && !_retainClientSession) {
@@ -184,7 +188,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     if (room == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Lobby')),
-        body: const Center(child: Text('No hay sala activa. Creá una desde Home.')),
+        body: const Center(
+            child: Text('No hay sala activa. Creá una desde Home.')),
       );
     }
 
@@ -211,7 +216,53 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         children: [
           Text('Jugadores (${players.length}/${room.config.maxPlayers})'),
           const SizedBox(height: 8),
-          ...players.map((player) => _playerTile(player, isHost: true)),
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            onReorderItem: (oldIndex, newIndex) {
+              final ids = players.map((p) => p.playerId).toList();
+              final moved = ids.removeAt(oldIndex);
+              ids.insert(newIndex, moved);
+              controller.reorderSeats(ids);
+            },
+            children: [
+              for (var i = 0; i < players.length; i++)
+                LobbyPlayerRow(
+                  key: ValueKey(players[i].playerId),
+                  player: players[i],
+                  isSelf: players[i].playerId == room.hostPlayerId,
+                  showHostAdminSlot: true,
+                  reorderIndex: i,
+                  reorderCount: players.length,
+                  onMoveUp: () =>
+                      _reorderHostSeat(controller, players, i, i - 1),
+                  onMoveDown: () =>
+                      _reorderHostSeat(controller, players, i, i + 1),
+                  takenColorIds: _takenColorsAmong(players),
+                  takenSoundIds: _takenSoundsAmong(players),
+                  previewService: _soundPreview,
+                  onNameChanged: players[i].playerId == room.hostPlayerId
+                      ? (value) => controller.updateLocalPlayer(
+                            players[i].playerId,
+                            displayName: value,
+                          )
+                      : null,
+                  onColorChanged: players[i].playerId == room.hostPlayerId
+                      ? (value) => controller.updateLocalPlayer(
+                            players[i].playerId,
+                            colorId: value,
+                          )
+                      : null,
+                  onSoundChanged: players[i].playerId == room.hostPlayerId
+                      ? (value) => controller.updateLocalPlayer(
+                            players[i].playerId,
+                            soundId: value,
+                          )
+                      : null,
+                ),
+            ],
+          ),
           const Divider(height: 32),
           Text('Configuración', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -311,13 +362,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final lobbyState = client?.lastLobbyState;
     final players = _playersFromLobbyState(lobbyState);
     final localPlayerId = client?.localPlayerId;
-    Player? localPlayer;
-    for (final player in players) {
-      if (player.playerId == localPlayerId) {
-        localPlayer = player;
-        break;
-      }
-    }
 
     if (_roomDiscarded) {
       return const Scaffold(
@@ -337,117 +381,64 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           if (players.isEmpty)
             const Text('Esperando LOBBY_STATE…')
           else
-            ...players.map((player) => _playerTile(player, isHost: false)),
-          if (localPlayer != null) ...[
-            const Divider(height: 32),
-            Text('Tu perfil', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _clientSelfEditor(localPlayer, lobbyState),
-          ],
+            ...players.map(
+              (player) => LobbyPlayerRow(
+                key: ValueKey(player.playerId),
+                player: player,
+                isSelf: player.playerId == localPlayerId,
+                showHostAdminSlot: false,
+                takenColorIds: _takenColorsAmong(players),
+                takenSoundIds: _takenSoundsAmong(players),
+                previewService: _soundPreview,
+                onNameChanged: player.playerId == localPlayerId
+                    ? (value) => _client?.sendUpdatePlayer(
+                          playerId: player.playerId,
+                          displayName: value,
+                        )
+                    : null,
+                onColorChanged: player.playerId == localPlayerId
+                    ? (value) => _client?.sendUpdatePlayer(
+                          playerId: player.playerId,
+                          colorId: value,
+                        )
+                    : null,
+                onSoundChanged: player.playerId == localPlayerId
+                    ? (value) => _client?.sendUpdatePlayer(
+                          playerId: player.playerId,
+                          soundId: value,
+                        )
+                    : null,
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _clientSelfEditor(Player player, Map<String, dynamic>? lobbyState) {
-    final takenColors = _takenColors(lobbyState);
-    final takenSounds = _takenSounds(lobbyState);
-    final colorOptions = eligibleColorIds(
-      takenColorIds: takenColors,
-      ownColorId: player.colorId,
-    );
-    final soundOptions = eligibleSoundIds(
-      takenSoundIds: takenSounds,
-      ownSoundId: player.soundId,
-    );
-
-    return Column(
-      children: [
-        TextField(
-          decoration: const InputDecoration(labelText: 'Nombre'),
-          controller: TextEditingController(text: player.displayName),
-          onSubmitted: (value) {
-            _client?.sendUpdatePlayer(
-              playerId: player.playerId,
-              displayName: value,
-            );
-          },
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: player.colorId,
-          decoration: const InputDecoration(labelText: 'Color'),
-          items: colorOptions
-              .map(
-                (id) => DropdownMenuItem(
-                  value: id,
-                  child: Text(ColorCatalog.byId(id)?.displayName ?? id),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value == null) {
-              return;
-            }
-            _client?.sendUpdatePlayer(
-              playerId: player.playerId,
-              colorId: value,
-            );
-          },
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: player.soundId,
-          decoration: const InputDecoration(labelText: 'Sonido'),
-          items: soundOptions
-              .map(
-                (id) => DropdownMenuItem(
-                  value: id,
-                  child: Text(SoundCatalog.byId(id)?.displayName ?? id),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value == null) {
-              return;
-            }
-            _client?.sendUpdatePlayer(
-              playerId: player.playerId,
-              soundId: value,
-            );
-          },
-        ),
-      ],
-    );
+  Set<String> _takenColorsAmong(List<Player> players) {
+    return players.map((player) => player.colorId).toSet();
   }
 
-  Set<String> _takenColors(Map<String, dynamic>? lobbyState) {
-    return _playersFromLobbyState(lobbyState)
-        .map((player) => player.colorId)
-        .toSet();
+  Set<String> _takenSoundsAmong(List<Player> players) {
+    return players.map((player) => player.soundId).toSet();
   }
 
-  Set<String> _takenSounds(Map<String, dynamic>? lobbyState) {
-    return _playersFromLobbyState(lobbyState)
-        .map((player) => player.soundId)
-        .toSet();
-  }
-
-  Widget _playerTile(Player player, {required bool isHost}) {
-    final color = ColorCatalog.byId(player.colorId)?.color ?? Colors.grey;
-    return ListTile(
-      leading: CircleAvatar(backgroundColor: color),
-      title: Text(player.displayName),
-      subtitle: Text(
-        'Slot ${player.slotNumber} · ${player.connected ? "conectado" : "desconectado"}',
-      ),
-      trailing: player.playerId ==
-              (isHost
-                  ? ref.read(hostRoomControllerProvider).room?.hostPlayerId
-                  : _client?.localPlayerId)
-          ? const Text('Tú')
-          : null,
-    );
+  void _reorderHostSeat(
+    HostRoomController controller,
+    List<Player> players,
+    int fromIndex,
+    int toIndex,
+  ) {
+    if (fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= players.length ||
+        toIndex >= players.length) {
+      return;
+    }
+    final ids = players.map((p) => p.playerId).toList();
+    final moved = ids.removeAt(fromIndex);
+    ids.insert(toIndex, moved);
+    controller.reorderSeats(ids);
   }
 
   Widget _configRow({
