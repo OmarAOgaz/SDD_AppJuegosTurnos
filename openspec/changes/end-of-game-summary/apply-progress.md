@@ -40,6 +40,8 @@
 
 **Status:** complete  
 **Branch:** `feat/end-of-game-summary-ui-02`  
+**PR:** https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/76  
+**Issue:** #75  
 **Mode:** Standard (strict_tdd: false)
 
 ### Completed (Phase 2)
@@ -54,10 +56,6 @@
 - [x] 3.2 `player_summary_card.dart`
 - [x] 3.3–3.6 `EndedScreen` summary UI (general + per-player cards, Salir teardown)
 - [x] 3.7 `ended_screen_smoke_test.dart` widget coverage
-
-### Pending (PR3)
-
-- [ ] Phase 4: Edge cases & verification (4.1–4.5)
 
 ### Files changed (PR2)
 
@@ -80,3 +78,38 @@
 ### Deviations
 
 - `_goHome` on `EndedScreen` uses `await ref.read(gameResumeStoreProvider.future)` (matches `GameScreen` teardown pattern) instead of `.asData?.value` to avoid race on fast exit.
+
+---
+
+## Batch 3 — PR3 Edges (stacked-to-main)
+
+**Status:** complete  
+**Branch:** `feat/end-of-game-summary-edges-03`  
+**Issue:** #77  
+**PR:** https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/78  
+**Mode:** Standard (strict_tdd: false)
+
+### Completed (Phase 4)
+
+- [x] 4.1 Succession best-effort: `EndedScreen` renders from in-game `lastGameState` without `matchEndedAtMs`
+- [x] 4.2 Empty fallback: empty-state message + top Salir teardown
+- [x] 4.3 Mid-round end: `currentRound` label shows in-progress value
+- [x] 4.4 `SYNC_REQUEST` when ended includes summary fields in controller test
+- [x] 4.5 `flutter test` + `dart analyze` on touched suites
+
+### Files changed (PR3)
+
+| File | Action |
+|------|--------|
+| `test/features/ended_screen_smoke_test.dart` | Modified — succession, empty, mid-round edge tests |
+| `test/server/host_room_controller_test.dart` | Modified — ended SYNC_REQUEST summary fields |
+| `openspec/changes/end-of-game-summary/tasks.md` | Updated — Phase 4 complete |
+
+### Verification (PR3)
+
+- `flutter test test/features/ended_screen_smoke_test.dart test/server/host_room_controller_test.dart test/core/domain/turn_engine_test.dart` — 49 passed
+- `dart analyze` on changed test files — no errors
+
+### Deviations
+
+None — edge behavior already supported by PR2 UI; PR3 adds regression coverage only.

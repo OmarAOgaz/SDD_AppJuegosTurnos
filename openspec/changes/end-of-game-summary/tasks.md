@@ -55,8 +55,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Edge cases & verification (PR3)
 
-- [ ] 4.1 Succession end: `EndedScreen` renders best-effort from last-known `lastGameState` when no final broadcast (no blank when prior state exists).
-- [ ] 4.2 Empty fallback: no `lastGameState` → empty-state message + top Exit still available.
-- [ ] 4.3 Mid-round end: rounds label shows in-progress `currentRound` value.
-- [ ] 4.4 `SYNC_REQUEST` response includes new summary fields when ended (`host_room_controller_test` or sync test).
-- [ ] 4.5 Run `flutter test` on touched suites; `dart analyze` on changed files.
+- [x] 4.1 Succession end: `EndedScreen` renders best-effort from last-known `lastGameState` when no final broadcast (no blank when prior state exists).
+- [x] 4.2 Empty fallback: no `lastGameState` → empty-state message + top Exit still available.
+- [x] 4.3 Mid-round end: rounds label shows in-progress `currentRound` value.
+- [x] 4.4 `SYNC_REQUEST` response includes new summary fields when ended (`host_room_controller_test` or sync test).
+- [x] 4.5 Run `flutter test` on touched suites; `dart analyze` on changed files.
