@@ -96,38 +96,41 @@ Only the host MUST mutate lobby config while `gamePhase` is lobby: `displayName`
 
 ### Requirement: Host reorder slots and turn sequence
 
-In lobby, the host MUST be able to `REORDER_SLOTS` among occupied slots 1…K and `REORDER_TURN_SEQUENCE` over those slots. Reorder MUST NOT transfer host authority. Clients MUST NOT reorder.
+The host MUST reorder occupied rows through arrows or a dedicated drag handle. One action MUST move `slots` and `turnSequence` together, preserve host authority, and broadcast `LOBBY_STATE`. Clients MUST NOT see or perform reorder.
 
-#### Scenario: Host reorders occupied slots
+#### Scenario: Host reorder
 
-- GIVEN K≥2 occupied slots
-- WHEN the host sends a valid `REORDER_SLOTS`
-- THEN `LOBBY_STATE` reflects the new occupant order
-- AND `hostPlayerId` is unchanged
+- GIVEN at least two occupied slots
+- WHEN the host moves a row
+- THEN both orders MUST change together and `hostPlayerId` MUST remain unchanged
+
+#### Scenario: Reorder synchronization
+
+- GIVEN a completed reorder
+- WHEN peers receive `LOBBY_STATE`
+- THEN every lobby MUST show the new order without refresh
 
 ### Requirement: UPDATE_PLAYER with UI-only color/sound exclusivity
 
-A seated player MUST update only their own `displayName` / `colorId` / `soundId` via `UPDATE_PLAYER`. **Display names MAY collide** across players in the same room; uniqueness of `displayName` MUST NOT be enforced. **Color and sound assignments MUST stay unique** among occupied seats. Clients MUST derive taken color/sound ids from `LOBBY_STATE` and MUST present only **currently free** catalog options in pickers (plus the player's own current assignment). Taken colors/sounds MUST NOT be selectable in the UI; the host therefore MUST NOT need (and this change MUST NOT require) an `UPDATE_PLAYER_REJECTED` path for `color_taken` / `sound_taken` under normal UI flow. If a non-UI client still requests a taken color or sound, the host MUST ignore the change for that field and MUST NOT emit a dedicated rejection message to players. Lobby overrides MUST NOT auto-write `LocalPlayerProfile`.
+A seated player MUST update only their own `displayName`, `colorId`, or `soundId`. Names MAY collide; occupied colors and sounds MUST remain unique. Clients MUST derive taken ids from `LOBBY_STATE`; taken options MUST be visible, struck-through, and disabled. Non-UI attempts to take an occupied option MUST be ignored without dedicated rejection. Lobby edits MUST NOT update `LocalPlayerProfile`.
 
-#### Scenario: Taken colors omitted from picker
+#### Scenario: Taken color is disabled
 
-- GIVEN player A holds `color_2`
-- WHEN player B opens the lobby color picker
-- THEN `color_2` MUST NOT appear as an eligible choice for B
-- AND B can still keep or re-select their own currently assigned color
+- GIVEN A holds `color_2`
+- WHEN B opens colors
+- THEN `color_2` MUST appear struck-through and disabled while B's own color remains selectable
 
-#### Scenario: Duplicate display names allowed
+#### Scenario: Duplicate names
 
-- GIVEN player A displayName is `Ana`
-- WHEN player B sets displayName to `Ana` via `UPDATE_PLAYER`
-- THEN the host MUST accept the update
-- AND `LOBBY_STATE` MAY show two players named `Ana` with distinct `playerId`s
+- GIVEN A is named `Ana`
+- WHEN B chooses `Ana`
+- THEN the host MUST accept distinct players sharing that name
 
-#### Scenario: Successful free-color self update
+#### Scenario: Free color update
 
-- GIVEN a free color in the room
-- WHEN the owner sends `UPDATE_PLAYER` with that color
-- THEN `LOBBY_STATE` shows the new color for that `playerId`
+- GIVEN a free color
+- WHEN its owner selects it
+- THEN `LOBBY_STATE` MUST show it for that player
 
 ### Requirement: START requires K ≥ 2
 
@@ -179,3 +182,103 @@ A non-host client MUST leave lobby via `LEAVE` (or disconnect). The host MUST co
 - WHEN the client sends `LEAVE`
 - THEN that player is removed and slots compact
 - AND remaining players stay in lobby
+
+### Requirement: Unified rows and host-only administration
+
+Host and client MUST show the same row structure: `Jugador {slotNumber}`, the name on the selected-color background, and Color and sound controls. Lobby rows MUST NOT render `Conectado`/`Desconectado` or any equivalent connection-status identifier (text, badge, icon, or assistive label). Reorder and room-admin controls MUST exist only for the host. Internal `connected` MUST remain in domain/protocol for permissions, disconnect, compact, and reorder.
+
+#### Scenario: Shared structure
+
+- GIVEN seated players
+- WHEN host and client render the lobby
+- THEN each shows the same player-row structure
+- AND neither shows a connection-status identifier
+
+#### Scenario: No connection-status UI identifier
+
+- GIVEN a seated player whose internal `connected` is true or false
+- WHEN host or client renders that player's lobby row
+- THEN no `Conectado`/`Desconectado` text, badge, icon, or equivalent visual/assistive connection-status identifier MUST be present
+
+#### Scenario: Client lacks administration
+
+- GIVEN a client lobby
+- WHEN rows render
+- THEN host-only controls MUST be absent and unusable
+
+### Requirement: Self-only editing
+
+Name, color, and sound controls MUST be interactive only on the local player's row. Editing MUST remain gated by internal `connected`: disconnected rows MUST disable editing without displaying a connection-status identifier.
+
+#### Scenario: Other row is read-only
+
+- GIVEN another player's row
+- WHEN the local user tries its controls
+- THEN no edit or sheet MUST occur
+
+#### Scenario: Disconnected editing
+
+- GIVEN a player whose internal `connected` is false
+- WHEN their row renders
+- THEN editing MUST be disabled
+- AND no connection-status identifier MUST appear
+
+### Requirement: Accessible option sheets
+
+Color and sound controls MUST open bottom sheets listing all eight options. Taken options MUST remain visible, struck-through, disabled, and announced as unavailable. Free options MUST have accessible names and states, visible selection, and adequate touch targets.
+
+#### Scenario: Taken option remains visible
+
+- GIVEN another player holds an option
+- WHEN its sheet opens
+- THEN that option MUST be shown struck-through, announced unavailable, and untappable
+
+#### Scenario: Free option is selectable
+
+- GIVEN a free option
+- WHEN the player taps it
+- THEN selection MUST be visibly indicated without confirmation
+
+### Requirement: Real sound selection and preview
+
+The first implementation MUST provide eight bundled, audibly distinguishable sounds and a functioning local playback mechanism; silence or a no-op MUST NOT satisfy preview. Tapping a playable free sound MUST select it, send `UPDATE_PLAYER`, and audibly preview it immediately. Selection and update MUST occur only when playback starts successfully. At most one preview MUST play: a later selection MUST interrupt and replace the active preview. Every sound MUST also have a distinct visible and assistive label plus non-audio selected/preview/error feedback.
+
+#### Scenario: Select and preview
+
+- GIVEN eight available sound resources
+- WHEN the player taps a free sound
+- THEN its distinct preview MUST play immediately and `UPDATE_PLAYER` MUST send its id
+
+#### Scenario: Preview replacement
+
+- GIVEN sound A is previewing
+- WHEN sound B is tapped before A finishes
+- THEN A MUST stop and B MUST begin without overlap
+
+#### Scenario: Resource unavailable
+
+- GIVEN a sound resource cannot be loaded or played
+- WHEN the player taps that sound
+- THEN the prior selection MUST remain, no update MUST be sent, and a visible/announced error MUST appear
+
+#### Scenario: Audio-independent accessibility
+
+- GIVEN audio is muted or unheard
+- WHEN a sound is focused, selected, previewed, or fails
+- THEN its label and current state MUST remain visually and assistively perceivable
+
+### Requirement: Per-keystroke name synchronization
+
+Each name keystroke MUST send `UPDATE_PLAYER` without confirmation. A stale `LOBBY_STATE` echo MUST NOT overwrite newer local text or move its cursor; peers MUST show accepted updates as they arrive.
+
+#### Scenario: Immediate propagation
+
+- GIVEN active name editing
+- WHEN one character changes
+- THEN an update MUST send immediately and peers MUST reflect its accepted state
+
+#### Scenario: Stale echo
+
+- GIVEN local text is newer than its acknowledgement
+- WHEN an older echo arrives
+- THEN text and cursor MUST NOT revert
