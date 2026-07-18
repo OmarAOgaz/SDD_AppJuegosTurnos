@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/catalogs/sound_catalog.dart';
+import '../../core/audio/sound_preview_service.dart';
 import '../../core/constants/message_types.dart';
-import '../../core/domain/eligible_picker.dart';
 import '../../core/models/game_phase.dart';
 import '../../core/models/local_player_profile.dart';
 import '../../core/models/player.dart';
@@ -44,12 +43,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   /// When true, dispose must not tear down the socket (lobby → game).
   bool _retainClientSession = false;
   final _roomNameController = TextEditingController();
+  late final SoundPreviewService _soundPreview;
 
   bool get _isHost => widget.role == 'host';
 
   @override
   void initState() {
     super.initState();
+    _soundPreview = SoundPreviewService();
     if (!_isHost) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _connectClient());
     } else {
@@ -60,6 +61,7 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   @override
   void dispose() {
+    unawaited(_soundPreview.dispose());
     unawaited(_messageSub?.cancel());
     unawaited(_stateSub?.cancel());
     if (!_isHost && !_retainClientSession) {
@@ -218,6 +220,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               isSelf: player.playerId == room.hostPlayerId,
               showHostAdminSlot: true,
               takenColorIds: _takenColorsAmong(players),
+              takenSoundIds: _takenSoundsAmong(players),
+              previewService: _soundPreview,
               onNameChanged: player.playerId == room.hostPlayerId
                   ? (value) => controller.updateLocalPlayer(
                         player.playerId,
@@ -228,6 +232,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                   ? (value) => controller.updateLocalPlayer(
                         player.playerId,
                         colorId: value,
+                      )
+                  : null,
+              onSoundChanged: player.playerId == room.hostPlayerId
+                  ? (value) => controller.updateLocalPlayer(
+                        player.playerId,
+                        soundId: value,
                       )
                   : null,
             ),
@@ -331,14 +341,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final lobbyState = client?.lastLobbyState;
     final players = _playersFromLobbyState(lobbyState);
     final localPlayerId = client?.localPlayerId;
-    Player? localPlayer;
-    for (final player in players) {
-      if (player.playerId == localPlayerId) {
-        localPlayer = player;
-        break;
-      }
-    }
-
     if (_roomDiscarded) {
       return const Scaffold(
         body: Center(child: Text('La sala fue cerrada por el host')),
@@ -364,6 +366,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 isSelf: player.playerId == localPlayerId,
                 showHostAdminSlot: false,
                 takenColorIds: _takenColorsAmong(players),
+                takenSoundIds: _takenSoundsAmong(players),
+                previewService: _soundPreview,
                 onNameChanged: player.playerId == localPlayerId
                     ? (value) => _client?.sendUpdatePlayer(
                           playerId: player.playerId,
@@ -376,61 +380,26 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                           colorId: value,
                         )
                     : null,
+                onSoundChanged: player.playerId == localPlayerId
+                    ? (value) => _client?.sendUpdatePlayer(
+                          playerId: player.playerId,
+                          soundId: value,
+                        )
+                    : null,
               ),
             ),
-          if (localPlayer != null) ...[
-            const Divider(height: 32),
-            Text('Tu perfil', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _clientSelfEditor(localPlayer, lobbyState),
-          ],
         ],
       ),
     );
   }
 
-  Widget _clientSelfEditor(Player player, Map<String, dynamic>? lobbyState) {
-    final takenSounds = _takenSounds(lobbyState);
-    final soundOptions = soundPickerOptions(
-      takenSoundIds: takenSounds,
-      ownSoundId: player.soundId,
-    ).where((option) => !option.isTaken).map((option) => option.id).toList();
-
-    return Column(
-      children: [
-        DropdownButtonFormField<String>(
-          initialValue: player.soundId,
-          decoration: const InputDecoration(labelText: 'Sonido'),
-          items: soundOptions
-              .map(
-                (id) => DropdownMenuItem(
-                  value: id,
-                  child: Text(SoundCatalog.byId(id)?.displayName ?? id),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value == null) {
-              return;
-            }
-            _client?.sendUpdatePlayer(
-              playerId: player.playerId,
-              soundId: value,
-            );
-          },
-        ),
-      ],
-    );
-  }
 
   Set<String> _takenColorsAmong(List<Player> players) {
     return players.map((player) => player.colorId).toSet();
   }
 
-  Set<String> _takenSounds(Map<String, dynamic>? lobbyState) {
-    return _playersFromLobbyState(lobbyState)
-        .map((player) => player.soundId)
-        .toSet();
+  Set<String> _takenSoundsAmong(List<Player> players) {
+    return players.map((player) => player.soundId).toSet();
   }
 
   Widget _configRow({

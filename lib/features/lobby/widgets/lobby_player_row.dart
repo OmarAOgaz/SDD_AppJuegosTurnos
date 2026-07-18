@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/sound_preview_service.dart';
 import '../../../core/catalogs/color_catalog.dart';
 import '../../../core/domain/eligible_picker.dart';
 import '../../../core/models/player.dart';
 import 'color_picker_sheet.dart';
 import 'lobby_name_field.dart';
+import 'sound_picker_sheet.dart';
 
 /// Single player row shared by host and client lobby views.
 ///
@@ -21,7 +23,10 @@ class LobbyPlayerRow extends StatelessWidget {
     required this.showHostAdminSlot,
     this.onNameChanged,
     this.onColorChanged,
+    this.onSoundChanged,
     this.takenColorIds = const {},
+    this.takenSoundIds = const {},
+    this.previewService,
   });
 
   final Player player;
@@ -29,7 +34,10 @@ class LobbyPlayerRow extends StatelessWidget {
   final bool showHostAdminSlot;
   final ValueChanged<String>? onNameChanged;
   final ValueChanged<String>? onColorChanged;
+  final ValueChanged<String>? onSoundChanged;
   final Set<String> takenColorIds;
+  final Set<String> takenSoundIds;
+  final SoundPreviewService? previewService;
 
   bool get _isEditable => isSelf && player.connected && onNameChanged != null;
   bool get _ownRowControlsVisible => isSelf && player.connected;
@@ -95,15 +103,25 @@ class LobbyPlayerRow extends StatelessWidget {
                   ),
                   if (_ownRowControlsVisible) ...[
                     const SizedBox(height: 4),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton(
-                        key: const Key('lobby-color-button'),
-                        onPressed: onColorChanged == null
-                            ? null
-                            : () => _openColorPicker(context),
-                        child: const Text('Color'),
-                      ),
+                    Row(
+                      children: [
+                        OutlinedButton(
+                          key: const Key('lobby-color-button'),
+                          onPressed: onColorChanged == null
+                              ? null
+                              : () => _openColorPicker(context),
+                          child: const Text('Color'),
+                        ),
+                        IconButton(
+                          key: const Key('lobby-sound-button'),
+                          tooltip: 'Sonido',
+                          icon: const Icon(Icons.volume_up),
+                          onPressed:
+                              onSoundChanged == null || previewService == null
+                                  ? null
+                                  : () => _openSoundPicker(context),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -132,6 +150,21 @@ class LobbyPlayerRow extends StatelessWidget {
         ),
         currentColorId: player.colorId,
         onSelected: onColorChanged!,
+      ),
+    );
+  }
+
+  void _openSoundPicker(BuildContext context) {
+    unawaited(
+      SoundPickerSheet.show(
+        context,
+        options: soundPickerOptions(
+          takenSoundIds: takenSoundIds,
+          ownSoundId: player.soundId,
+        ),
+        currentSoundId: player.soundId,
+        previewService: previewService!,
+        onCommitted: onSoundChanged!,
       ),
     );
   }
