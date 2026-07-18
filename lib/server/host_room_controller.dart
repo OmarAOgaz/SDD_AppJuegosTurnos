@@ -203,6 +203,37 @@ class HostRoomController extends ChangeNotifier {
     return room;
   }
 
+  /// Replaces in-memory room from a snapshot **without** restarting the server.
+  ///
+  /// Used during original-host reclaim after the first [startFromSnapshot]: a
+  /// second [startFromSnapshot] would [stopRoom] and drop peers that already
+  /// reconnected to this endpoint (~[kHostLossGraceMs] later they elect a
+  /// false acting host).
+  bool applyAuthoritativeSnapshot(
+    Map<String, dynamic> snapshot, {
+    String? actingHostPlayerId,
+  }) {
+    if (!isHosting || !hasHostingAuthority) {
+      return false;
+    }
+    final existing = _room;
+    if (existing == null) {
+      return false;
+    }
+
+    final room = GameRoom.fromSnapshot(snapshot);
+    if (room.roomId != existing.roomId) {
+      return false;
+    }
+    if (actingHostPlayerId != null) {
+      room.hostPlayerId = actingHostPlayerId;
+    }
+    room.playersById[room.hostPlayerId]?.connected = true;
+    _room = room;
+    _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+    return true;
+  }
+
   /// Exports authoritative state for `ROOM_SNAPSHOT` / peer takeover.
   Map<String, dynamic>? exportRoomSnapshot() {
     final room = _room;

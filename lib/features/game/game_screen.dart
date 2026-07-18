@@ -127,6 +127,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   int _motionSessionGen = 0;
   bool _successionInFlight = false;
   bool _reclaimInFlight = false;
+  /// Suppresses false succession while reconnecting after HOST_MIGRATED.
+  bool _hostMigrationInFlight = false;
   Completer<Map<String, dynamic>>? _reclaimSnapshotCompleter;
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
@@ -318,7 +320,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   Future<void> _onClientHostLost() async {
-    if (!mounted || _isHost || _successionInFlight) {
+    if (!mounted ||
+        _isHost ||
+        _successionInFlight ||
+        _reclaimInFlight ||
+        _hostMigrationInFlight) {
       return;
     }
     final client = ref.read(gameSocketClientProvider);
@@ -443,11 +449,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
 
-    if (host is String && port is int) {
-      await _reconnectToEndpoint(host, port);
-      return;
+    _hostMigrationInFlight = true;
+    try {
+      if (host is String && port is int) {
+        await _reconnectToEndpoint(host, port);
+        return;
+      }
+      await _waitForActingHost(roomId);
+    } finally {
+      _hostMigrationInFlight = false;
     }
-    await _waitForActingHost(roomId);
   }
 
   Future<void> _onRoomSnapshot(Map<String, dynamic> snapshot) async {
@@ -523,20 +534,21 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         port: controller.port,
       );
 
-      Map<String, dynamic> authoritative = optimistic;
       try {
-        authoritative = await snapshotWait.future.timeout(
+        final authoritative = await snapshotWait.future.timeout(
           const Duration(seconds: 3),
+        );
+        // Apply in-place — do NOT startFromSnapshot again (that stopRooms and
+        // drops peers that already reconnected to this endpoint).
+        controller.applyAuthoritativeSnapshot(
+          authoritative,
+          actingHostPlayerId: original,
         );
       } on TimeoutException {
         // Keep optimistic snapshot (already marks original connected).
       }
 
       await client.disconnect();
-      await controller.startFromSnapshot(
-        snapshot: authoritative,
-        actingHostPlayerId: original,
-      );
       if (!mounted) {
         return;
       }
