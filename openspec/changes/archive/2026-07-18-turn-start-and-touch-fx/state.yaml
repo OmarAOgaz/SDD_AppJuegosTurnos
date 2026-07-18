@@ -60,7 +60,12 @@ phases:
     archive_ready: true
     revision: 2
     revised_at: 2026-07-18
-    revision_note: "Fresh re-verify after PR #48 polish + hybrid sync (PR #50). 99/99 tests green; 13/13 scenarios COMPLIANT; prior hybrid untracked WARNING cleared. Engram planning artifacts still pre-polish (SUGGESTION)."
+    revision_note: "Fresh re-verify after PR #48 polish + hybrid sync (PR #50). 99/99 tests green; 13/13 scenarios COMPLIANT; prior hybrid untracked WARNING cleared."
+  archive:
+    status: complete
+    completed_at: 2026-07-18
+    artifact: openspec/changes/archive/2026-07-18-turn-start-and-touch-fx/archive-report.md
+    engram_topic: sdd/turn-start-and-touch-fx/archive-report
 
 delivery:
   strategy: auto-chain
@@ -75,5 +80,18 @@ delivery:
     - number: 48
       title: post-merge polish
       merged: true
+    - number: 50
+      title: hybrid OpenSpec sync
+      merged: true
 
-next_recommended: sdd-archive
+archive:
+  status: complete
+  cycle_closed: true
+  archived_at: 2026-07-18
+  archived_to: openspec/changes/archive/2026-07-18-turn-start-and-touch-fx/
+  main_specs:
+    - openspec/specs/turn-start-cue/spec.md
+    - openspec/specs/in-game-touch-fx/spec.md
+
+next_recommended: none
+last_updated: 2026-07-18
