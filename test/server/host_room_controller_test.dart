@@ -1174,6 +1174,56 @@ void main() {
       },
     );
 
+    test(
+      'SYNC_REQUEST when ended includes match and per-player summary fields',
+      () async {
+        final fixture = await _lobbySyncFixture();
+        final controller = fixture.controller;
+        final room = controller.room!;
+
+        controller.debugDispatchMessage(
+          'client-session-1',
+          _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+        );
+        const startMs = 1_500_000;
+        expect(TurnEngine.startGame(room, startMs), isTrue);
+        final hostId = room.hostPlayerId;
+        expect(
+          TurnEngine.tryPassTurn(
+            room: room,
+            senderPlayerId: hostId,
+            serverNowMs: startMs + 20_000,
+          ),
+          isTrue,
+        );
+        TurnEngine.endGame(room, startMs + 25_000);
+
+        final replies = <WsEnvelope>[];
+        controller.debugDispatchMessageWithSend(
+          'client-session-1',
+          const WsEnvelope(type: MessageTypes.syncRequest, payload: {}),
+          replies.add,
+        );
+
+        expect(replies, hasLength(1));
+        expect(replies.single.type, MessageTypes.gameState);
+        final payload = replies.single.payload;
+        expect(payload['gamePhase'], GameRoomPhase.ended.wireValue);
+        expect(payload['matchStartedAt'], startMs);
+        expect(payload['matchEndedAt'], startMs + 25_000);
+        expect(payload['totalBetweenRoundsMs'], 0);
+        expect(payload['totalSetupMs'], 0);
+        expect(payload['totalExplanationMs'], 0);
+        expect(payload['serverNow'], isA<int>());
+        expect(payload['turnStartedAt'], isNull);
+
+        final players = payload['playersById'] as Map<String, dynamic>;
+        final hostJson = players[hostId] as Map<String, dynamic>;
+        expect(hostJson['turnCount'], 1);
+        expect(hostJson['totalTurnMs'], 20_000);
+      },
+    );
+
     test('heartbeat rebind still works after succession fields present',
         () async {
       final fixture = await _lobbySyncFixture();
