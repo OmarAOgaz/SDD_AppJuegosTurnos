@@ -414,6 +414,16 @@ Future<void> _tapGestureAt(WidgetTester tester, Offset local) async {
   await tester.pump();
 }
 
+/// Completes any in-flight [TurnStartCue] so pass taps are not blocked.
+Future<void> _drainTurnStartCue(WidgetTester tester) async {
+  await tester.pump();
+  if (find.byType(TurnStartCue).evaluate().isEmpty) {
+    return;
+  }
+  await tester.pump(TurnStartCue.defaultDuration);
+  await tester.pump();
+}
+
 TouchFxOverlayState _touchFxState(WidgetTester tester) {
   return tester.state<TouchFxOverlayState>(find.byType(TouchFxOverlay));
 }
@@ -572,6 +582,7 @@ void main() {
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
       );
       await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
 
       await tester.tap(_gestureLayer);
       await tester.pump();
@@ -622,6 +633,7 @@ void main() {
       final client = _clientAs(_clientId);
       final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
       await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await _drainTurnStartCue(tester);
 
       await tester.tap(_gestureLayer);
       await tester.pump();
@@ -1088,6 +1100,9 @@ void main() {
       await tester.pump(turnInfoPresentationTimeout);
       expect(_activeTurnToast, findsNothing);
 
+      // Host became active earlier — drain cue before pass is allowed.
+      await _drainTurnStartCue(tester);
+
       // Post-timeout event uses latest ownership + new captured time.
       await tester.tap(_gestureLayer);
       await tester.pump();
@@ -1436,6 +1451,7 @@ void main() {
       await tester.pump();
       expect(_sounds.previewedIds, ['sound_1']);
 
+      await _drainTurnStartCue(tester);
       room.turnState.activePlayerId = _clientId;
       await tester.pump(const Duration(seconds: 1));
       await tester.pump();
@@ -1488,6 +1504,40 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
     });
+
+    testWidgets('host: tap during cue does not pass or show ripple',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(find.byType(TurnStartCue), findsOneWidget);
+
+      const tapAt = Offset(40, 60);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_touchFxState(tester).debugEffects, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host: pass works after cue ends', (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+      expect(find.byType(TurnStartCue), findsNothing);
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, [_hostId]);
+
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 
   group('Touch FX (Requirement: pass ripple / invalid X)', () {
@@ -1497,6 +1547,7 @@ void main() {
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
       );
       await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
 
       const tapAt = Offset(72, 118);
       await _tapGestureAt(tester, tapAt);
@@ -1559,7 +1610,7 @@ void main() {
     });
 
     testWidgets(
-        'non-active host invalid tap shows black X when local seat is color_1',
+        'non-active host invalid tap shows red X when local seat is color_1',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30),
@@ -1575,7 +1626,7 @@ void main() {
       expect(fx, hasLength(1));
       expect(fx.single.kind, TouchFxKind.invalidX);
       expect(fx.single.offset, tapAt);
-      expect(fx.single.color, Colors.black);
+      expect(fx.single.color, Colors.red);
 
       await tester.pumpWidget(const SizedBox());
     });

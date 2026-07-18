@@ -5,9 +5,32 @@ import 'package:flutter/material.dart';
 @visibleForTesting
 const touchFxOverlayKey = Key('touchFxOverlay');
 
-/// Short lifetime for ripple / invalid-X effects (within 400–600ms product band).
+/// Ripple lifetime — longer window so rings expand at a slower pace.
 @visibleForTesting
-const touchFxEffectDuration = Duration(milliseconds: 500);
+const touchFxRippleDuration = Duration(milliseconds: 2500);
+
+/// Base stroke width for ripple rings (thins slightly as they fade).
+const _rippleStrokeWidth = 5.5;
+
+/// How many concentric rings spawn per pass tap.
+const _rippleRingCount = 5;
+
+/// Invalid-X lifetime (kept short; independent of ripple travel).
+@visibleForTesting
+const touchFxInvalidXDuration = Duration(milliseconds: 500);
+
+/// Alias used by tests that wait for the longest in-flight FX to clear.
+@visibleForTesting
+const touchFxEffectDuration = touchFxRippleDuration;
+
+/// Progress delay between successive ripple rings (higher = more separation).
+const _rippleRingStagger = 0.16;
+
+/// Starting radius of a ripple ring at the tap point.
+const _rippleMinRadius = 20.0;
+
+/// Extra radius at full ring progress (propagation distance).
+const _rippleExpandRadius = 260.0;
 
 enum TouchFxKind { ripple, invalidX }
 
@@ -66,9 +89,13 @@ class TouchFxOverlayState extends State<TouchFxOverlay>
   }
 
   void _enqueue(TouchFxKind kind, Offset offset, Color color) {
+    final duration = switch (kind) {
+      TouchFxKind.ripple => touchFxRippleDuration,
+      TouchFxKind.invalidX => touchFxInvalidXDuration,
+    };
     final controller = AnimationController(
       vsync: this,
-      duration: touchFxEffectDuration,
+      duration: duration,
     );
     late final _ActiveFx fx;
     fx = _ActiveFx(
@@ -173,19 +200,24 @@ class _TouchFxPainter extends CustomPainter {
 
   void _paintRipple(Canvas canvas, TouchFxEffect fx) {
     final t = fx.progress;
-    final opacity = (1.0 - t).clamp(0.0, 1.0);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5
-      ..color = fx.color.withValues(alpha: opacity);
 
-    // Three staggered rings expanding from the tap point.
-    for (var i = 0; i < 3; i++) {
-      final ringT = (t - i * 0.12).clamp(0.0, 1.0);
+    // Staggered rings that spread apart and travel farther (water drop).
+    for (var i = 0; i < _rippleRingCount; i++) {
+      final ringT = (t - i * _rippleRingStagger).clamp(0.0, 1.0);
       if (ringT <= 0) {
         continue;
       }
-      final radius = 12.0 + ringT * 48.0;
+      // Ease-out fade: rings stay readable longer, then soft-land near 0 so
+      // clearing the effect does not look like a hard cut.
+      final fade = Curves.easeOutCubic.transform(ringT);
+      final opacity = (1.0 - fade).clamp(0.0, 1.0);
+      // Gentler expand curve + longer duration ⇒ slower propagation.
+      final expand = Curves.easeOut.transform(ringT);
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _rippleStrokeWidth * (1.0 - fade * 0.35)
+        ..color = fx.color.withValues(alpha: opacity);
+      final radius = _rippleMinRadius + expand * _rippleExpandRadius;
       canvas.drawCircle(fx.offset, radius, paint);
     }
   }
@@ -193,24 +225,29 @@ class _TouchFxPainter extends CustomPainter {
   void _paintInvalidX(Canvas canvas, TouchFxEffect fx) {
     final t = fx.progress;
     final opacity = (1.0 - t).clamp(0.0, 1.0);
+    const half = 22.0;
+    final o = fx.offset;
+    final a = Offset(o.dx - half, o.dy - half);
+    final b = Offset(o.dx + half, o.dy + half);
+    final c = Offset(o.dx + half, o.dy - half);
+    final d = Offset(o.dx - half, o.dy + half);
+
+    // Dark under-stroke so red/white marks stay readable on any ambient flash.
+    final outline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.0
+      ..strokeCap = StrokeCap.round
+      ..color = Colors.black.withValues(alpha: opacity * 0.55);
+    canvas.drawLine(a, b, outline);
+    canvas.drawLine(c, d, outline);
+
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
+      ..strokeWidth = 4.0
       ..strokeCap = StrokeCap.round
       ..color = fx.color.withValues(alpha: opacity);
-
-    const half = 14.0;
-    final o = fx.offset;
-    canvas.drawLine(
-      Offset(o.dx - half, o.dy - half),
-      Offset(o.dx + half, o.dy + half),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(o.dx + half, o.dy - half),
-      Offset(o.dx - half, o.dy + half),
-      paint,
-    );
+    canvas.drawLine(a, b, paint);
+    canvas.drawLine(c, d, paint);
   }
 
   @override

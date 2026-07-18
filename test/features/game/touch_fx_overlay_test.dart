@@ -23,7 +23,7 @@ void main() {
     expect(mid.single.offset, const Offset(40, 60));
     expect(mid.single.color, const Color(0xFF1E88E5));
 
-    await tester.pump(touchFxEffectDuration);
+    await tester.pump(touchFxRippleDuration);
     expect(key.currentState!.debugEffects, isEmpty);
   });
 
@@ -35,16 +35,16 @@ void main() {
       ),
     );
 
-    key.currentState!.enqueueInvalidX(const Offset(10, 20), Colors.black);
+    key.currentState!.enqueueInvalidX(const Offset(10, 20), Colors.white);
     await tester.pump();
 
     final mid = key.currentState!.debugEffects;
     expect(mid, hasLength(1));
     expect(mid.single.kind, TouchFxKind.invalidX);
     expect(mid.single.offset, const Offset(10, 20));
-    expect(mid.single.color, Colors.black);
+    expect(mid.single.color, Colors.white);
 
-    await tester.pump(touchFxEffectDuration);
+    await tester.pump(touchFxInvalidXDuration);
     expect(key.currentState!.debugEffects, isEmpty);
   });
 }
