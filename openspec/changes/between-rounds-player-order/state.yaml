@@ -27,15 +27,16 @@ tasks_progress:
     - 2.3
     - 2.4
     - 4.2
-  pending:
     - 3.1
     - 3.2
     - 3.3
     - 3.4
     - 4.3
+  pending: []
 last_updated: 2026-07-18
 notes: |
   PR1 domain merged to main (PR #54 / 16f0902).
-  PR2 host between-rounds UI applied on feat/between-rounds-host-ui-02 (tasks 2.1–2.4 + 4.2).
-  Chain strategy USER LOCKED: stacked-to-main.
-  Next: sdd-verify for PR2 slice, then sdd-apply PR3 client.
+  PR2 host between-rounds UI merged to main (PR #56 / ebada68).
+  PR3 client view-only + sync applied on feat/between-rounds-client-sync-03 (tasks 3.1–3.4 + 4.3).
+  All 18/18 tasks complete. Chain strategy USER LOCKED: stacked-to-main.
+  Next: sdd-verify, then sdd-archive.

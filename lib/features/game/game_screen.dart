@@ -1514,6 +1514,97 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           client?.sendPassTurn(playerId: localPlayerId!);
         },
         onExit: exitAsClient,
+        betweenRoundsBody: gamePhase == GameRoomPhase.betweenRounds &&
+                state != null
+            ? _buildClientBetweenRoundsBody(
+                context,
+                sync: sync,
+                state: state,
+                localPlayerId: localPlayerId,
+              )
+            : null,
+      ),
+    );
+  }
+
+  /// Client view-only between-rounds body: same list / elapsed / increment
+  /// readout as host, without reorder, slider, or start CTA.
+  Widget _buildClientBetweenRoundsBody(
+    BuildContext context, {
+    required ClientSyncState sync,
+    required Map<String, dynamic> state,
+    required String? localPlayerId,
+  }) {
+    final sequenceIds =
+        (state['turnSequence'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
+    final players = <Player>[
+      for (final id in sequenceIds)
+        _playerById(state, id) ??
+            Player(
+              playerId: id,
+              displayName: 'Vacío',
+              colorId: '',
+              soundId: '',
+              deviceId: '',
+              connected: false,
+            ),
+    ];
+
+    final elapsedSeconds = sync.betweenRoundsElapsedSeconds();
+    final room = GameRoom.fromSnapshot(state);
+    final durationPreview = TurnEngine.nextRoundDurationPreview(room);
+    final increment = state['roundIncrementSeconds'] as int? ??
+        room.config.roundIncrementSeconds;
+    final currentRound = state['currentRound'] as int? ?? room.turnState.currentRound;
+
+    return Padding(
+      key: betweenRoundsBodyKey,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Entre rondas',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          Text('Ronda $currentRound completada'),
+          if (elapsedSeconds != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              key: betweenRoundsElapsedKey,
+              'Tiempo de pausa: ${elapsedSeconds}s',
+            ),
+          ],
+          if (durationPreview != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              key: betweenRoundsDurationPreviewKey,
+              'Próxima duración: ${durationPreview}s',
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text(
+            'Orden de la siguiente ronda',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView(
+              children: [
+                for (var i = 0; i < players.length; i++)
+                  LobbyPlayerRow(
+                    key: ValueKey(players[i].playerId),
+                    player: players[i],
+                    isSelf: players[i].playerId == localPlayerId,
+                    showHostAdminSlot: false,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Incremento por ronda (s): $increment'),
+        ],
       ),
     );
   }
@@ -1551,7 +1642,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     if (gamePhase == GameRoomPhase.betweenRounds) {
       _wasMyDeviceActive = false;
-      // Host supplies the full break body (PR2). Clients keep the stub until PR3.
+      // Host (PR2) and client (PR3) supply full break bodies via [betweenRoundsBody].
       if (betweenRoundsBody != null) {
         return betweenRoundsBody;
       }

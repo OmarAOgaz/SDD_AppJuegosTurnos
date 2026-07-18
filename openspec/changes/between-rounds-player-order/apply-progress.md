@@ -13,13 +13,22 @@
 - **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/54
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/53
 
-### PR2 / Phase 2 host between-rounds UI (THIS BATCH)
+### PR2 / Phase 2 host between-rounds UI (MERGED)
 
 - **Branch**: `feat/between-rounds-host-ui-02`
-- **Commit**: `4b5aa2a`
+- **Commit**: `4b5aa2a` / merged as `ebada68` via PR #56
 - **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/56
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/55
 - **Base**: `main` @ `16f0902` (PR1 merged)
+
+### PR3 / Phase 3 client view-only + sync (THIS BATCH)
+
+- **Branch**: `feat/between-rounds-client-sync-03`
+- **Commits**: `948e391`, `f09ac69`
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/58
+- **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/57
+- **Base**: `main` @ `ebada68` (PR1+PR2 merged)
+- **Diff budget**: 357 insertions / 29 deletions (386 total; under 400)
 
 ## Completed Tasks
 
@@ -42,47 +51,59 @@
 - [x] 2.4 Widget tests in `game_screen_feedback_test.dart` — host affordances + variable-only (inGame hides break body)
 - [x] 4.2 PR2 verification — automated host break-flow widget tests green; **manual device/emulator E2E not run in this batch** (gap noted)
 
+### From PR3
+
+- [x] 3.1 `ClientSyncState.betweenRoundsElapsedSeconds()` + unit tests (null gates, floor, clamp, peer match)
+- [x] 3.2 Client between-rounds UI: list + elapsed + increment readout + duration preview; no reorder / slider / start CTA
+- [x] 3.3 Acting-host succession smoke: active `HostRoomController` mid-break shows host mutate controls (no new succession branch)
+- [x] 3.4 Widget checks: client cannot mutate; peers match elapsed from shared snapshot
+- [x] 4.3 PR3 verification — client sync + game_screen suites green
+
 ## Remaining Tasks
 
-- [ ] 3.1–3.4 Client view-only + sync (PR3)
-- [ ] 4.3 PR3 verification
+None — **18/18 tasks complete**. Ready for `sdd-verify` then `sdd-archive`.
 
-## Files Changed (PR2)
+## Files Changed (PR3)
 
 | File | Action | What Was Done |
 |------|--------|---------------|
-| `lib/features/game/game_screen.dart` | Modified | Host between-rounds body: list, reorder, increment, elapsed, preview, start CTA; test keys |
-| `test/features/game_screen_feedback_test.dart` | Modified | Fake controller break APIs; `_buildHostBetweenRoundsRoom`; 5 widget tests |
-| `openspec/changes/between-rounds-player-order/tasks.md` | Modified | PR2 + 4.2 checkboxes |
-| `openspec/changes/between-rounds-player-order/state.yaml` | Modified | apply progress for PR2 |
-| `openspec/changes/between-rounds-player-order/apply-progress.md` | Modified | Merged PR1+PR2 progress |
+| `lib/core/lifecycle/client_sync_state.dart` | Modified | `isBetweenRounds` + `betweenRoundsElapsedSeconds()` |
+| `test/core/client_sync_state_test.dart` | Modified | Unit tests for elapsed helper |
+| `lib/features/game/game_screen.dart` | Modified | Client view-only between-rounds body wired into `_buildClient` |
+| `test/features/game_screen_feedback_test.dart` | Modified | Client break fixtures + 3 PR3 widget tests |
+| `openspec/changes/between-rounds-player-order/tasks.md` | Modified | PR3 + 4.3 checkboxes |
+| `openspec/changes/between-rounds-player-order/state.yaml` | Modified | apply progress for PR3 / all done |
+| `openspec/changes/between-rounds-player-order/apply-progress.md` | Modified | Merged PR1+PR2+PR3 progress |
 
 ## Deviations from Design
 
-None material. Client between-rounds UI intentionally left as stub until PR3 (design auto-chain slice boundary). Host uses `DateTime.now()` for elapsed (same host clock pattern as in-game remaining), not `_now` injectable (presentation-only).
+None material. Client duration preview uses `GameRoom.fromSnapshot` + `TurnEngine.nextRoundDurationPreview` (same formula as host). Succession confirmed via existing host UI path (role=host + active controller); no new succession UI branch.
 
 ## Issues Found
 
-None blocking. Manual on-device break flow (task 4.2 wording) not executed; covered by widget tests that exercise reorder → increment → startNextRound against domain via fake controller.
+None blocking.
 
 ## Workload / PR Boundary
 
 - Mode: stacked PR slice (auto-chain)
-- Current work unit: PR2 host between-rounds UI
-- Boundary: start = main @ 16f0902 (PR1 merged); finish = host break UI + widget tests green; no client sync helper
-- Estimated review budget impact: ~250–350 product LOC (well under 400)
-- Rollback: revert PR2 branch / PR; host break returns to stub CTA-only UI
+- Current work unit: PR3 client view-only + sync
+- Boundary: start = main @ ebada68 (PR1+PR2 merged); finish = client break UI + elapsed helper + widget/unit tests green
+- Estimated review budget impact: ~200–280 product LOC (under 400)
+- Rollback: revert PR3 branch / PR; clients return to stub “Entre rondas” text
 
 ## Verification
 
 ```
-flutter test test/features/game_screen_feedback_test.dart
-→ 56 passed (incl. 5 Between-rounds host UI)
+flutter test test/core/client_sync_state_test.dart
+→ 7 passed
 
-dart analyze lib/features/game/game_screen.dart test/features/game_screen_feedback_test.dart
+flutter test test/features/game_screen_feedback_test.dart
+→ 59 passed (incl. 3 Between-rounds client UI + sync)
+
+dart analyze (touched paths)
 → No issues found
 ```
 
 ## Status
 
-13/18 tasks complete (PR1+PR2 slices done). Ready for `sdd-verify` on PR2 slice, then `sdd-apply` PR3 client.
+18/18 tasks complete (PR1+PR2+PR3). Ready for `sdd-verify`.
