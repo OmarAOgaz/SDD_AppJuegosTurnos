@@ -22,19 +22,20 @@ tasks_progress:
     - 1.6
     - 1.7
     - 4.1
-  pending:
     - 2.1
     - 2.2
     - 2.3
     - 2.4
+    - 4.2
+  pending:
     - 3.1
     - 3.2
     - 3.3
     - 3.4
-    - 4.2
     - 4.3
 last_updated: 2026-07-18
 notes: |
-  PR1 / Phase 1 domain foundation applied (tasks 1.1–1.7 + 4.1).
-  Chain strategy USER LOCKED: stacked-to-main. Branch feat/between-rounds-domain-01.
-  Next: sdd-verify for PR1 slice, then sdd-apply PR2 host UI.
+  PR1 domain merged to main (PR #54 / 16f0902).
+  PR2 host between-rounds UI applied on feat/between-rounds-host-ui-02 (tasks 2.1–2.4 + 4.2).
+  Chain strategy USER LOCKED: stacked-to-main.
+  Next: sdd-verify for PR2 slice, then sdd-apply PR3 client.

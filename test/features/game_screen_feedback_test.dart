@@ -9,18 +9,21 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 import 'package:audioplayers/audioplayers.dart';
 import 'package:turnos_juegos/core/audio/sound_preview_service.dart';
 import 'package:turnos_juegos/core/catalogs/color_catalog.dart';
+import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
 import 'package:turnos_juegos/core/lifecycle/immersive_system_ui.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/player.dart';
+import 'package:turnos_juegos/core/models/room_config.dart';
 import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 import 'package:turnos_juegos/core/sensors/motion_sensor_source.dart';
 import 'package:turnos_juegos/features/game/game_screen.dart';
 import 'package:turnos_juegos/features/game/touch_fx_overlay.dart';
 import 'package:turnos_juegos/features/game/turn_start_cue.dart';
+import 'package:turnos_juegos/features/lobby/widgets/lobby_reorder_controls.dart';
 import 'package:turnos_juegos/server/host_room_controller.dart';
 
 import 'fake_motion_sensor_source.dart';
@@ -138,6 +141,9 @@ class _FakeHostRoomController extends HostRoomController {
   GameRoom? _fakeRoom;
   final List<String> passTurnCalls = [];
   int endGameCalls = 0;
+  final List<List<String>> reorderBetweenRoundsCalls = [];
+  final List<int> setRoundIncrementCalls = [];
+  int startNextRoundCalls = 0;
 
   @override
   GameRoom? get room => _fakeRoom;
@@ -155,6 +161,54 @@ class _FakeHostRoomController extends HostRoomController {
   @override
   Future<void> endGame() async {
     endGameCalls++;
+  }
+
+  @override
+  bool reorderTurnOrderBetweenRounds(List<String> orderedPlayerIds) {
+    reorderBetweenRoundsCalls.add(List<String>.from(orderedPlayerIds));
+    final current = _fakeRoom;
+    if (current == null) {
+      return false;
+    }
+    final ok = TurnEngine.tryReorderTurnOrder(current, orderedPlayerIds);
+    if (ok) {
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  @override
+  bool setRoundIncrement(int seconds) {
+    setRoundIncrementCalls.add(seconds);
+    final current = _fakeRoom;
+    if (current == null) {
+      return false;
+    }
+    // Allow break-phase substitute the same way production does (lobby|break).
+    final clamped = seconds.clamp(
+      RoomConfig.minRoundIncrementSeconds,
+      RoomConfig.maxRoundIncrementSeconds,
+    );
+    current.config.roundIncrementSeconds = clamped;
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool startNextRound() {
+    startNextRoundCalls++;
+    final current = _fakeRoom;
+    if (current == null) {
+      return false;
+    }
+    final ok = TurnEngine.tryStartNextRound(
+      current,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    if (ok) {
+      notifyListeners();
+    }
+    return ok;
   }
 }
 
@@ -213,6 +267,45 @@ GameRoom _buildHostRoom({
     ..currentRoundDurationSeconds = durationSeconds
     ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch -
         (durationSeconds - remainingSeconds) * 1000;
+  return room;
+}
+
+/// Host room parked in [GameRoomPhase.betweenRounds] for break-UI tests.
+GameRoom _buildHostBetweenRoundsRoom({
+  int currentRound = 1,
+  int baseDuration = 60,
+  int roundIncrement = 5,
+  int elapsedBreakSeconds = 12,
+  bool clientConnected = true,
+  List<String>? turnSequence,
+}) {
+  final players = _players();
+  if (!clientConnected) {
+    players[_clientId] = players[_clientId]!.copyWith(connected: false);
+  }
+  final sequence = turnSequence ?? [_hostId, _clientId];
+  final room = GameRoom(
+    roomId: 'room-1',
+    displayName: 'Sala test',
+    hostPlayerId: _hostId,
+    gamePhase: GameRoomPhase.betweenRounds,
+    turnSequence: sequence,
+    slots: [_hostId, _clientId],
+    playersById: players,
+    config: RoomConfig(
+      turnDurationSeconds: baseDuration,
+      roundIncrementSeconds: roundIncrement,
+      variableTurnOrder: true,
+    ),
+  );
+  room.turnState
+    ..currentRound = currentRound
+    ..baseTurnDurationSeconds = baseDuration
+    ..currentRoundDurationSeconds = baseDuration
+    ..activePlayerId = null
+    ..turnStartedAtMs = null
+    ..betweenRoundsEnteredAtMs =
+        DateTime.now().millisecondsSinceEpoch - elapsedBreakSeconds * 1000;
   return room;
 }
 
@@ -1657,6 +1750,115 @@ void main() {
 
       expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.flashing);
       expect(find.byType(TouchFxOverlay), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Between-rounds host UI (PR2)', () {
+    testWidgets(
+        'host shows sequence list, reorder, increment, elapsed, preview, start',
+        (tester) async {
+      final room = _buildHostBetweenRoundsRoom(
+        currentRound: 1,
+        baseDuration: 60,
+        roundIncrement: 5,
+        elapsedBreakSeconds: 12,
+        clientConnected: false,
+      );
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
+      expect(find.text('Entre rondas'), findsOneWidget);
+      expect(find.text(_hostName), findsOneWidget);
+      expect(find.text(_clientName), findsOneWidget);
+      expect(find.byType(LobbyReorderControls), findsNWidgets(2));
+      expect(find.byKey(betweenRoundsIncrementSliderKey), findsOneWidget);
+      expect(find.byKey(betweenRoundsStartKey), findsOneWidget);
+
+      final elapsed = tester.widget<Text>(find.byKey(betweenRoundsElapsedKey));
+      expect(elapsed.data, startsWith('Tiempo de pausa: '));
+      final elapsedSecs = int.parse(
+        elapsed.data!.replaceAll(RegExp(r'[^0-9]'), ''),
+      );
+      expect(elapsedSecs, inInclusiveRange(11, 13));
+
+      // Round 2 preview: base 60 + 1*increment 5 = 65.
+      expect(
+        find.byKey(betweenRoundsDurationPreviewKey),
+        findsOneWidget,
+      );
+      expect(find.text('Próxima duración: 65s'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host reorder settle calls reorderTurnOrderBetweenRounds',
+        (tester) async {
+      final room = _buildHostBetweenRoundsRoom();
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await tester.tap(find.byKey(const Key('lobby-reorder-down-0')));
+      await tester.pump();
+
+      expect(controller.reorderBetweenRoundsCalls, isNotEmpty);
+      expect(
+        controller.reorderBetweenRoundsCalls.last,
+        [_clientId, _hostId],
+      );
+      expect(room.turnSequence, [_clientId, _hostId]);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host increment slider substitutes roundIncrementSeconds',
+        (tester) async {
+      final room = _buildHostBetweenRoundsRoom(roundIncrement: 5);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      final slider = tester.widget<Slider>(
+        find.byKey(betweenRoundsIncrementSliderKey),
+      );
+      slider.onChanged!(10);
+      await tester.pump();
+
+      expect(controller.setRoundIncrementCalls, contains(10));
+      expect(room.config.roundIncrementSeconds, 10);
+      // Preview must reflect substituted increment for next round (round 2).
+      expect(find.text('Próxima duración: 70s'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host start CTA invokes startNextRound', (tester) async {
+      final room = _buildHostBetweenRoundsRoom();
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await tester.tap(find.byKey(betweenRoundsStartKey));
+      await tester.pump();
+
+      expect(controller.startNextRoundCalls, 1);
+      expect(room.gamePhase, GameRoomPhase.inGame);
+      expect(room.turnState.betweenRoundsEnteredAtMs, isNull);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'variable-only: inGame host does not show between-rounds body',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsNothing);
+      expect(find.byKey(betweenRoundsStartKey), findsNothing);
+      expect(find.byKey(betweenRoundsIncrementSliderKey), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
     });
