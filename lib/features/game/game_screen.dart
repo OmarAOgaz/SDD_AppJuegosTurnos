@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../core/audio/sound_preview_service.dart';
 import '../../core/catalogs/color_catalog.dart';
 import '../../core/constants/message_types.dart';
 import '../../core/domain/host_succession_coordinator.dart';
@@ -26,6 +27,7 @@ import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/sensors/motion_sensor_source.dart';
+import 'turn_start_cue.dart';
 
 /// Identifies the sole full-screen tap/long-press layer during `inGame` —
 /// exposed so widget tests can target it unambiguously (Scaffold/MaterialApp
@@ -64,6 +66,7 @@ class GameScreen extends ConsumerStatefulWidget {
     this.pickupDetector,
     this.immersiveSystemUi,
     this.now,
+    this.soundPreviewService,
   });
 
   final String role;
@@ -81,6 +84,9 @@ class GameScreen extends ConsumerStatefulWidget {
 
   /// Wall-clock used when capturing presentation time (tests inject fixed).
   final DateTime Function()? now;
+
+  /// Optional turn-start sound owner (tests inject fakes; else created locally).
+  final SoundPreviewService? soundPreviewService;
 
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
@@ -111,6 +117,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   late final PickupDetector _pickupDetector;
   late final ImmersiveSystemUi _immersive;
   late final DateTime Function() _now;
+  late final SoundPreviewService _soundPreview;
+  late final bool _ownsSoundPreview;
+
+  /// Rising-edge tracker for the ephemeral turn-start cue.
+  bool _wasMyDeviceActive = false;
+  TurnStartCueKey? _lastFiredCue;
+  bool _showTurnStartCue = false;
+  Color? _turnStartCueColor;
+  Key _turnStartCueInstanceKey = const ValueKey(0);
+  int _turnStartCueEpoch = 0;
 
   bool get _isHost => widget.role == 'host';
 
@@ -121,6 +137,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _pickupDetector = widget.pickupDetector ?? PickupDetector();
     _immersive = widget.immersiveSystemUi ?? ImmersiveSystemUi();
     _now = widget.now ?? DateTime.now;
+    final injectedSound = widget.soundPreviewService;
+    if (injectedSound != null) {
+      _soundPreview = injectedSound;
+      _ownsSoundPreview = false;
+    } else {
+      _soundPreview = SoundPreviewService();
+      _ownsSoundPreview = true;
+    }
     _uiTick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {});
@@ -826,12 +850,62 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
     unawaited(_mdnsSub?.cancel() ?? Future<void>.value());
+    if (_ownsSoundPreview) {
+      unawaited(_soundPreview.dispose());
+    }
     if (_wakelockOn) {
       _wakelockOn = false;
       unawaited(WakelockPlus.disable());
     }
     unawaited(_immersive.restore());
     super.dispose();
+  }
+
+  /// Edge-detects local activation and schedules a one-shot color/sound cue.
+  ///
+  /// Safe to call from build: side effects run only when [shouldFireTurnStartCue]
+  /// is true, and [wasActive]/[lastFired] update synchronously to prevent
+  /// duplicate fires on the next rebuild.
+  void _syncTurnStartCue({
+    required GameRoomPhase gamePhase,
+    required bool isMyDeviceActive,
+    required TurnStartCueKey? currentKey,
+    required Color? localColor,
+    required String? localSoundId,
+  }) {
+    if (gamePhase != GameRoomPhase.inGame) {
+      _wasMyDeviceActive = false;
+      return;
+    }
+
+    final shouldFire = shouldFireTurnStartCue(
+      wasActive: _wasMyDeviceActive,
+      isMyDeviceActive: isMyDeviceActive,
+      lastFired: _lastFiredCue,
+      current: currentKey,
+    );
+    _wasMyDeviceActive = isMyDeviceActive;
+    if (!shouldFire || currentKey == null) {
+      return;
+    }
+
+    _lastFiredCue = currentKey;
+    final cueColor = localColor ?? Colors.white;
+    final soundId = localSoundId;
+    final nextEpoch = ++_turnStartCueEpoch;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || nextEpoch != _turnStartCueEpoch) {
+        return;
+      }
+      setState(() {
+        _showTurnStartCue = true;
+        _turnStartCueColor = cueColor;
+        _turnStartCueInstanceKey = ValueKey(nextEpoch);
+      });
+      if (soundId != null && soundId.isNotEmpty) {
+        unawaited(_soundPreview.preview(soundId));
+      }
+    });
   }
 
   Player? _playerById(Map<String, dynamic>? state, String? playerId) {
@@ -1155,6 +1229,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       room.toGameStatePayload(serverNow: serverNow),
       room.turnState.activePlayerId,
     );
+    final hostPlayer = room.playersById[room.hostPlayerId];
+    final activeId = room.turnState.activePlayerId;
+    final startedAt = room.turnState.turnStartedAtMs;
     final onBlackBackground = room.gamePhase == GameRoomPhase.inGame;
 
     Future<void> exitAsHost() async {
@@ -1190,6 +1267,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         activeColorId: active?.colorId,
         isMyDeviceActive: room.turnState.activePlayerId == room.hostPlayerId,
         canHostPassForDisconnectedActive: active != null && !active.connected,
+        localColorId: hostPlayer?.colorId,
+        localSoundId: hostPlayer?.soundId,
+        currentCueKey: (activeId != null && startedAt != null)
+            ? TurnStartCueKey(
+                activePlayerId: activeId,
+                turnStartedAtMs: startedAt,
+              )
+            : null,
         exitActionLabel: 'Terminar partida',
         onPass: () {
           final passed = controller.passTurn(room.hostPlayerId);
@@ -1244,6 +1329,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     final currentRound = state?['currentRound'];
+    final localPlayer = _playerById(state, localPlayerId);
+    final startedAt = state?['turnStartedAt'];
+    final turnStartedAtMs = startedAt is int ? startedAt : null;
     return Scaffold(
       appBar: onBlackBackground
           ? null
@@ -1259,6 +1347,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         activeName: active?.displayName ?? '—',
         activeColorId: active?.colorId,
         isMyDeviceActive: canPass,
+        localColorId: localPlayer?.colorId,
+        localSoundId: localPlayer?.soundId,
+        currentCueKey: (activeId != null && turnStartedAtMs != null)
+            ? TurnStartCueKey(
+                activePlayerId: activeId,
+                turnStartedAtMs: turnStartedAtMs,
+              )
+            : null,
         exitActionLabel: 'Salir partida',
         onPass: () {
           client?.sendPassTurn(playerId: localPlayerId!);
@@ -1278,12 +1374,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required String? activeColorId,
     required bool isMyDeviceActive,
     bool canHostPassForDisconnectedActive = false,
+    String? localColorId,
+    String? localSoundId,
+    TurnStartCueKey? currentCueKey,
     required String exitActionLabel,
     required VoidCallback onPass,
     required Future<void> Function() onExit,
     List<Widget>? betweenRoundsActions,
   }) {
     final color = ColorCatalog.byId(activeColorId ?? '')?.color ?? Colors.grey;
+    final localSeatColor = ColorCatalog.byId(localColorId ?? '')?.color;
     final timerColor = switch (phase) {
       TurnPhase.exceeded => Colors.red,
       TurnPhase.warning => Colors.orange,
@@ -1296,6 +1396,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     };
 
     if (gamePhase == GameRoomPhase.betweenRounds) {
+      _wasMyDeviceActive = false;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -1321,6 +1422,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       phase: phase,
       activeColorId: activeColorId,
     );
+
+    if (onBlackBackground) {
+      _syncTurnStartCue(
+        gamePhase: gamePhase,
+        isMyDeviceActive: isMyDeviceActive,
+        currentKey: currentCueKey,
+        localColor: localSeatColor,
+        localSoundId: localSoundId,
+      );
+    } else {
+      _wasMyDeviceActive = false;
+    }
 
     // Non-inGame phases keep the always-visible chrome (turn/timer/status).
     if (!onBlackBackground) {
@@ -1415,6 +1528,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             fit: StackFit.expand,
             children: [
               Positioned.fill(child: BlinkFeedbackLayer(visual: visual)),
+              if (_showTurnStartCue && _turnStartCueColor != null)
+                Positioned.fill(
+                  child: TurnStartCue(
+                    key: _turnStartCueInstanceKey,
+                    color: _turnStartCueColor!,
+                    onCompleted: () {
+                      if (mounted) {
+                        setState(() => _showTurnStartCue = false);
+                      }
+                    },
+                  ),
+                ),
               if (_activePresentation != null)
                 Positioned(
                   top: 24,
