@@ -1,9 +1,14 @@
 # SDD local agent cache
 .atl/
 
+# Agent / local tooling leftovers
+.pr2a_*
+.codegraph/
+
 # Flutter / Dart (anticipated)
 .dart_tool/
 .packages
+.flutter-plugins-dependencies
 build/
 *.iml
 .idea/
