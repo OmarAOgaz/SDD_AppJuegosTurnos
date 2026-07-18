@@ -8,19 +8,21 @@ import '../../../core/domain/eligible_picker.dart';
 import '../../../core/models/player.dart';
 import 'color_picker_sheet.dart';
 import 'lobby_name_field.dart';
+import 'lobby_reorder_controls.dart';
 import 'sound_picker_sheet.dart';
 
-/// Single player row shared by host and client lobby views.
-///
-/// Same structure for both roles; only the local, connected player's row
-/// is editable. The trailing admin slot is host-only and disabled here
-/// (reorder lands in a later slice); it is absent for clients.
+/// Shared host/client player row. Only the local connected seat is editable.
+/// Host-only reorder controls render when [showHostAdminSlot] is true.
 class LobbyPlayerRow extends StatelessWidget {
   const LobbyPlayerRow({
     super.key,
     required this.player,
     required this.isSelf,
     required this.showHostAdminSlot,
+    this.reorderIndex = 0,
+    this.reorderCount = 1,
+    this.onMoveUp,
+    this.onMoveDown,
     this.onNameChanged,
     this.onColorChanged,
     this.onSoundChanged,
@@ -32,6 +34,10 @@ class LobbyPlayerRow extends StatelessWidget {
   final Player player;
   final bool isSelf;
   final bool showHostAdminSlot;
+  final int reorderIndex;
+  final int reorderCount;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
   final ValueChanged<String>? onNameChanged;
   final ValueChanged<String>? onColorChanged;
   final ValueChanged<String>? onSoundChanged;
@@ -50,6 +56,8 @@ class LobbyPlayerRow extends StatelessWidget {
             ? Colors.white
             : Colors.black;
 
+    // Color/Sound sit under the name so host admin controls (3×48) fit on
+    // narrow phones without crushing the label row.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -63,11 +71,14 @@ class LobbyPlayerRow extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        'Jugador ${player.slotNumber}${isSelf ? " (Tú)" : ""}',
-                        style: Theme.of(context).textTheme.labelLarge,
+                      Expanded(
+                        child: Text(
+                          'Jugador ${player.slotNumber}${isSelf ? " (Tú)" : ""}',
+                          style: Theme.of(context).textTheme.labelLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      const Spacer(),
                       Icon(
                         Icons.circle,
                         size: 10,
@@ -129,11 +140,12 @@ class LobbyPlayerRow extends StatelessWidget {
             ),
           ),
           if (showHostAdminSlot)
-            const IconButton(
-              key: Key('lobby-admin-slot'),
-              icon: Icon(Icons.drag_handle),
-              tooltip: 'Reordenar (próximamente)',
-              onPressed: null,
+            LobbyReorderControls(
+              key: const Key('lobby-admin-slot'),
+              index: reorderIndex,
+              itemCount: reorderCount,
+              onMoveUp: onMoveUp,
+              onMoveDown: onMoveDown,
             ),
         ],
       ),

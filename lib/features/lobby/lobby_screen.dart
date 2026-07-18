@@ -14,6 +14,7 @@ import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/providers/profile_providers.dart';
+import '../../server/host_room_controller.dart';
 import 'widgets/lobby_player_row.dart';
 
 /// Pre-game lobby for host and joining clients.
@@ -213,34 +214,52 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         children: [
           Text('Jugadores (${players.length}/${room.config.maxPlayers})'),
           const SizedBox(height: 8),
-          ...players.map(
-            (player) => LobbyPlayerRow(
-              key: ValueKey(player.playerId),
-              player: player,
-              isSelf: player.playerId == room.hostPlayerId,
-              showHostAdminSlot: true,
-              takenColorIds: _takenColorsAmong(players),
-              takenSoundIds: _takenSoundsAmong(players),
-              previewService: _soundPreview,
-              onNameChanged: player.playerId == room.hostPlayerId
-                  ? (value) => controller.updateLocalPlayer(
-                        player.playerId,
-                        displayName: value,
-                      )
-                  : null,
-              onColorChanged: player.playerId == room.hostPlayerId
-                  ? (value) => controller.updateLocalPlayer(
-                        player.playerId,
-                        colorId: value,
-                      )
-                  : null,
-              onSoundChanged: player.playerId == room.hostPlayerId
-                  ? (value) => controller.updateLocalPlayer(
-                        player.playerId,
-                        soundId: value,
-                      )
-                  : null,
-            ),
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            onReorderItem: (oldIndex, newIndex) {
+              final ids = players.map((p) => p.playerId).toList();
+              final moved = ids.removeAt(oldIndex);
+              ids.insert(newIndex, moved);
+              controller.reorderSeats(ids);
+            },
+            children: [
+              for (var i = 0; i < players.length; i++)
+                LobbyPlayerRow(
+                  key: ValueKey(players[i].playerId),
+                  player: players[i],
+                  isSelf: players[i].playerId == room.hostPlayerId,
+                  showHostAdminSlot: true,
+                  reorderIndex: i,
+                  reorderCount: players.length,
+                  onMoveUp: () =>
+                      _reorderHostSeat(controller, players, i, i - 1),
+                  onMoveDown: () =>
+                      _reorderHostSeat(controller, players, i, i + 1),
+                  takenColorIds: _takenColorsAmong(players),
+                  takenSoundIds: _takenSoundsAmong(players),
+                  previewService: _soundPreview,
+                  onNameChanged: players[i].playerId == room.hostPlayerId
+                      ? (value) => controller.updateLocalPlayer(
+                            players[i].playerId,
+                            displayName: value,
+                          )
+                      : null,
+                  onColorChanged: players[i].playerId == room.hostPlayerId
+                      ? (value) => controller.updateLocalPlayer(
+                            players[i].playerId,
+                            colorId: value,
+                          )
+                      : null,
+                  onSoundChanged: players[i].playerId == room.hostPlayerId
+                      ? (value) => controller.updateLocalPlayer(
+                            players[i].playerId,
+                            soundId: value,
+                          )
+                      : null,
+                ),
+            ],
           ),
           const Divider(height: 32),
           Text('Configuración', style: Theme.of(context).textTheme.titleMedium),
@@ -400,6 +419,25 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
   Set<String> _takenSoundsAmong(List<Player> players) {
     return players.map((player) => player.soundId).toSet();
+  }
+
+
+  void _reorderHostSeat(
+    HostRoomController controller,
+    List<Player> players,
+    int fromIndex,
+    int toIndex,
+  ) {
+    if (fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= players.length ||
+        toIndex >= players.length) {
+      return;
+    }
+    final ids = players.map((p) => p.playerId).toList();
+    final moved = ids.removeAt(fromIndex);
+    ids.insert(toIndex, moved);
+    controller.reorderSeats(ids);
   }
 
   Widget _configRow({

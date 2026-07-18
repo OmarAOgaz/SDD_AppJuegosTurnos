@@ -34,20 +34,31 @@ Future<void> _pump(
   Set<String> takenSoundIds = const {},
   SoundPreviewService? previewService,
 }) {
+  final row = LobbyPlayerRow(
+    player: player,
+    isSelf: isSelf,
+    showHostAdminSlot: showHostAdminSlot,
+    reorderIndex: 0,
+    reorderCount: 2,
+    onMoveUp: () {},
+    onMoveDown: () {},
+    onNameChanged: onNameChanged,
+    onColorChanged: onColorChanged,
+    onSoundChanged: onSoundChanged,
+    takenColorIds: takenColorIds,
+    takenSoundIds: takenSoundIds,
+    previewService: previewService,
+  );
   return tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: LobbyPlayerRow(
-          player: player,
-          isSelf: isSelf,
-          showHostAdminSlot: showHostAdminSlot,
-          onNameChanged: onNameChanged,
-          onColorChanged: onColorChanged,
-          onSoundChanged: onSoundChanged,
-          takenColorIds: takenColorIds,
-          takenSoundIds: takenSoundIds,
-          previewService: previewService,
-        ),
+        body: showHostAdminSlot
+            ? ReorderableListView(
+                onReorderItem: (_, __) {},
+                buildDefaultDragHandles: false,
+                children: [KeyedSubtree(key: const ValueKey('r'), child: row)],
+              )
+            : row,
       ),
     ),
   );
@@ -63,9 +74,12 @@ void main() {
       expect(find.text('Jugador 1'), findsOneWidget);
       expect(find.text('Conectado'), findsOneWidget);
       expect(find.byKey(const Key('lobby-admin-slot')), findsOneWidget);
+      expect(find.byKey(const Key('lobby-reorder-up-0')), findsOneWidget);
+      expect(find.byKey(const Key('lobby-reorder-drag')), findsOneWidget);
 
       await _pump(tester, player, isSelf: false, showHostAdminSlot: false);
       expect(find.byKey(const Key('lobby-admin-slot')), findsNothing);
+      expect(find.byKey(const Key('lobby-reorder-up-0')), findsNothing);
     },
   );
 

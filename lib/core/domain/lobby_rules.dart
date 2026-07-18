@@ -238,6 +238,29 @@ class LobbyRules {
     return true;
   }
 
+  /// Atomically reorders [GameRoom.slots] and [GameRoom.turnSequence] together.
+  /// Preserves [GameRoom.hostPlayerId]. Rejects stale/invalid occupancy sets
+  /// (e.g. after disconnect compact) and non-lobby phase.
+  static bool tryReorderSeats(GameRoom room, List<String> orderedPlayerIds) {
+    if (!_isLobbyHostMutable(room)) {
+      return false;
+    }
+    final seated = _occupiedPlayerIds(room);
+    if (orderedPlayerIds.length != seated.length ||
+        !_samePlayerSet(orderedPlayerIds, seated)) {
+      return false;
+    }
+    final hostId = room.hostPlayerId;
+    room.slots
+      ..clear()
+      ..addAll(orderedPlayerIds);
+    room.turnSequence
+      ..clear()
+      ..addAll(orderedPlayerIds);
+    _syncSlotNumbers(room);
+    return room.hostPlayerId == hostId;
+  }
+
   static bool tryUpdatePlayer(
     GameRoom room,
     String playerId, {
