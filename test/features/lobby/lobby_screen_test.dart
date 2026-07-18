@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:turnos_juegos/core/domain/lobby_rules.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/local_player_profile.dart';
 import 'package:turnos_juegos/core/models/player.dart';
@@ -39,6 +40,15 @@ class _FakeHost extends HostRoomController {
   final GameRoom _room;
   @override
   GameRoom? get room => _room;
+
+  @override
+  bool reorderSeats(List<String> orderedPlayerIds) {
+    final ok = LobbyRules.tryReorderSeats(_room, orderedPlayerIds);
+    if (ok) {
+      notifyListeners();
+    }
+    return ok;
+  }
 }
 
 class _FakeClient extends GameSocketClient {
@@ -85,6 +95,8 @@ void main() {
     expect(_btn(const ValueKey(_g), color), findsNothing);
     expect(_btn(const ValueKey(_g), sound), findsNothing);
     expect(find.byKey(const Key('lobby-admin-slot')), findsNWidgets(2));
+    expect(find.byKey(const Key('lobby-reorder-up-0')), findsOneWidget);
+    expect(find.byType(ReorderableDragStartListener), findsNWidgets(2));
     await tester.tap(_btn(const ValueKey(_h), color));
     await tester.pumpAndSettle();
     expect(find.text('Verde'), findsOneWidget);
@@ -111,11 +123,34 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('lobby-admin-slot')), findsNothing);
+    expect(find.byKey(const Key('lobby-reorder-up-0')), findsNothing);
     expect(_btn(const ValueKey(_g), color), findsOneWidget);
     expect(_btn(const ValueKey(_g), sound), findsOneWidget);
     expect(_btn(const ValueKey(_h), color), findsNothing);
     await tester.tap(_btn(const ValueKey(_g), sound));
     await tester.pumpAndSettle();
     expect(find.text('Clic claro'), findsOneWidget);
+  });
+
+  testWidgets('host arrow reorder syncs slots and turnSequence',
+      (tester) async {
+    final room = _room();
+    final host = _FakeHost(room);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          hostRoomControllerProvider.overrideWith((ref) => host),
+        ],
+        child: const MaterialApp(home: LobbyScreen(role: 'host')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('lobby-reorder-down-0')));
+    await tester.pumpAndSettle();
+    expect(room.slots, [_g, _h]);
+    expect(room.turnSequence, [_g, _h]);
+    expect(room.hostPlayerId, _h);
+    expect(room.playersById[_g]!.slotNumber, 1);
+    expect(room.playersById[_h]!.slotNumber, 2);
   });
 }

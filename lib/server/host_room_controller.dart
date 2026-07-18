@@ -364,6 +364,19 @@ class HostRoomController extends ChangeNotifier {
     return true;
   }
 
+  /// Host-only atomic seat reorder: slots + turnSequence, one LOBBY_STATE.
+  bool reorderSeats(List<String> orderedPlayerIds) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    if (!LobbyRules.tryReorderSeats(room, orderedPlayerIds)) {
+      return false;
+    }
+    _broadcastLobbyState();
+    return true;
+  }
+
   bool canStartGame() {
     final room = _room;
     if (room == null) {
@@ -653,7 +666,8 @@ class HostRoomController extends ChangeNotifier {
     if (room == null) {
       return;
     }
-    final playerId = envelope.payload['playerId'] as String? ?? session.playerId;
+    final playerId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
     if (playerId == null) {
       return;
     }
@@ -671,7 +685,8 @@ class HostRoomController extends ChangeNotifier {
     if (room == null) {
       return;
     }
-    final playerId = envelope.payload['playerId'] as String? ?? session.playerId;
+    final playerId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
     if (playerId == null) {
       return;
     }
@@ -714,7 +729,8 @@ class HostRoomController extends ChangeNotifier {
 
     final roomId = envelope.payload['roomId'];
     final originalHostPlayerId = envelope.payload['originalHostPlayerId'];
-    final deviceId = envelope.payload['deviceId'] as String? ?? session.deviceId;
+    final deviceId =
+        envelope.payload['deviceId'] as String? ?? session.deviceId;
     if (roomId is! String ||
         originalHostPlayerId is! String ||
         deviceId == null) {
@@ -882,8 +898,7 @@ class HostRoomController extends ChangeNotifier {
       type: MessageTypes.roundCompleted,
       payload: {
         'currentRound': room.turnState.currentRound,
-        'nextRoundDurationSeconds':
-            TurnEngine.nextRoundDurationPreview(room),
+        'nextRoundDurationSeconds': TurnEngine.nextRoundDurationPreview(room),
         'serverNow': serverNow,
       },
     );
