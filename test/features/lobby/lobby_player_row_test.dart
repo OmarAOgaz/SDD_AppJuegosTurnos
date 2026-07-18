@@ -185,6 +185,39 @@ void main() {
     expect(newColorId, 'color_3');
     expect(find.byType(ColorPickerSheet), findsNothing);
   });
+
+  testWidgets('host self+admin fits phone width without overflow',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    FlutterErrorDetails? overflow;
+    final previous = FlutterError.onError;
+    FlutterError.onError = (details) {
+      if (details.toString().contains('overflowed')) {
+        overflow = details;
+      }
+      previous?.call(details);
+    };
+    addTearDown(() => FlutterError.onError = previous);
+
+    await _pump(
+      tester,
+      _player(),
+      isSelf: true,
+      showHostAdminSlot: true,
+      onNameChanged: (_) {},
+      onColorChanged: (_) {},
+      onSoundChanged: (_) {},
+      previewService: SoundPreviewService(player: _Noop()),
+    );
+    await tester.pumpAndSettle();
+    expect(overflow, isNull);
+    expect(find.byKey(const Key('lobby-color-button')), findsOneWidget);
+    expect(find.byKey(const Key('lobby-reorder-drag')), findsOneWidget);
+  });
 }
 
 class _Noop implements SoundPreviewPlayer {

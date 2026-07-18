@@ -153,4 +153,41 @@ void main() {
     expect(room.playersById[_g]!.slotNumber, 1);
     expect(room.playersById[_h]!.slotNumber, 2);
   });
+
+  testWidgets('host drag handle gesture reorders without calling arrows',
+      (tester) async {
+    final room = _room();
+    final host = _FakeHost(room);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          hostRoomControllerProvider.overrideWith((ref) => host),
+        ],
+        child: const MaterialApp(home: LobbyScreen(role: 'host')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final handle = find.descendant(
+      of: find.byKey(const ValueKey(_h)),
+      matching: find.byKey(const Key('lobby-reorder-drag')),
+    );
+    final dragDy = tester.getCenter(find.byKey(const ValueKey(_g))).dy -
+        tester.getCenter(find.byKey(const ValueKey(_h))).dy +
+        24;
+    await tester.timedDrag(
+      handle,
+      Offset(0, dragDy),
+      const Duration(milliseconds: 800),
+    );
+    await tester.pumpAndSettle();
+
+    expect(room.slots, [_g, _h]);
+    expect(room.turnSequence, [_g, _h]);
+    expect(room.hostPlayerId, _h);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey(_g))).dy,
+      lessThan(tester.getTopLeft(find.byKey(const ValueKey(_h))).dy),
+    );
+  });
 }
