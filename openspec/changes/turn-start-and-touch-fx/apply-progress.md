@@ -5,8 +5,8 @@
 **Mode**: Standard (strict_tdd: false)
 **Chain**: stacked-to-main
 **Branch**: `feat/turn-start-and-touch-fx-02-touch-fx`
-**PR**: (pending)
-**Issue**: (pending)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/46
+**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/45
 **Date**: 2026-07-17
 
 ## Completed Tasks
@@ -79,5 +79,10 @@ None blocking. Ambient resolvers and TurnEngine/protocol untouched. Unit 1 TurnS
 
 ## Commits (Unit 2)
 
-- (pending) feat(touch-fx): add resolveInvalidTapMarkColor helper
-- (pending) feat(touch-fx): mount TouchFxOverlay on GameScreen
+- `1c2fafd` feat(touch-fx): add resolveInvalidTapMarkColor helper
+- `2b1e9c7` feat(touch-fx): mount TouchFxOverlay on GameScreen
+- (docs) record PR46 / issue 45 URLs in apply-progress
+
+## Review budget (Unit 2)
+
+**8 files changed, 520 insertions(+), 32 deletions(-)** vs `origin/main` — slightly over 400-line target; scope not expanded.
