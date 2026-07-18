@@ -1850,7 +1850,7 @@ void main() {
       );
       expect(elapsedSecs, inInclusiveRange(11, 13));
 
-      // Round 2 preview: base 60 + 1*increment 5 = 65.
+      // Round 2 preview: current duration 60 + increment 5 = 65.
       expect(
         find.byKey(betweenRoundsDurationPreviewKey),
         findsOneWidget,
@@ -1893,7 +1893,7 @@ void main() {
 
       expect(controller.setRoundIncrementCalls, contains(10));
       expect(room.config.roundIncrementSeconds, 10);
-      // Preview must reflect substituted increment for next round (round 2).
+      // Preview: current duration 60 + substituted increment 10 = 70.
       expect(find.text('Próxima duración: 70s'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());

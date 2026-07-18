@@ -121,7 +121,7 @@ class TurnEngine {
     }
 
     room.turnState.currentRound += 1;
-    _applyRoundDuration(room);
+    _applyNextRoundDuration(room);
     room.gamePhase = GameRoomPhase.inGame;
     room.turnState.betweenRoundsEnteredAtMs = null;
     _activatePlayer(room, room.turnSequence.first, serverNowMs);
@@ -139,16 +139,21 @@ class TurnEngine {
     );
   }
 
-  static int roundDurationSeconds(GameRoom room, int round) {
-    return room.turnState.baseTurnDurationSeconds +
-        (round - 1) * room.config.roundIncrementSeconds;
+  /// Next-round turn duration: current round duration + match increment.
+  ///
+  /// Round 1 uses [TurnState.baseTurnDurationSeconds] only (set at start).
+  /// Each later round adds [RoomConfig.roundIncrementSeconds] to the duration
+  /// that was just in force — not recomputed from base × (round − 1).
+  static int nextRoundDurationSeconds(GameRoom room) {
+    return room.turnState.currentRoundDurationSeconds +
+        room.config.roundIncrementSeconds;
   }
 
   static int? nextRoundDurationPreview(GameRoom room) {
     if (room.gamePhase != GameRoomPhase.betweenRounds) {
       return null;
     }
-    return roundDurationSeconds(room, room.turnState.currentRound + 1);
+    return nextRoundDurationSeconds(room);
   }
 
   static void endGame(GameRoom room) {
@@ -172,7 +177,7 @@ class TurnEngine {
     }
 
     room.turnState.currentRound += 1;
-    _applyRoundDuration(room);
+    _applyNextRoundDuration(room);
     _activatePlayer(room, room.turnSequence.first, serverNowMs);
     refreshPhase(room, serverNowMs);
     return true;
@@ -185,11 +190,8 @@ class TurnEngine {
       ..phase = TurnPhase.normal;
   }
 
-  static void _applyRoundDuration(GameRoom room) {
-    room.turnState.currentRoundDurationSeconds = roundDurationSeconds(
-      room,
-      room.turnState.currentRound,
-    );
+  static void _applyNextRoundDuration(GameRoom room) {
+    room.turnState.currentRoundDurationSeconds = nextRoundDurationSeconds(room);
   }
 
   static String? _nextPlayerInSequence(GameRoom room, String activePlayerId) {

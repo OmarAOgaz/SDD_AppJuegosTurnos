@@ -35,7 +35,7 @@ Variable-order matches already pause in `BETWEEN_ROUNDS`, but the screen is a st
 UI + domain fix (exploration Approach 1), upgraded for synced timer:
 
 1. Fix `tryReorderTurnOrder` / increment setters for `gamePhase == betweenRounds`.
-2. Persist substituted `roundIncrementSeconds` in authoritative match state; preview via existing duration formula.
+2. Persist substituted `roundIncrementSeconds` in authoritative match state; preview/apply = previous duration + current increment.
 3. On enter `BETWEEN_ROUNDS`, set host timestamp (e.g. `betweenRoundsEnteredAtMs`); clients derive elapsed with `serverNow` (same pattern as turn remaining).
 4. Reuse lobby reorder chrome; host mutates `turnSequence` only; broadcast after each completed reorder action.
 5. Wire host/client between-rounds body in `game_screen.dart`.

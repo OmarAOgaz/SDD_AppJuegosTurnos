@@ -12,7 +12,7 @@ Keep UI in `game_screen.dart` + reuse `LobbyReorderControls`. Fix domain so `BET
 |----------|---------|--------|-----------|
 | Phase gates | Broaden `_isLobbyHostMutable`; dedicated between-rounds APIs | **Dedicated gates** — do not widen lobby-only helper | Lobby must stay lobby-only for seats/colors/base duration/variable flag |
 | Reorder validation | Against `slots`; against `turnSequence` | **`turnSequence` same-set** | Product: mutate sequence only; seats may diverge; disconnected IDs stay in sequence |
-| Increment mutate | New field; mutate `config.roundIncrementSeconds` | **Substitute `config.roundIncrementSeconds`** | Already on `GAME_STATE`; formula already reads it |
+| Increment mutate | New field; mutate `config.roundIncrementSeconds` | **Substitute `config.roundIncrementSeconds`** | Already on `GAME_STATE`; next duration = previous duration + increment |
 | Break clock | Local UI ticker; authoritative stamp | **`turnState.betweenRoundsEnteredAtMs` + `serverNow`** | Same pattern as `turnStartedAt`; SYNC-safe |
 | Host increment API | Reuse `setRoundIncrement`; new method | **Reuse + phase-aware broadcast** | Lobby → `LOBBY_STATE`; break → `GAME_STATE` |
 | Mid-drag sync | Per-frame; on completed action | **Broadcast after arrow / `onReorder` settle** | Matches Q2; avoids WS spam |

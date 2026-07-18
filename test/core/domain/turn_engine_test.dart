@@ -190,6 +190,7 @@ void main() {
         senderPlayerId: 'p2',
         serverNowMs: start + 2000,
       );
+      // After round 1 duration 60: next = 60 + substituted 10.
       expect(LobbyRules.trySetRoundIncrement(room, 10), isTrue);
       expect(TurnEngine.nextRoundDurationPreview(room), 70);
 
@@ -198,6 +199,49 @@ void main() {
       expect(room.turnState.betweenRoundsEnteredAtMs, isNull);
       expect(room.turnState.currentRound, 2);
       expect(room.turnState.currentRoundDurationSeconds, 70);
+      expect(room.turnState.baseTurnDurationSeconds, 60);
+    });
+
+    test(
+        'substituted increment adds to previous duration not recomputed from base',
+        () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      // Close round 1 → break (duration still 60).
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      expect(TurnEngine.tryStartNextRound(room, start + 3000), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 65);
+
+      // Close round 2 → break (duration still 65).
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 4000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 5000,
+      );
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
+      expect(room.turnState.currentRoundDurationSeconds, 65);
+
+      // Increment 10 adds to last duration → 75, not base+(3-1)*10=80.
+      expect(LobbyRules.trySetRoundIncrement(room, 10), isTrue);
+      expect(TurnEngine.nextRoundDurationPreview(room), 75);
+      expect(TurnEngine.tryStartNextRound(room, start + 6000), isTrue);
+      expect(room.turnState.currentRound, 3);
+      expect(room.turnState.currentRoundDurationSeconds, 75);
       expect(room.turnState.baseTurnDurationSeconds, 60);
     });
 
