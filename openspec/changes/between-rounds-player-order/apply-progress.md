@@ -24,8 +24,11 @@
 ### PR3 / Phase 3 client view-only + sync (THIS BATCH)
 
 - **Branch**: `feat/between-rounds-client-sync-03`
-- **Base**: `main` @ `ebada68` (PR1+PR2 merged)
+- **Commits**: `948e391`, `f09ac69`
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/58
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/57
+- **Base**: `main` @ `ebada68` (PR1+PR2 merged)
+- **Diff budget**: 357 insertions / 29 deletions (386 total; under 400)
 
 ## Completed Tasks
 
