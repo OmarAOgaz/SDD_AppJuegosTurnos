@@ -44,18 +44,31 @@ Only the active player's turn clock MUST run. The host MUST accept `PASS_TURN` w
 
 ### Requirement: Fixed-order round close
 
-When `variableTurnOrder` is false and the last active slot in `turnSequence` passes, the host MUST close the round: `currentRound++`, set `currentRoundTurnDurationSeconds = baseTurnDurationSeconds + (currentRound - 1) * roundIncrementSeconds`, assign the first sequence occupant as active with full new duration, and continue `IN_GAME` without a between-rounds pause.
+When `variableTurnOrder` is false and the last active slot in `turnSequence` passes, the host MUST close the round: `currentRound++`, set `currentRoundTurnDurationSeconds` to the previous round's turn duration plus the current match `roundIncrementSeconds` (i.e. `previousDuration + roundIncrementSeconds`), assign the first sequence occupant as active with full new duration, and continue `IN_GAME` without a between-rounds pause. The system MUST NOT recompute next-round duration as `baseTurnDurationSeconds + (currentRound - 1) * roundIncrementSeconds`.
 
 #### Scenario: Fixed mode auto-increments duration
 
-- GIVEN variableTurnOrder=false, base=60, increment=5, end of round 1
+- GIVEN variableTurnOrder=false, base=60, increment=5, end of round 1 (duration 60)
 - WHEN the last player passes
-- THEN currentRound becomes 2 and turn duration is 65 s
+- THEN currentRound becomes 2 and turn duration is 65 s (`60 + 5`)
 - AND play continues immediately on the first sequence player
+
+### Requirement: Round duration grows by adding increment to previous duration
+
+When advancing to the next round (fixed-order auto-close or variable-order `START_NEXT_ROUND`), the system MUST set  
+`currentRoundTurnDurationSeconds = previous currentRoundTurnDurationSeconds + roundIncrementSeconds`  
+(using the match-level `roundIncrementSeconds` in force at apply time). Round 1 MUST use `baseTurnDurationSeconds` only. Next-round preview during `BETWEEN_ROUNDS` MUST use the same additive rule.
+
+#### Scenario: Cumulative add on each round advance
+
+- GIVEN base=60, increment=5, end of round 1 (current duration 60)
+- WHEN the next round starts
+- THEN turn duration becomes 65
+- AND after that round closes with duration still 65, the following round becomes 70
 
 ### Requirement: Variable-order BETWEEN_ROUNDS and START_NEXT_ROUND
 
-When `variableTurnOrder` is true and a round closes, the host MUST enter `BETWEEN_ROUNDS`, emit round-completed state (including next-round duration preview), and allow host `REORDER_TURN_ORDER` (slots and/or `turnSequence`) only in that phase. The host MUST start the next round via `START_NEXT_ROUND`: `currentRound++`, apply duration formula, resume `IN_GAME` with full duration for the first sequence occupant. Clients MUST NOT start the next round.
+When `variableTurnOrder` is true and a round closes, the host MUST enter `BETWEEN_ROUNDS`, emit round-completed state (including next-round duration preview = current duration + current increment), and allow host `REORDER_TURN_ORDER` (slots and/or `turnSequence`) only in that phase. The host MUST start the next round via `START_NEXT_ROUND`: `currentRound++`, set duration to previous duration + current increment, resume `IN_GAME` with full duration for the first sequence occupant. Clients MUST NOT start the next round.
 
 #### Scenario: Variable mode pauses between rounds
 
