@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/catalogs/color_catalog.dart';
 import '../../core/catalogs/sound_catalog.dart';
 import '../../core/constants/message_types.dart';
 import '../../core/domain/eligible_picker.dart';
@@ -218,10 +217,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
               player: player,
               isSelf: player.playerId == room.hostPlayerId,
               showHostAdminSlot: true,
+              takenColorIds: _takenColorsAmong(players),
               onNameChanged: player.playerId == room.hostPlayerId
                   ? (value) => controller.updateLocalPlayer(
                         player.playerId,
                         displayName: value,
+                      )
+                  : null,
+              onColorChanged: player.playerId == room.hostPlayerId
+                  ? (value) => controller.updateLocalPlayer(
+                        player.playerId,
+                        colorId: value,
                       )
                   : null,
             ),
@@ -357,10 +363,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
                 player: player,
                 isSelf: player.playerId == localPlayerId,
                 showHostAdminSlot: false,
+                takenColorIds: _takenColorsAmong(players),
                 onNameChanged: player.playerId == localPlayerId
                     ? (value) => _client?.sendUpdatePlayer(
                           playerId: player.playerId,
                           displayName: value,
+                        )
+                    : null,
+                onColorChanged: player.playerId == localPlayerId
+                    ? (value) => _client?.sendUpdatePlayer(
+                          playerId: player.playerId,
+                          colorId: value,
                         )
                     : null,
               ),
@@ -377,41 +390,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
   }
 
   Widget _clientSelfEditor(Player player, Map<String, dynamic>? lobbyState) {
-    final takenColors = _takenColors(lobbyState);
     final takenSounds = _takenSounds(lobbyState);
-    final colorOptions = eligibleColorIds(
-      takenColorIds: takenColors,
-      ownColorId: player.colorId,
-    );
-    final soundOptions = eligibleSoundIds(
+    final soundOptions = soundPickerOptions(
       takenSoundIds: takenSounds,
       ownSoundId: player.soundId,
-    );
+    ).where((option) => !option.isTaken).map((option) => option.id).toList();
 
     return Column(
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: player.colorId,
-          decoration: const InputDecoration(labelText: 'Color'),
-          items: colorOptions
-              .map(
-                (id) => DropdownMenuItem(
-                  value: id,
-                  child: Text(ColorCatalog.byId(id)?.displayName ?? id),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value == null) {
-              return;
-            }
-            _client?.sendUpdatePlayer(
-              playerId: player.playerId,
-              colorId: value,
-            );
-          },
-        ),
-        const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: player.soundId,
           decoration: const InputDecoration(labelText: 'Sonido'),
@@ -437,10 +423,8 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     );
   }
 
-  Set<String> _takenColors(Map<String, dynamic>? lobbyState) {
-    return _playersFromLobbyState(lobbyState)
-        .map((player) => player.colorId)
-        .toSet();
+  Set<String> _takenColorsAmong(List<Player> players) {
+    return players.map((player) => player.colorId).toSet();
   }
 
   Set<String> _takenSounds(Map<String, dynamic>? lobbyState) {

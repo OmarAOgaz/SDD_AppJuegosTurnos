@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/catalogs/color_catalog.dart';
+import '../../../core/domain/eligible_picker.dart';
 import '../../../core/models/player.dart';
+import 'color_picker_sheet.dart';
 import 'lobby_name_field.dart';
 
 /// Single player row shared by host and client lobby views.
@@ -16,14 +20,19 @@ class LobbyPlayerRow extends StatelessWidget {
     required this.isSelf,
     required this.showHostAdminSlot,
     this.onNameChanged,
+    this.onColorChanged,
+    this.takenColorIds = const {},
   });
 
   final Player player;
   final bool isSelf;
   final bool showHostAdminSlot;
   final ValueChanged<String>? onNameChanged;
+  final ValueChanged<String>? onColorChanged;
+  final Set<String> takenColorIds;
 
   bool get _isEditable => isSelf && player.connected && onNameChanged != null;
+  bool get _ownRowControlsVisible => isSelf && player.connected;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +45,7 @@ class LobbyPlayerRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Opacity(
@@ -83,6 +93,19 @@ class LobbyPlayerRow extends StatelessWidget {
                                 ?.copyWith(color: onBackground),
                           ),
                   ),
+                  if (_ownRowControlsVisible) ...[
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton(
+                        key: const Key('lobby-color-button'),
+                        onPressed: onColorChanged == null
+                            ? null
+                            : () => _openColorPicker(context),
+                        child: const Text('Color'),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -95,6 +118,20 @@ class LobbyPlayerRow extends StatelessWidget {
               onPressed: null,
             ),
         ],
+      ),
+    );
+  }
+
+  void _openColorPicker(BuildContext context) {
+    unawaited(
+      ColorPickerSheet.show(
+        context,
+        options: colorPickerOptions(
+          takenColorIds: takenColorIds,
+          ownColorId: player.colorId,
+        ),
+        currentColorId: player.colorId,
+        onSelected: onColorChanged!,
       ),
     );
   }
