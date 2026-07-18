@@ -315,6 +315,31 @@ class HostRoomController extends ChangeNotifier {
     return true;
   }
 
+  /// Updates the host's own seat directly (no WebSocket round-trip needed
+  /// since the host device owns this seat locally).
+  bool updateLocalPlayer(
+    String playerId, {
+    String? displayName,
+    String? colorId,
+    String? soundId,
+  }) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    final changed = LobbyRules.tryUpdatePlayer(
+      room,
+      playerId,
+      displayName: displayName,
+      colorId: colorId,
+      soundId: soundId,
+    );
+    if (changed) {
+      _broadcastLobbyState();
+    }
+    return changed;
+  }
+
   bool reorderSlots(List<String> orderedPlayerIds) {
     final room = _room;
     if (room == null) {
