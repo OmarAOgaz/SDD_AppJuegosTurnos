@@ -111,6 +111,7 @@ class GameRoom {
       ),
       'activePlayerId': turnState.activePlayerId,
       'turnStartedAt': turnState.turnStartedAtMs,
+      'betweenRoundsEnteredAt': turnState.betweenRoundsEnteredAtMs,
       'currentRound': turnState.currentRound,
       'baseTurnDurationSeconds': turnState.baseTurnDurationSeconds,
       'currentRoundDurationSeconds': turnState.currentRoundDurationSeconds,
@@ -157,6 +158,7 @@ class GameRoom {
       turnState: TurnState(
         activePlayerId: json['activePlayerId'] as String?,
         turnStartedAtMs: json['turnStartedAt'] as int?,
+        betweenRoundsEnteredAtMs: json['betweenRoundsEnteredAt'] as int?,
         currentRound: json['currentRound'] as int? ?? 0,
         baseTurnDurationSeconds: json['baseTurnDurationSeconds'] as int? ??
             RoomConfigDefaults.turnDurationSeconds,

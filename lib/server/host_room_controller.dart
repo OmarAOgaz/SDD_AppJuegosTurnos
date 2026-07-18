@@ -299,7 +299,11 @@ class HostRoomController extends ChangeNotifier {
     if (!LobbyRules.trySetRoundIncrement(room, seconds)) {
       return false;
     }
-    _broadcastLobbyState();
+    if (room.gamePhase == GameRoomPhase.betweenRounds) {
+      _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+    } else {
+      _broadcastLobbyState();
+    }
     return true;
   }
 

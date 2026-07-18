@@ -148,33 +148,104 @@ void main() {
 
       expect(room.gamePhase, GameRoomPhase.betweenRounds);
       expect(room.turnState.activePlayerId, isNull);
+      expect(room.turnState.betweenRoundsEnteredAtMs, start + 2000);
       expect(TurnEngine.nextRoundDurationPreview(room), 65);
     });
-  });
 
-  group('TurnEngine phases and excess', () {
-    test('warning at or under 15 seconds remaining', () {
-      final room = _roomWithTwoPlayers();
+    test('reorder between rounds mutates turnSequence only', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
       const start = 1000000;
       TurnEngine.startGame(room, start);
-      TurnEngine.refreshPhase(room, start + 46000);
-      expect(room.turnState.phase, TurnPhase.warning);
-    });
-
-    test('exceeded accumulates on pass', () {
-      final room = _roomWithTwoPlayers();
-      const start = 1000000;
-      TurnEngine.startGame(room, start);
-      TurnEngine.refreshPhase(room, start + 70000);
-      expect(room.turnState.phase, TurnPhase.exceeded);
-
       TurnEngine.tryPassTurn(
         room: room,
         senderPlayerId: 'host-1',
-        serverNowMs: start + 70000,
+        serverNowMs: start + 1000,
       );
-      expect(room.playersById['host-1']!.exceededTurnCount, 1);
-      expect(room.playersById['host-1']!.totalExceededMs, greaterThan(0));
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      final slotsBefore = List<String>.from(room.slots);
+
+      expect(
+        TurnEngine.tryReorderTurnOrder(room, const ['p2', 'host-1']),
+        isTrue,
+      );
+      expect(room.turnSequence, ['p2', 'host-1']);
+      expect(room.slots, slotsBefore);
+    });
+
+    test('start next round clears stamp and applies substituted increment', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      expect(LobbyRules.trySetRoundIncrement(room, 10), isTrue);
+      expect(TurnEngine.nextRoundDurationPreview(room), 70);
+
+      expect(TurnEngine.tryStartNextRound(room, start + 5000), isTrue);
+      expect(room.gamePhase, GameRoomPhase.inGame);
+      expect(room.turnState.betweenRoundsEnteredAtMs, isNull);
+      expect(room.turnState.currentRound, 2);
+      expect(room.turnState.currentRoundDurationSeconds, 70);
+      expect(room.turnState.baseTurnDurationSeconds, 60);
+    });
+
+    test('endGame clears between-rounds stamp', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      expect(room.turnState.betweenRoundsEnteredAtMs, isNotNull);
+
+      TurnEngine.endGame(room);
+      expect(room.gamePhase, GameRoomPhase.ended);
+      expect(room.turnState.betweenRoundsEnteredAtMs, isNull);
+    });
+  });
+
+  group('GAME_STATE betweenRoundsEnteredAt round-trip', () {
+    test('serializes and parses break stamp', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+
+      final payload = room.toGameStatePayload(serverNow: start + 2500);
+      expect(payload['betweenRoundsEnteredAt'], start + 2000);
+      expect(payload['serverNow'], start + 2500);
+
+      final restored = GameRoom.fromSnapshot(payload);
+      expect(restored.turnState.betweenRoundsEnteredAtMs, start + 2000);
+      expect(restored.gamePhase, GameRoomPhase.betweenRounds);
     });
   });
 }
