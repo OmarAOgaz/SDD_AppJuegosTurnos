@@ -1806,6 +1806,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ColorCatalog.byId(localColorId ?? '')?.color ?? Colors.white;
     switch (intent) {
       case GestureIntent.pass:
+        // Spec: pass blocked while turn-start cue is visible on this device.
+        if (_showTurnStartCue) {
+          break;
+        }
         if (fx != null && tapAt != null) {
           fx.enqueueRipple(tapAt, localColor);
         }

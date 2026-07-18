@@ -5,7 +5,12 @@ import 'package:flutter/material.dart';
 @visibleForTesting
 const turnStartCueKey = Key('turnStartCue');
 
-/// Full-screen local-seat-color flash that fades out over [duration].
+/// Fraction of [TurnStartCue.duration] spent at full opacity before fade starts.
+/// Kept short so most of the cue is a long, slow fade.
+@visibleForTesting
+const turnStartCueHoldFraction = 0.12;
+
+/// Full-screen local-seat-color flash that holds, then fades out gradually.
 ///
 /// Owns its [AnimationController], ignores pointers, and invokes
 /// [onCompleted] when the fade finishes so the parent can unmount it.
@@ -17,8 +22,8 @@ class TurnStartCue extends StatefulWidget {
     this.onCompleted,
   });
 
-  /// Product-locked cue length (flash + fade).
-  static const defaultDuration = Duration(milliseconds: 400);
+  /// Product cue length (short hold + long slow fade).
+  static const defaultDuration = Duration(milliseconds: 1800);
 
   final Color color;
   final Duration duration;
@@ -34,6 +39,19 @@ class _TurnStartCueState extends State<TurnStartCue>
     vsync: this,
     duration: widget.duration,
   );
+
+  /// Hold solid, then a slow ease-out so the color lingers while fading.
+  late final Animation<double> _opacity = Tween<double>(begin: 1, end: 0).animate(
+    CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(
+        turnStartCueHoldFraction,
+        1,
+        curve: Curves.easeOut,
+      ),
+    ),
+  );
+
   bool _notified = false;
 
   @override
@@ -65,7 +83,7 @@ class _TurnStartCueState extends State<TurnStartCue>
     return IgnorePointer(
       child: Opacity(
         key: turnStartCueKey,
-        opacity: 1.0 - _controller.value,
+        opacity: _opacity.value,
         child: ColoredBox(color: widget.color),
       ),
     );
