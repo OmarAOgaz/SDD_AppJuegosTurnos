@@ -250,6 +250,37 @@ void main() {
       );
     });
 
+    test(
+        'updateLocalPlayer syncs the host own seat without a socket round-trip',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      final hostId = controller.room!.hostPlayerId;
+
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      expect(
+        controller.updateLocalPlayer(hostId, displayName: 'Host renombrado'),
+        isTrue,
+      );
+
+      expect(notifications, 1);
+      expect(server.broadcasts, hasLength(1));
+      final players = server.broadcasts.single.payload['playersById'] as Map;
+      expect(players[hostId]['displayName'], 'Host renombrado');
+
+      server.broadcasts.clear();
+      expect(controller.updateLocalPlayer(hostId, colorId: 'color_5'), isTrue);
+      final afterColor = server.broadcasts.single.payload['playersById'] as Map;
+      expect(afterColor[hostId]['colorId'], 'color_5');
+
+      server.broadcasts.clear();
+      expect(controller.updateLocalPlayer(hostId, soundId: 'sound_4'), isTrue);
+      final afterSound = server.broadcasts.single.payload['playersById'] as Map;
+      expect(afterSound[hostId]['soundId'], 'sound_4');
+    });
+
     test('passTurn broadcasts GAME_STATE and notifies listeners', () async {
       final fixture = await _lobbySyncFixture();
       final controller = fixture.controller;
