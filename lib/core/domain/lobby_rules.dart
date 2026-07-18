@@ -180,7 +180,7 @@ class LobbyRules {
   }
 
   static bool trySetRoundIncrement(GameRoom room, int seconds) {
-    if (!_isLobbyHostMutable(room)) {
+    if (!_isRoundIncrementMutable(room)) {
       return false;
     }
     room.config.roundIncrementSeconds = seconds.clamp(
@@ -229,6 +229,29 @@ class LobbyRules {
       return false;
     }
     if (!_samePlayerSet(orderedPlayerIds, seated)) {
+      return false;
+    }
+
+    room.turnSequence
+      ..clear()
+      ..addAll(orderedPlayerIds);
+    return true;
+  }
+
+  /// Between-rounds reorder: same player set as current [GameRoom.turnSequence],
+  /// mutates sequence only (does not rewrite lobby [GameRoom.slots]).
+  static bool tryReorderTurnSequenceBetweenRounds(
+    GameRoom room,
+    List<String> orderedPlayerIds,
+  ) {
+    if (room.gamePhase != GameRoomPhase.betweenRounds) {
+      return false;
+    }
+    final current = List<String>.from(room.turnSequence);
+    if (orderedPlayerIds.length != current.length) {
+      return false;
+    }
+    if (!_samePlayerSet(orderedPlayerIds, current)) {
       return false;
     }
 
@@ -343,6 +366,12 @@ class LobbyRules {
 
   static bool _isLobbyHostMutable(GameRoom room) {
     return room.gamePhase == GameRoomPhase.lobby;
+  }
+
+  /// Increment may be set in lobby or substituted during between-rounds.
+  static bool _isRoundIncrementMutable(GameRoom room) {
+    return room.gamePhase == GameRoomPhase.lobby ||
+        room.gamePhase == GameRoomPhase.betweenRounds;
   }
 
   static Player? _findPlayerByDeviceId(GameRoom room, String deviceId) {

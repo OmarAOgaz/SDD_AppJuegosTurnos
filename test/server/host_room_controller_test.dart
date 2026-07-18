@@ -456,6 +456,111 @@ void main() {
     });
   });
 
+  group('HostRoomController between-rounds broadcasts', () {
+    Future<
+        ({
+          HostRoomController controller,
+          _LobbySyncRecordingServer server,
+        })> _betweenRoundsFixture() async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+
+      expect(controller.setVariableTurnOrder(true), isTrue);
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      expect(await controller.startGame(), isTrue);
+
+      final hostId = controller.room!.hostPlayerId;
+      final guestId = controller.room!.turnSequence
+          .firstWhere((id) => id != hostId);
+      expect(controller.passTurn(hostId), isTrue);
+      expect(controller.passTurn(guestId), isTrue);
+      expect(controller.room!.gamePhase, GameRoomPhase.betweenRounds);
+      server.broadcasts.clear();
+      return fixture;
+    }
+
+    test('setRoundIncrement in lobby still broadcasts LOBBY_STATE', () async {
+      final fixture = await _lobbySyncFixture();
+      expect(fixture.controller.setRoundIncrement(10), isTrue);
+      expect(fixture.server.broadcasts, hasLength(1));
+      expect(fixture.server.broadcasts.single.type, MessageTypes.lobbyState);
+      expect(
+        _lobbyConfig(fixture.server.broadcasts.single.payload)[
+            'roundIncrementSeconds'],
+        10,
+      );
+    });
+
+    test('setRoundIncrement in betweenRounds broadcasts GAME_STATE', () async {
+      final fixture = await _betweenRoundsFixture();
+      expect(fixture.controller.setRoundIncrement(10), isTrue);
+      expect(fixture.server.broadcasts, hasLength(1));
+      final envelope = fixture.server.broadcasts.single;
+      expect(envelope.type, MessageTypes.gameState);
+      expect(envelope.payload['roundIncrementSeconds'], 10);
+      expect(envelope.payload['betweenRoundsEnteredAt'], isNotNull);
+      expect(
+        fixture.controller.room!.config.roundIncrementSeconds,
+        10,
+      );
+    });
+
+    test('reorderTurnOrderBetweenRounds broadcasts GAME_STATE with sequence',
+        () async {
+      final fixture = await _betweenRoundsFixture();
+      final room = fixture.controller.room!;
+      final reordered = room.turnSequence.reversed.toList();
+
+      expect(
+        fixture.controller.reorderTurnOrderBetweenRounds(reordered),
+        isTrue,
+      );
+      expect(fixture.server.broadcasts, hasLength(1));
+      final envelope = fixture.server.broadcasts.single;
+      expect(envelope.type, MessageTypes.gameState);
+      expect(envelope.payload['turnSequence'], reordered);
+      expect(room.turnSequence, reordered);
+    });
+
+    test('passTurn into betweenRounds stamps same serverNow in GAME_STATE',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+
+      expect(controller.setVariableTurnOrder(true), isTrue);
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      expect(await controller.startGame(), isTrue);
+      server.broadcasts.clear();
+
+      final hostId = controller.room!.hostPlayerId;
+      final guestId =
+          controller.room!.turnSequence.firstWhere((id) => id != hostId);
+      expect(controller.passTurn(hostId), isTrue);
+      server.broadcasts.clear();
+      expect(controller.passTurn(guestId), isTrue);
+
+      final gameStates = server.broadcasts
+          .where((e) => e.type == MessageTypes.gameState)
+          .toList();
+      expect(gameStates, isNotEmpty);
+      final payload = gameStates.last.payload;
+      expect(payload['gamePhase'], GameRoomPhase.betweenRounds.wireValue);
+      expect(payload['betweenRoundsEnteredAt'], payload['serverNow']);
+      expect(
+        controller.room!.turnState.betweenRoundsEnteredAtMs,
+        payload['betweenRoundsEnteredAt'],
+      );
+    });
+  });
+
   group('HostRoomController heartbeat', () {
     test('marks session disconnected after heartbeat timeout', () {
       final server = _RecordingWebSocketHostServer();

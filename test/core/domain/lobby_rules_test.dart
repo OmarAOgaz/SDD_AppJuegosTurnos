@@ -236,4 +236,108 @@ void main() {
       expect(room.turnSequence, ['p3', 'host-1']);
     });
   });
+
+  group('LobbyRules between-rounds gates', () {
+    GameRoom _enterBetweenRounds() {
+      final room = _hostRoom();
+      LobbyRules.trySetVariableTurnOrder(room, true);
+      LobbyRules.tryJoin(
+        room: room,
+        playerId: 'p2',
+        deviceId: 'device-2',
+        displayName: 'Ana',
+        preferredColorIds: const ['color_2'],
+        preferredSoundIds: const ['sound_2'],
+      );
+      expect(LobbyRules.tryStartGame(room), isTrue);
+      room.gamePhase = GameRoomPhase.betweenRounds;
+      room.turnState
+        ..activePlayerId = null
+        ..turnStartedAtMs = null
+        ..betweenRoundsEnteredAtMs = 9000;
+      return room;
+    }
+
+    test('tryReorderTurnSequenceBetweenRounds reorders sequence only', () {
+      final room = _enterBetweenRounds();
+      final slotsBefore = List<String>.from(room.slots);
+      expect(
+        LobbyRules.tryReorderTurnSequenceBetweenRounds(
+          room,
+          const ['p2', 'host-1'],
+        ),
+        isTrue,
+      );
+      expect(room.turnSequence, ['p2', 'host-1']);
+      expect(room.slots, slotsBefore);
+    });
+
+    test('tryReorderTurnSequenceBetweenRounds rejects lobby phase', () {
+      final room = _hostRoom();
+      LobbyRules.tryJoin(
+        room: room,
+        playerId: 'p2',
+        deviceId: 'device-2',
+        displayName: 'Ana',
+        preferredColorIds: const ['color_2'],
+        preferredSoundIds: const ['sound_2'],
+      );
+      expect(
+        LobbyRules.tryReorderTurnSequenceBetweenRounds(
+          room,
+          const ['p2', 'host-1'],
+        ),
+        isFalse,
+      );
+    });
+
+    test('tryReorderTurnSequenceBetweenRounds rejects wrong player set', () {
+      final room = _enterBetweenRounds();
+      expect(
+        LobbyRules.tryReorderTurnSequenceBetweenRounds(
+          room,
+          const ['p2', 'ghost'],
+        ),
+        isFalse,
+      );
+      expect(room.turnSequence, ['host-1', 'p2']);
+    });
+
+    test('trySetRoundIncrement works in lobby and betweenRounds', () {
+      final lobby = _hostRoom();
+      expect(LobbyRules.trySetRoundIncrement(lobby, 10), isTrue);
+      expect(lobby.config.roundIncrementSeconds, 10);
+
+      final breakRoom = _enterBetweenRounds();
+      expect(LobbyRules.trySetRoundIncrement(breakRoom, 15), isTrue);
+      expect(breakRoom.config.roundIncrementSeconds, 15);
+    });
+
+    test('trySetRoundIncrement rejects inGame; lobby mutators stay lobby-only',
+        () {
+      final room = _hostRoom();
+      LobbyRules.tryJoin(
+        room: room,
+        playerId: 'p2',
+        deviceId: 'device-2',
+        displayName: 'Ana',
+        preferredColorIds: const ['color_2'],
+        preferredSoundIds: const ['sound_2'],
+      );
+      expect(LobbyRules.tryStartGame(room), isTrue);
+      expect(room.gamePhase, GameRoomPhase.inGame);
+
+      expect(LobbyRules.trySetRoundIncrement(room, 20), isFalse);
+      expect(LobbyRules.trySetTurnDuration(room, 90), isFalse);
+      expect(LobbyRules.trySetVariableTurnOrder(room, false), isFalse);
+      expect(
+        LobbyRules.tryReorderTurnSequence(room, const ['p2', 'host-1']),
+        isFalse,
+      );
+      expect(
+        LobbyRules.tryReorderSeats(room, const ['p2', 'host-1']),
+        isFalse,
+      );
+    });
+  });
 }

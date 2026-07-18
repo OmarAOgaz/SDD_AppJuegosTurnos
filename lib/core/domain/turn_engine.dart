@@ -123,6 +123,7 @@ class TurnEngine {
     room.turnState.currentRound += 1;
     _applyRoundDuration(room);
     room.gamePhase = GameRoomPhase.inGame;
+    room.turnState.betweenRoundsEnteredAtMs = null;
     _activatePlayer(room, room.turnSequence.first, serverNowMs);
     refreshPhase(room, serverNowMs);
     return true;
@@ -132,7 +133,10 @@ class TurnEngine {
     if (room.gamePhase != GameRoomPhase.betweenRounds) {
       return false;
     }
-    return LobbyRules.tryReorderTurnSequence(room, orderedPlayerIds);
+    return LobbyRules.tryReorderTurnSequenceBetweenRounds(
+      room,
+      orderedPlayerIds,
+    );
   }
 
   static int roundDurationSeconds(GameRoom room, int round) {
@@ -152,6 +156,7 @@ class TurnEngine {
     room.turnState
       ..activePlayerId = null
       ..turnStartedAtMs = null
+      ..betweenRoundsEnteredAtMs = null
       ..phase = TurnPhase.normal;
   }
 
@@ -161,6 +166,7 @@ class TurnEngine {
       room.turnState
         ..activePlayerId = null
         ..turnStartedAtMs = null
+        ..betweenRoundsEnteredAtMs = serverNowMs
         ..phase = TurnPhase.normal;
       return true;
     }
