@@ -85,8 +85,8 @@
 
 **Status:** complete  
 **Branch:** `feat/end-of-game-summary-edges-03`  
-**PR:** (pending)  
-**Issue:** (pending)  
+**Issue:** #77  
+**PR:** https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/78  
 **Mode:** Standard (strict_tdd: false)
 
 ### Completed (Phase 4)
