@@ -27,6 +27,7 @@ import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/sensors/motion_sensor_source.dart';
+import 'touch_fx_overlay.dart';
 import 'turn_start_cue.dart';
 
 /// Identifies the sole full-screen tap/long-press layer during `inGame` —
@@ -127,6 +128,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Color? _turnStartCueColor;
   Key _turnStartCueInstanceKey = const ValueKey(0);
   int _turnStartCueEpoch = 0;
+
+  final GlobalKey<TouchFxOverlayState> _touchFxKey =
+      GlobalKey<TouchFxOverlayState>();
+  Offset? _lastTapDownOffset;
 
   bool get _isHost => widget.role == 'host';
 
@@ -1505,11 +1510,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
               TapGestureRecognizer.new,
               (instance) {
+                instance.onTapDown = (details) {
+                  _lastTapDownOffset = details.localPosition;
+                };
                 instance.onTap = () => _handleInGameTap(
                       isMyDeviceActive: isMyDeviceActive,
                       canHostPassForDisconnectedActive:
                           canHostPassForDisconnectedActive,
                       gamePhase: gamePhase,
+                      localColorId: localColorId,
                       onPass: onPass,
                     );
               },
@@ -1540,6 +1549,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     },
                   ),
                 ),
+              Positioned.fill(
+                child: TouchFxOverlay(key: _touchFxKey),
+              ),
               if (_activePresentation != null)
                 Positioned(
                   top: 24,
@@ -1771,11 +1783,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   /// Resolves the tap intent (Phase 1) and either passes the turn (active
   /// device, or host when the active seat is disconnected) or shows a
-  /// transient turn-info presentation (non-active device).
+  /// transient turn-info presentation (non-active device). Touch FX uses the
+  /// last [onTapDown] local offset when present.
   void _handleInGameTap({
     required bool isMyDeviceActive,
     bool canHostPassForDisconnectedActive = false,
     required GameRoomPhase gamePhase,
+    String? localColorId,
     required VoidCallback onPass,
   }) {
     if (_panelOpen) {
@@ -1786,10 +1800,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       canHostPassForDisconnectedActive: canHostPassForDisconnectedActive,
       gamePhase: gamePhase,
     );
+    final tapAt = _lastTapDownOffset;
+    final fx = _touchFxKey.currentState;
+    final localColor =
+        ColorCatalog.byId(localColorId ?? '')?.color ?? Colors.white;
     switch (intent) {
       case GestureIntent.pass:
+        if (fx != null && tapAt != null) {
+          fx.enqueueRipple(tapAt, localColor);
+        }
         onPass();
       case GestureIntent.showActiveToast:
+        if (fx != null && tapAt != null) {
+          fx.enqueueInvalidX(
+            tapAt,
+            resolveInvalidTapMarkColor(localColorId),
+          );
+        }
         // Shared read-only path with motion (TurnInfoPresentation).
         _dispatchTurnInfoPresentation();
       case GestureIntent.none:

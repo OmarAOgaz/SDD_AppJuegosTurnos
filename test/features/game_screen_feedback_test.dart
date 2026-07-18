@@ -19,6 +19,7 @@ import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 import 'package:turnos_juegos/core/sensors/motion_sensor_source.dart';
 import 'package:turnos_juegos/features/game/game_screen.dart';
+import 'package:turnos_juegos/features/game/touch_fx_overlay.dart';
 import 'package:turnos_juegos/features/game/turn_start_cue.dart';
 import 'package:turnos_juegos/server/host_room_controller.dart';
 
@@ -404,6 +405,17 @@ Future<void> _longPressOpenPanel(WidgetTester tester) async {
       .pump(inGameInfoPanelLongPress + const Duration(milliseconds: 100));
   await gesture.up();
   await tester.pumpAndSettle();
+}
+
+/// Taps the in-game gesture layer at a local offset relative to its top-left.
+Future<void> _tapGestureAt(WidgetTester tester, Offset local) async {
+  final origin = tester.getTopLeft(_gestureLayer);
+  await tester.tapAt(origin + local);
+  await tester.pump();
+}
+
+TouchFxOverlayState _touchFxState(WidgetTester tester) {
+  return tester.state<TouchFxOverlayState>(find.byType(TouchFxOverlay));
 }
 
 /// Always unmounts whatever is currently on screen before mounting [widget].
@@ -1473,6 +1485,127 @@ void main() {
 
       expect(find.byType(TurnStartCue), findsNothing);
       expect(_sounds.previewedIds, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Touch FX (Requirement: pass ripple / invalid X)', () {
+    testWidgets('active host pass shows local-color ripple at tap Offset',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      const tapAt = Offset(72, 118);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(controller.passTurnCalls, [_hostId]);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx, hasLength(1));
+      expect(fx.single.kind, TouchFxKind.ripple);
+      expect(fx.single.offset, tapAt);
+      expect(fx.single.color, ColorCatalog.byId(_hostColorId)!.color);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host pass-for-disconnected-active shows host-seat-color ripple',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      const tapAt = Offset(55, 90);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(controller.passTurnCalls, [_hostId]);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx, hasLength(1));
+      expect(fx.single.kind, TouchFxKind.ripple);
+      expect(fx.single.offset, tapAt);
+      expect(fx.single.color, ColorCatalog.byId(_hostColorId)!.color);
+      expect(_activeTurnToast, findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'non-active client invalid tap shows red X at Offset plus toast',
+        (tester) async {
+      // Local seat color_2 → red X (not color_1).
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(activePlayerId: _hostId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+
+      const tapAt = Offset(40, 80);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(client.passTurnCalls, isEmpty);
+      expect(_activeTurnToast, findsOneWidget);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx, hasLength(1));
+      expect(fx.single.kind, TouchFxKind.invalidX);
+      expect(fx.single.offset, tapAt);
+      expect(fx.single.color, Colors.red);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'non-active host invalid tap shows black X when local seat is color_1',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      const tapAt = Offset(33, 66);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_activeTurnToast, findsOneWidget);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx, hasLength(1));
+      expect(fx.single.kind, TouchFxKind.invalidX);
+      expect(fx.single.offset, tapAt);
+      expect(fx.single.color, Colors.black);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('long-press still opens panel without enqueueing FX',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+
+      expect(_infoPanel, findsOneWidget);
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_touchFxState(tester).debugEffects, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('ambient warning flash still resolves after FX mount',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 10),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.flashing);
+      expect(find.byType(TouchFxOverlay), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });
