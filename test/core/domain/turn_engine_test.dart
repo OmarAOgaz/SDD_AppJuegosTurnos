@@ -42,6 +42,8 @@ void main() {
       expect(room.turnState.currentRoundDurationSeconds, 60);
       expect(room.turnState.activePlayerId, 'host-1');
       expect(room.turnState.turnStartedAtMs, serverNow);
+      expect(room.turnState.matchStartedAtMs, serverNow);
+      expect(room.turnState.totalBetweenRoundsMs, 0);
     });
   });
 
@@ -62,6 +64,8 @@ void main() {
       expect(room.turnState.activePlayerId, 'p2');
       expect(room.turnState.turnStartedAtMs, start + 10000);
       expect(room.turnState.currentRoundDurationSeconds, 60);
+      expect(room.playersById['host-1']!.turnCount, 1);
+      expect(room.playersById['host-1']!.totalTurnMs, 10000);
     });
 
     test('host may pass for disconnected active player', () {
@@ -100,6 +104,32 @@ void main() {
         isFalse,
       );
       expect(room.turnState.activePlayerId, 'host-1');
+    });
+
+    test('exceeded pass updates turn stats and exceeded counters', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+
+      // Advance past turn limit (60s) into EXCEEDED.
+      const passAt = start + 75000;
+      TurnEngine.refreshPhase(room, passAt);
+      expect(room.turnState.phase, TurnPhase.exceeded);
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: passAt,
+        ),
+        isTrue,
+      );
+
+      final host = room.playersById['host-1']!;
+      expect(host.turnCount, 1);
+      expect(host.totalTurnMs, 75000);
+      expect(host.exceededTurnCount, 1);
+      expect(host.totalExceededMs, 15000);
     });
   });
 
@@ -197,6 +227,7 @@ void main() {
       expect(TurnEngine.tryStartNextRound(room, start + 5000), isTrue);
       expect(room.gamePhase, GameRoomPhase.inGame);
       expect(room.turnState.betweenRoundsEnteredAtMs, isNull);
+      expect(room.turnState.totalBetweenRoundsMs, 3000);
       expect(room.turnState.currentRound, 2);
       expect(room.turnState.currentRoundDurationSeconds, 70);
       expect(room.turnState.baseTurnDurationSeconds, 60);
@@ -245,7 +276,7 @@ void main() {
       expect(room.turnState.baseTurnDurationSeconds, 60);
     });
 
-    test('endGame clears between-rounds stamp', () {
+    test('endGame clears between-rounds stamp and finalizes break', () {
       final room = _roomWithTwoPlayers(variableTurnOrder: true);
       const start = 1000000;
       TurnEngine.startGame(room, start);
@@ -261,9 +292,26 @@ void main() {
       );
       expect(room.turnState.betweenRoundsEnteredAtMs, isNotNull);
 
-      TurnEngine.endGame(room);
+      const endAt = start + 8000;
+      TurnEngine.endGame(room, endAt);
       expect(room.gamePhase, GameRoomPhase.ended);
       expect(room.turnState.betweenRoundsEnteredAtMs, isNull);
+      expect(room.turnState.totalBetweenRoundsMs, 6000);
+      expect(room.turnState.matchEndedAtMs, endAt);
+    });
+
+    test('endGame mid-turn finalizes active player stats', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+
+      const endAt = start + 12000;
+      TurnEngine.endGame(room, endAt);
+
+      expect(room.gamePhase, GameRoomPhase.ended);
+      expect(room.turnState.matchEndedAtMs, endAt);
+      expect(room.playersById['host-1']!.turnCount, 1);
+      expect(room.playersById['host-1']!.totalTurnMs, 12000);
     });
   });
 
@@ -290,6 +338,39 @@ void main() {
       final restored = GameRoom.fromSnapshot(payload);
       expect(restored.turnState.betweenRoundsEnteredAtMs, start + 2000);
       expect(restored.gamePhase, GameRoomPhase.betweenRounds);
+    });
+
+    test('serializes and parses match summary fields', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 5000,
+      );
+      TurnEngine.endGame(room, start + 9000);
+
+      final payload = room.toGameStatePayload(serverNow: start + 9000);
+      expect(payload['matchStartedAt'], start);
+      expect(payload['matchEndedAt'], start + 9000);
+      expect(payload['totalBetweenRoundsMs'], 0);
+      expect(payload['totalSetupMs'], 0);
+      expect(payload['totalExplanationMs'], 0);
+      expect(
+        (payload['playersById'] as Map)['host-1']['turnCount'],
+        1,
+      );
+      expect(
+        (payload['playersById'] as Map)['host-1']['totalTurnMs'],
+        5000,
+      );
+
+      final restored = GameRoom.fromSnapshot(payload);
+      expect(restored.turnState.matchStartedAtMs, start);
+      expect(restored.turnState.matchEndedAtMs, start + 9000);
+      expect(restored.playersById['host-1']!.turnCount, 1);
+      expect(restored.playersById['host-1']!.totalTurnMs, 5000);
     });
   });
 }

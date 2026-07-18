@@ -486,7 +486,7 @@ class HostRoomController extends ChangeNotifier {
     if (room == null) {
       return;
     }
-    TurnEngine.endGame(room);
+    TurnEngine.endGame(room, DateTime.now().millisecondsSinceEpoch);
     _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
     await _foregroundServiceBridge.stopGameSession();
     await Future<void>.delayed(const Duration(milliseconds: 300));

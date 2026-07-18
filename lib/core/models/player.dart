@@ -10,6 +10,8 @@ class Player {
     this.connected = true,
     this.exceededTurnCount = 0,
     this.totalExceededMs = 0,
+    this.turnCount = 0,
+    this.totalTurnMs = 0,
   });
 
   final String playerId;
@@ -21,6 +23,8 @@ class Player {
   bool connected;
   int exceededTurnCount;
   int totalExceededMs;
+  int turnCount;
+  int totalTurnMs;
 
   Player copyWith({
     String? displayName,
@@ -30,6 +34,8 @@ class Player {
     bool? connected,
     int? exceededTurnCount,
     int? totalExceededMs,
+    int? turnCount,
+    int? totalTurnMs,
   }) {
     return Player(
       playerId: playerId,
@@ -41,6 +47,8 @@ class Player {
       connected: connected ?? this.connected,
       exceededTurnCount: exceededTurnCount ?? this.exceededTurnCount,
       totalExceededMs: totalExceededMs ?? this.totalExceededMs,
+      turnCount: turnCount ?? this.turnCount,
+      totalTurnMs: totalTurnMs ?? this.totalTurnMs,
     );
   }
 
@@ -55,6 +63,8 @@ class Player {
       'connected': connected,
       'exceededTurnCount': exceededTurnCount,
       'totalExceededMs': totalExceededMs,
+      'turnCount': turnCount,
+      'totalTurnMs': totalTurnMs,
     };
   }
 
@@ -69,6 +79,8 @@ class Player {
       connected: json['connected'] as bool? ?? true,
       exceededTurnCount: json['exceededTurnCount'] as int? ?? 0,
       totalExceededMs: json['totalExceededMs'] as int? ?? 0,
+      turnCount: json['turnCount'] as int? ?? 0,
+      totalTurnMs: json['totalTurnMs'] as int? ?? 0,
     );
   }
 }
