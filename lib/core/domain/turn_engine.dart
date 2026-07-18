@@ -1,5 +1,6 @@
 import '../models/game_phase.dart';
 import '../models/game_room.dart';
+import '../models/player.dart';
 import 'lobby_rules.dart';
 
 /// Pure turn-timer rules — host applies with authoritative clock.
@@ -17,7 +18,9 @@ class TurnEngine {
       ..currentRound = 1
       ..baseTurnDurationSeconds = room.config.turnDurationSeconds
       ..currentRoundDurationSeconds = room.config.turnDurationSeconds
-      ..phase = TurnPhase.normal;
+      ..phase = TurnPhase.normal
+      ..matchStartedAtMs = serverNowMs
+      ..totalBetweenRoundsMs = 0;
 
     final firstId = room.turnSequence.isNotEmpty ? room.turnSequence.first : null;
     if (firstId == null) {
@@ -102,6 +105,8 @@ class TurnEngine {
       active.exceededTurnCount += 1;
     }
 
+    _recordCompletedTurn(room, active, serverNowMs);
+
     final nextId = _nextPlayerInSequence(room, activeId);
     if (nextId == null) {
       return _closeRound(room, serverNowMs);
@@ -119,6 +124,8 @@ class TurnEngine {
     if (room.turnSequence.isEmpty) {
       return false;
     }
+
+    _accumulateOpenBreak(room, serverNowMs);
 
     room.turnState.currentRound += 1;
     _applyNextRoundDuration(room);
@@ -156,7 +163,23 @@ class TurnEngine {
     return nextRoundDurationSeconds(room);
   }
 
-  static void endGame(GameRoom room) {
+  static void endGame(GameRoom room, int serverNowMs) {
+    if (room.gamePhase == GameRoomPhase.inGame) {
+      final activeId = room.turnState.activePlayerId;
+      final active =
+          activeId == null ? null : room.playersById[activeId];
+      if (active != null) {
+        if (room.turnState.phase == TurnPhase.exceeded) {
+          active.totalExceededMs += excessMs(room, serverNowMs);
+          active.exceededTurnCount += 1;
+        }
+        _recordCompletedTurn(room, active, serverNowMs);
+      }
+    } else if (room.gamePhase == GameRoomPhase.betweenRounds) {
+      _accumulateOpenBreak(room, serverNowMs);
+    }
+
+    room.turnState.matchEndedAtMs = serverNowMs;
     room.gamePhase = GameRoomPhase.ended;
     room.turnState
       ..activePlayerId = null
@@ -188,6 +211,28 @@ class TurnEngine {
       ..activePlayerId = playerId
       ..turnStartedAtMs = serverNowMs
       ..phase = TurnPhase.normal;
+  }
+
+  static void _recordCompletedTurn(
+    GameRoom room,
+    Player active,
+    int serverNowMs,
+  ) {
+    final startedAt = room.turnState.turnStartedAtMs;
+    if (startedAt == null) {
+      return;
+    }
+    final elapsedMs = serverNowMs - startedAt;
+    active.turnCount += 1;
+    active.totalTurnMs += elapsedMs;
+  }
+
+  static void _accumulateOpenBreak(GameRoom room, int serverNowMs) {
+    final breakStartedAt = room.turnState.betweenRoundsEnteredAtMs;
+    if (breakStartedAt == null) {
+      return;
+    }
+    room.turnState.totalBetweenRoundsMs += serverNowMs - breakStartedAt;
   }
 
   static void _applyNextRoundDuration(GameRoom room) {

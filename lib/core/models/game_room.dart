@@ -119,6 +119,11 @@ class GameRoom {
       'roundIncrementSeconds': config.roundIncrementSeconds,
       'phase': turnState.phase.wireValue,
       'variableTurnOrder': config.variableTurnOrder,
+      'matchStartedAt': turnState.matchStartedAtMs,
+      'matchEndedAt': turnState.matchEndedAtMs,
+      'totalBetweenRoundsMs': turnState.totalBetweenRoundsMs,
+      'totalSetupMs': turnState.totalSetupMs,
+      'totalExplanationMs': turnState.totalExplanationMs,
     };
   }
 
@@ -167,6 +172,11 @@ class GameRoom {
                 json['currentRoundTurnDurationSeconds'] as int? ??
                 RoomConfigDefaults.turnDurationSeconds,
         phase: TurnPhase.fromWire(json['phase'] as String?),
+        matchStartedAtMs: json['matchStartedAt'] as int?,
+        matchEndedAtMs: json['matchEndedAt'] as int?,
+        totalBetweenRoundsMs: json['totalBetweenRoundsMs'] as int? ?? 0,
+        totalSetupMs: json['totalSetupMs'] as int? ?? 0,
+        totalExplanationMs: json['totalExplanationMs'] as int? ?? 0,
       ),
       slots: (json['slots'] as List?)?.whereType<String>().toList() ??
           <String>[],
