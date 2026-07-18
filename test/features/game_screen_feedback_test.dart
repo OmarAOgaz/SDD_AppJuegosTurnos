@@ -213,6 +213,28 @@ class _FakeHostRoomController extends HostRoomController {
   }
 }
 
+/// Returns a final ended GAME_STATE payload so [GameScreen.exitAsHost] can seed
+/// [clientSync] before navigating to `/ended`.
+class _SummarySeedingHostController extends _FakeHostRoomController {
+  _SummarySeedingHostController(super.room);
+
+  @override
+  Future<Map<String, dynamic>?> endGame() async {
+    endGameCalls++;
+    final current = room;
+    if (current == null) {
+      return null;
+    }
+    const endMs = _serverNow + 50_000;
+    current.turnState.matchStartedAtMs ??= _serverNow;
+    TurnEngine.endGame(current, endMs);
+    clearRoom();
+    return current.toGameStatePayload(serverNow: endMs);
+  }
+}
+
+ClientSyncNotifier? _liveHostSyncNotifier;
+
 class _FixedClientSyncNotifier extends ClientSyncNotifier {
   _FixedClientSyncNotifier(ClientSyncState initial) {
     state = initial;
@@ -477,6 +499,45 @@ Widget _wrapHostRouted(
   return ProviderScope(
     overrides: [
       hostRoomControllerProvider.overrideWith((ref) => controller),
+    ],
+    child: MaterialApp.router(routerConfig: router),
+  );
+}
+
+/// Host routed wrap with a live [clientSyncProvider] for seeding assertions.
+Widget _wrapHostRoutedWithLiveSync(
+  HostRoomController controller, {
+  MotionSensorSource? motionSensorSource,
+  ImmersiveSystemUi? immersiveSystemUi,
+  DateTime Function()? now,
+  SoundPreviewService? soundPreviewService,
+}) {
+  _liveHostSyncNotifier = null;
+  final router = GoRouter(
+    initialLocation: '/game',
+    routes: [
+      GoRoute(path: '/', builder: (_, __) => const Text('Home')),
+      GoRoute(
+        path: '/game',
+        builder: (_, __) => GameScreen(
+          role: 'host',
+          motionSensorSource: motionSensorSource ?? _motion,
+          immersiveSystemUi: immersiveSystemUi ?? _immersive,
+          now: now ?? () => _fixedNow,
+          soundPreviewService: soundPreviewService ?? _sounds,
+        ),
+      ),
+      GoRoute(path: '/ended', builder: (_, __) => const Text('Ended')),
+    ],
+  );
+  return ProviderScope(
+    overrides: [
+      hostRoomControllerProvider.overrideWith((ref) => controller),
+      clientSyncProvider.overrideWith((ref) {
+        final notifier = ClientSyncNotifier();
+        _liveHostSyncNotifier = notifier;
+        return notifier;
+      }),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
@@ -978,6 +1039,29 @@ void main() {
       expect(controller.endGameCalls, 1);
       expect(controller.passTurnCalls, isEmpty);
       expect(find.text('Ended'), findsOneWidget);
+    });
+
+    testWidgets(
+        'host Terminar seeds clientSync lastGameState before navigating to /ended',
+        (tester) async {
+      final room = _buildHostBetweenRoundsRoom();
+      final controller = _SummarySeedingHostController(room);
+      await _mount(tester, _wrapHostRoutedWithLiveSync(controller));
+
+      await tester.tap(find.text('Terminar'));
+      await tester.pumpAndSettle();
+
+      expect(controller.endGameCalls, 1);
+      expect(find.text('Ended'), findsOneWidget);
+
+      final seeded = _liveHostSyncNotifier!.state.lastGameState;
+      expect(seeded, isNotNull);
+      expect(seeded!['gamePhase'], GameRoomPhase.ended.wireValue);
+      expect(seeded['matchStartedAt'], isA<int>());
+      expect(seeded['matchEndedAt'], isA<int>());
+      expect(seeded['matchEndedAt'], _serverNow + 50_000);
+
+      await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets(
