@@ -1119,6 +1119,61 @@ void main() {
       expect(controller.room, isNull);
     });
 
+    test(
+      'endGame final GAME_STATE includes match and per-player summary counters',
+      () async {
+        final server = _LobbySyncRecordingServer();
+        final controller = HostRoomController(
+          server: server,
+          mdnsAdvertiser: _FakeMdnsAdvertiser(),
+          foregroundServiceBridge: _FakeForegroundServiceBridge(),
+        );
+        await controller.startRoom(
+          displayName: 'Sala',
+          hostDeviceId: 'host-device',
+        );
+        controller.debugDispatchMessage(
+          'client-1',
+          _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+        );
+        final room = controller.room!;
+        const startMs = 1_000_000;
+        expect(TurnEngine.startGame(room, startMs), isTrue);
+        final hostId = room.hostPlayerId;
+        expect(
+          TurnEngine.tryPassTurn(
+            room: room,
+            senderPlayerId: hostId,
+            serverNowMs: startMs + 30_000,
+          ),
+          isTrue,
+        );
+        server.broadcasts.clear();
+
+        final finalPayload = await controller.endGame();
+
+        expect(finalPayload, isNotNull);
+        expect(finalPayload!['matchStartedAt'], startMs);
+        expect(finalPayload['matchEndedAt'], isA<int>());
+        expect(finalPayload['totalBetweenRoundsMs'], 0);
+        expect(finalPayload['totalSetupMs'], 0);
+        expect(finalPayload['totalExplanationMs'], 0);
+        expect(finalPayload['gamePhase'], GameRoomPhase.ended.wireValue);
+
+        final gameState = server.broadcasts.singleWhere(
+          (e) => e.type == MessageTypes.gameState,
+        );
+        expect(gameState.payload['matchStartedAt'], startMs);
+        expect(gameState.payload['matchEndedAt'], isA<int>());
+
+        final players =
+            gameState.payload['playersById'] as Map<String, dynamic>;
+        final hostJson = players[hostId] as Map<String, dynamic>;
+        expect(hostJson['turnCount'], 1);
+        expect(hostJson['totalTurnMs'], 30_000);
+      },
+    );
+
     test('heartbeat rebind still works after succession fields present',
         () async {
       final fixture = await _lobbySyncFixture();

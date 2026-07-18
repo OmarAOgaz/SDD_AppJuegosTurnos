@@ -481,16 +481,25 @@ class HostRoomController extends ChangeNotifier {
   }
 
   /// Intentional host **Terminar** — ends the game with no succession.
-  Future<void> endGame() async {
+  ///
+  /// Returns the final authoritative `GAME_STATE` payload broadcast to peers so
+  /// the host UI can seed [clientSync] before navigating to `/ended`.
+  Future<Map<String, dynamic>?> endGame() async {
     final room = _room;
     if (room == null) {
-      return;
+      return null;
     }
-    TurnEngine.endGame(room, DateTime.now().millisecondsSinceEpoch);
-    _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    TurnEngine.endGame(room, serverNow);
+    final finalPayload = room.toGameStatePayload(serverNow: serverNow);
+    _server.broadcast(
+      WsEnvelope(type: MessageTypes.gameState, payload: finalPayload),
+    );
+    notifyListeners();
     await _foregroundServiceBridge.stopGameSession();
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await stopRoom(broadcastDiscarded: false);
+    return finalPayload;
   }
 
   /// Unexpected host loss while this device still hosts: elect next connected
