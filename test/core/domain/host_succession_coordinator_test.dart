@@ -143,4 +143,33 @@ void main() {
       );
     });
   });
+
+  group('HostSuccessionCoordinator.prepareReclaimSnapshot', () {
+    test('marks original host connected and restores hostPlayerId', () {
+      final state = _snapshot(
+        hostId: 'p2',
+        originalHostId: 'p1',
+        players: [
+          _player(id: 'p1', connected: false, slot: 1),
+          _player(id: 'p2', connected: true, slot: 2),
+        ],
+      );
+
+      final prepared = HostSuccessionCoordinator.prepareReclaimSnapshot(
+        state,
+        originalHostPlayerId: 'p1',
+      );
+
+      expect(prepared['hostPlayerId'], 'p1');
+      final players = prepared['playersById'] as Map;
+      final original = Map<String, dynamic>.from(players['p1'] as Map);
+      expect(original['connected'], isTrue);
+      // Source snapshot must stay untouched.
+      final sourcePlayers = state['playersById'] as Map;
+      expect(
+        Map<String, dynamic>.from(sourcePlayers['p1'] as Map)['connected'],
+        isFalse,
+      );
+    });
+  });
 }

@@ -116,4 +116,30 @@ class HostSuccessionCoordinator {
     final currentHost = gameState['hostPlayerId'] as String?;
     return currentHost != null && currentHost != original;
   }
+
+  /// Optimistic GAME_STATE for original-host reclaim before ROOM_SNAPSHOT arrives.
+  ///
+  /// Marks [originalHostPlayerId] as `hostPlayerId` and `connected: true` so the
+  /// reclaiming host does not keep a stale disconnected seat (washed-out row).
+  static Map<String, dynamic> prepareReclaimSnapshot(
+    Map<String, dynamic> gameState, {
+    required String originalHostPlayerId,
+  }) {
+    final snapshot = Map<String, dynamic>.from(gameState);
+    snapshot['hostPlayerId'] = originalHostPlayerId;
+
+    final playersRaw = snapshot['playersById'];
+    if (playersRaw is! Map) {
+      return snapshot;
+    }
+    final players = Map<String, dynamic>.from(playersRaw);
+    final playerRaw = players[originalHostPlayerId];
+    if (playerRaw is Map) {
+      final player = Map<String, dynamic>.from(playerRaw);
+      player['connected'] = true;
+      players[originalHostPlayerId] = player;
+      snapshot['playersById'] = players;
+    }
+    return snapshot;
+  }
 }

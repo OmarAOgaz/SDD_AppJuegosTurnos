@@ -127,6 +127,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   int _motionSessionGen = 0;
   bool _successionInFlight = false;
   bool _reclaimInFlight = false;
+  Completer<Map<String, dynamic>>? _reclaimSnapshotCompleter;
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
   bool _wakelockOn = false;
@@ -463,17 +464,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
 
-    _reclaimInFlight = false;
-    await client.disconnect();
-    final controller = ref.read(hostRoomControllerProvider);
-    await controller.startFromSnapshot(
-      snapshot: snapshot,
-      actingHostPlayerId: original,
-    );
-    if (!mounted) {
-      return;
+    // Hand authoritative snapshot to the reclaim waiter (still connected).
+    final completer = _reclaimSnapshotCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(Map<String, dynamic>.from(snapshot));
     }
-    context.go('/game?role=host');
   }
 
   Future<void> _maybeSendHostReclaim(GameSocketClient client) async {
@@ -506,14 +501,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
 
-    // Start hosting first so reclaim can advertise the new endpoint.
+    // Start hosting first so reclaim can advertise the new endpoint, then wait
+    // for acting-host ROOM_SNAPSHOT (connected:true) before leaving the client.
     _reclaimInFlight = true;
+    final snapshotWait = Completer<Map<String, dynamic>>();
+    _reclaimSnapshotCompleter = snapshotWait;
     try {
       final controller = ref.read(hostRoomControllerProvider);
-      final snapshot = Map<String, dynamic>.from(state);
-      snapshot['hostPlayerId'] = original;
+      final optimistic = HostSuccessionCoordinator.prepareReclaimSnapshot(
+        state,
+        originalHostPlayerId: original,
+      );
       await controller.startFromSnapshot(
-        snapshot: snapshot,
+        snapshot: optimistic,
         actingHostPlayerId: original,
       );
       client.sendHostReclaim(
@@ -522,13 +522,28 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         host: controller.hostLanIp,
         port: controller.port,
       );
+
+      Map<String, dynamic> authoritative = optimistic;
+      try {
+        authoritative = await snapshotWait.future.timeout(
+          const Duration(seconds: 3),
+        );
+      } on TimeoutException {
+        // Keep optimistic snapshot (already marks original connected).
+      }
+
       await client.disconnect();
+      await controller.startFromSnapshot(
+        snapshot: authoritative,
+        actingHostPlayerId: original,
+      );
       if (!mounted) {
         return;
       }
       context.go('/game?role=host');
     } finally {
       _reclaimInFlight = false;
+      _reclaimSnapshotCompleter = null;
     }
   }
 
