@@ -8,7 +8,7 @@ Host-authoritative in-game turn clock: start freeze, PASS_TURN, fixed/variable r
 
 ### Requirement: START_GAME freezes config and opens round 1
 
-On host `START_GAME`, the system MUST freeze lobby timer config into play: `baseTurnDurationSeconds = turnDurationSeconds`, `roundIncrementSeconds` frozen, `variableTurnOrder` frozen, `currentRound = 1`, `currentRoundTurnDurationSeconds = baseTurnDurationSeconds`. The first active player MUST be the first occupied slot in `turnSequence`. The host MUST set `turnStartedAt` and include `serverNow` on the initial authoritative state. `gamePhase` MUST become `IN_GAME`.
+On host `START_GAME`, the system MUST freeze lobby timer config into play: `baseTurnDurationSeconds = turnDurationSeconds`, initial `roundIncrementSeconds` from lobby, `variableTurnOrder` frozen for the match, `currentRound = 1`, `currentRoundTurnDurationSeconds = baseTurnDurationSeconds`. After start, the system MUST NOT allow changing `baseTurnDurationSeconds` or `variableTurnOrder`. `roundIncrementSeconds` MAY be substituted later only during `BETWEEN_ROUNDS` by the host. The first active player MUST be the first occupied slot in `turnSequence`. The host MUST set `turnStartedAt` and include `serverNow` on the initial authoritative state. `gamePhase` MUST become `IN_GAME`.
 
 #### Scenario: Start opens full-duration turn 1
 
@@ -16,6 +16,13 @@ On host `START_GAME`, the system MUST freeze lobby timer config into play: `base
 - WHEN the host starts the game
 - THEN round is 1 and each turn of round 1 uses 60 s full duration
 - AND `GAME_STATE` includes `turnStartedAt` and `serverNow`
+
+#### Scenario: Base and mode stay frozen; increment may change later
+
+- GIVEN a match started with base=60, increment=5, `variableTurnOrder=true`
+- WHEN play reaches `BETWEEN_ROUNDS` and the host edits increment to 10
+- THEN `baseTurnDurationSeconds` remains 60 and `variableTurnOrder` remains true
+- AND match `roundIncrementSeconds` becomes 10 for subsequent rounds
 
 ### Requirement: Only active player timer and PASS_TURN validation
 
@@ -57,7 +64,7 @@ When `variableTurnOrder` is false and the last active slot in `turnSequence` pas
 
 When advancing to the next round (fixed-order auto-close or variable-order `START_NEXT_ROUND`), the system MUST set  
 `currentRoundTurnDurationSeconds = previous currentRoundTurnDurationSeconds + roundIncrementSeconds`  
-(using the match-level `roundIncrementSeconds` in force at apply time). Round 1 MUST use `baseTurnDurationSeconds` only. Next-round preview during `BETWEEN_ROUNDS` MUST use the same additive rule.
+(using the match-level `roundIncrementSeconds` in force at apply time). Round 1 MUST use `baseTurnDurationSeconds` only. The system MUST NOT recompute next-round duration as `baseTurnDurationSeconds + (currentRound - 1) * roundIncrementSeconds`. Next-round preview during `BETWEEN_ROUNDS` MUST use the same additive rule: current duration + current increment.
 
 #### Scenario: Cumulative add on each round advance
 
@@ -66,23 +73,46 @@ When advancing to the next round (fixed-order auto-close or variable-order `STAR
 - THEN turn duration becomes 65
 - AND after that round closes with duration still 65, the following round becomes 70
 
+#### Scenario: Substituted increment adds to last duration not recomputed from base
+
+- GIVEN after round 2 the current duration is 65, and `BETWEEN_ROUNDS` (or equivalent next-round apply)
+- WHEN the host sets `roundIncrementSeconds` to 10 and the next round starts
+- THEN duration becomes 75 (`65 + 10`), not 80 (`60 + 2 * 10`)
+- AND `baseTurnDurationSeconds` remains 60
+
 ### Requirement: Variable-order BETWEEN_ROUNDS and START_NEXT_ROUND
 
-When `variableTurnOrder` is true and a round closes, the host MUST enter `BETWEEN_ROUNDS`, emit round-completed state (including next-round duration preview = current duration + current increment), and allow host `REORDER_TURN_ORDER` (slots and/or `turnSequence`) only in that phase. The host MUST start the next round via `START_NEXT_ROUND`: `currentRound++`, set duration to previous duration + current increment, resume `IN_GAME` with full duration for the first sequence occupant. Clients MUST NOT start the next round.
+When `variableTurnOrder` is true and a round closes, the host MUST enter `BETWEEN_ROUNDS`, set authoritative `betweenRoundsEnteredAtMs`, emit round-completed state (including next-round duration preview = current duration + current `roundIncrementSeconds`), and allow host `REORDER_TURN_ORDER` that mutates `turnSequence` only (MUST NOT rewrite lobby `slots`) in that phase. The host MAY update `roundIncrementSeconds` during `BETWEEN_ROUNDS`; the new value MUST substitute the match-level increment for subsequent additive duration steps and previews. After each completed reorder or increment edit, the host MUST broadcast `GAME_STATE`. The host MUST start the next round via `START_NEXT_ROUND`: `currentRound++`, set duration to previous duration + current increment, resume `IN_GAME` with full duration for the first sequence occupant. Clients MUST NOT start the next round, reorder, or mutate increment.
 
 #### Scenario: Variable mode pauses between rounds
 
 - GIVEN variableTurnOrder=true and the last player of a round passes
 - WHEN the host processes round close
 - THEN `gamePhase` becomes `BETWEEN_ROUNDS`
+- AND `betweenRoundsEnteredAtMs` is set
 - AND no player timer runs until `START_NEXT_ROUND`
 
 #### Scenario: Host reorders then starts next round
 
 - GIVEN `BETWEEN_ROUNDS`
-- WHEN the host reorders turn order and sends `START_NEXT_ROUND`
+- WHEN the host reorders `turnSequence` and sends `START_NEXT_ROUND`
 - THEN `currentRound` increments with updated duration
 - AND `IN_GAME` resumes on the first new-sequence player
+- AND lobby `slots` are unchanged by the reorder
+
+#### Scenario: Host substitutes increment during break
+
+- GIVEN `BETWEEN_ROUNDS` after round 1 (current duration 60), increment was 5
+- WHEN the host sets `roundIncrementSeconds` to 10 and starts the next round
+- THEN next-round duration preview and applied duration are 70 (`60 + 10`)
+- AND `baseTurnDurationSeconds` remains 60
+
+#### Scenario: Reorder broadcast after completed action
+
+- GIVEN `BETWEEN_ROUNDS` and connected clients
+- WHEN the host completes one reorder action
+- THEN the host broadcasts `GAME_STATE` with the new `turnSequence`
+- AND clients MUST NOT require waiting until `START_NEXT_ROUND` to see the order
 
 ### Requirement: WARNING and EXCEEDED phases with excess accumulation
 
@@ -103,7 +133,7 @@ While a turn runs, remaining time MUST be derived from authoritative `turnStarte
 
 ### Requirement: GAME_STATE authoritative interpolation fields
 
-Every `GAME_STATE` (broadcast or `SYNC_REQUEST` response) MUST include at least: `serverNow`, `turnStartedAt`, `activePlayerId`, turn `phase`, `currentRound`, `currentRoundTurnDurationSeconds`, `baseTurnDurationSeconds`, `roundIncrementSeconds`, `variableTurnOrder`, `gamePhase`, players (including connected flags and excess counters), and slots/`turnSequence` as needed for UI. Clients MUST interpolate remaining time from these fields and MUST NOT invent authoritative phase transitions offline.
+Every `GAME_STATE` (broadcast or `SYNC_REQUEST` response) MUST include at least: `serverNow`, `turnStartedAt`, `activePlayerId`, turn `phase`, `currentRound`, `currentRoundTurnDurationSeconds`, `baseTurnDurationSeconds`, `roundIncrementSeconds`, `variableTurnOrder`, `gamePhase`, players (including connected flags and excess counters), and slots/`turnSequence` as needed for UI. While `gamePhase` is `BETWEEN_ROUNDS`, `GAME_STATE` MUST also include `betweenRoundsEnteredAtMs`. Clients MUST interpolate remaining turn time and break elapsed time from these fields and MUST NOT invent authoritative phase transitions offline.
 
 #### Scenario: Client resync uses serverNow
 
@@ -111,6 +141,13 @@ Every `GAME_STATE` (broadcast or `SYNC_REQUEST` response) MUST include at least:
 - WHEN the host replies with `GAME_STATE`
 - THEN the payload includes `serverNow` and `turnStartedAt`
 - AND the client recomputes remaining time and phase from that snapshot
+
+#### Scenario: Break resync includes between-rounds timestamp
+
+- GIVEN `BETWEEN_ROUNDS` and a client sends `SYNC_REQUEST`
+- WHEN the host replies with `GAME_STATE`
+- THEN the payload includes `betweenRoundsEnteredAtMs` and `serverNow`
+- AND the client recomputes elapsed break time from that snapshot
 
 ### Requirement: In-game disconnect keeps slot
 
