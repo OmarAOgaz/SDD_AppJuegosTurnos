@@ -352,6 +352,72 @@ ClientSyncState _fixedSync({
   );
 }
 
+/// Deterministic BETWEEN_ROUNDS GAME_STATE for client break-UI tests.
+Map<String, dynamic> _clientBetweenRoundsGameState({
+  int currentRound = 1,
+  int baseDuration = 60,
+  int roundIncrement = 5,
+  int elapsedBreakSeconds = 12,
+  bool clientConnected = true,
+  List<String>? turnSequence,
+  int serverNow = _serverNow,
+}) {
+  final players = _players();
+  if (!clientConnected) {
+    players[_clientId] = players[_clientId]!.copyWith(connected: false);
+  }
+  final sequence = turnSequence ?? [_hostId, _clientId];
+  return {
+    'roomId': 'room-1',
+    'displayName': 'Sala test',
+    'hostPlayerId': _hostId,
+    'gamePhase': GameRoomPhase.betweenRounds.wireValue,
+    'serverNow': serverNow,
+    'betweenRoundsEnteredAt': serverNow - elapsedBreakSeconds * 1000,
+    'activePlayerId': null,
+    'turnStartedAt': null,
+    'currentRound': currentRound,
+    'baseTurnDurationSeconds': baseDuration,
+    'currentRoundDurationSeconds': baseDuration,
+    'currentRoundTurnDurationSeconds': baseDuration,
+    'roundIncrementSeconds': roundIncrement,
+    'variableTurnOrder': true,
+    'config': {
+      'turnDurationSeconds': baseDuration,
+      'roundIncrementSeconds': roundIncrement,
+      'variableTurnOrder': true,
+    },
+    'slots': [_hostId, _clientId],
+    'turnSequence': sequence,
+    'playersById':
+        players.map((id, player) => MapEntry(id, player.toJson())),
+  };
+}
+
+ClientSyncState _fixedBetweenRoundsSync({
+  int currentRound = 1,
+  int baseDuration = 60,
+  int roundIncrement = 5,
+  int elapsedBreakSeconds = 12,
+  bool clientConnected = true,
+  List<String>? turnSequence,
+  int serverNow = _serverNow,
+}) {
+  return ClientSyncState(
+    lastGameState: _clientBetweenRoundsGameState(
+      currentRound: currentRound,
+      baseDuration: baseDuration,
+      roundIncrement: roundIncrement,
+      elapsedBreakSeconds: elapsedBreakSeconds,
+      clientConnected: clientConnected,
+      turnSequence: turnSequence,
+      serverNow: serverNow,
+    ),
+    allowTimerInterpolation: false,
+    receivedAtMs: serverNow,
+  );
+}
+
 _RecordingSocketClient _clientAs(String localPlayerId) {
   final client = _RecordingSocketClient(deviceId: 'device-under-test');
   client.restoreLocalPlayerId(localPlayerId);
@@ -1859,6 +1925,84 @@ void main() {
       expect(find.byKey(betweenRoundsBodyKey), findsNothing);
       expect(find.byKey(betweenRoundsStartKey), findsNothing);
       expect(find.byKey(betweenRoundsIncrementSliderKey), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Between-rounds client UI + sync (PR3)', () {
+    testWidgets(
+        'client shows list, elapsed, increment; no mutate affordances',
+        (tester) async {
+      final sync = _fixedBetweenRoundsSync(
+        currentRound: 1,
+        baseDuration: 60,
+        roundIncrement: 5,
+        elapsedBreakSeconds: 12,
+        clientConnected: false,
+      );
+      final client = _clientAs(_clientId);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
+      expect(find.text('Entre rondas'), findsOneWidget);
+      expect(find.text(_hostName), findsOneWidget);
+      expect(find.text(_clientName), findsOneWidget);
+      expect(find.byType(LobbyReorderControls), findsNothing);
+      expect(find.byKey(betweenRoundsIncrementSliderKey), findsNothing);
+      expect(find.byKey(betweenRoundsStartKey), findsNothing);
+      expect(find.text('Incremento por ronda (s): 5'), findsOneWidget);
+      expect(find.text('Próxima duración: 65s'), findsOneWidget);
+
+      final elapsed = tester.widget<Text>(find.byKey(betweenRoundsElapsedKey));
+      expect(elapsed.data, 'Tiempo de pausa: 12s');
+      expect(sync.betweenRoundsElapsedSeconds(), 12);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'peers with shared snapshot match elapsed from ClientSyncState',
+        (tester) async {
+      final payload = _clientBetweenRoundsGameState(elapsedBreakSeconds: 20);
+      final peerA = ClientSyncState(
+        lastGameState: Map<String, dynamic>.from(payload),
+        allowTimerInterpolation: false,
+        receivedAtMs: _serverNow,
+      );
+      final peerB = ClientSyncState(
+        lastGameState: Map<String, dynamic>.from(payload),
+        allowTimerInterpolation: false,
+        receivedAtMs: _serverNow,
+      );
+
+      expect(peerA.betweenRoundsElapsedSeconds(), 20);
+      expect(
+        peerA.betweenRoundsElapsedSeconds(),
+        peerB.betweenRoundsElapsedSeconds(),
+      );
+
+      // Mount one peer to confirm UI labels the same shared elapsed.
+      final client = _clientAs(_clientId);
+      await _mount(tester, _wrapClient(client: client, syncState: peerA));
+      expect(find.text('Tiempo de pausa: 20s'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'acting host mid-break shows host controls (succession smoke)',
+        (tester) async {
+      // Acting host = active HostRoomController path (no separate succession
+      // UI branch). Mid-break host must get reorder / increment / start.
+      final room = _buildHostBetweenRoundsRoom();
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
+      expect(find.byType(LobbyReorderControls), findsWidgets);
+      expect(find.byKey(betweenRoundsIncrementSliderKey), findsOneWidget);
+      expect(find.byKey(betweenRoundsStartKey), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });

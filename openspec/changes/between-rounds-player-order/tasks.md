@@ -45,13 +45,13 @@ Chain strategy locked by user to **stacked-to-main**: each PR targets `main` (or
 
 ## Phase 3: Client view-only + sync (PR3)
 
-- [ ] 3.1 Add `ClientSyncState.betweenRoundsElapsedSeconds()` in `client_sync_state.dart`; unit-test in `client_sync_state_test.dart`.
-- [ ] 3.2 Client between-rounds UI: same list + elapsed + increment readout; no mutate affordances / no start CTA.
-- [ ] 3.3 Confirm acting host (active `HostRoomController`) immediately shows host controls mid-break (succession smoke; no new succession branch).
-- [ ] 3.4 Widget/integration checks: client cannot mutate; peers match elapsed from shared snapshot.
+- [x] 3.1 Add `ClientSyncState.betweenRoundsElapsedSeconds()` in `client_sync_state.dart`; unit-test in `client_sync_state_test.dart`.
+- [x] 3.2 Client between-rounds UI: same list + elapsed + increment readout; no mutate affordances / no start CTA.
+- [x] 3.3 Confirm acting host (active `HostRoomController`) immediately shows host controls mid-break (succession smoke; no new succession branch).
+- [x] 3.4 Widget/integration checks: client cannot mutate; peers match elapsed from shared snapshot.
 
 ## Phase 4: Slice verification
 
 - [x] 4.1 PR1: `flutter test` domain/controller suites; lobby mutators still lobby-only.
 - [x] 4.2 PR2: host can complete break flow end-to-end on device/emulator.
-- [ ] 4.3 PR3: client matches list/timer/increment; acting-host controls appear after succession.
+- [x] 4.3 PR3: client matches list/timer/increment; acting-host controls appear after succession.
