@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:turnos_juegos/core/models/player.dart';
+import 'package:turnos_juegos/features/lobby/widgets/color_picker_sheet.dart';
 import 'package:turnos_juegos/features/lobby/widgets/lobby_player_row.dart';
 
 Player _player({String displayName = 'Ana', bool connected = true}) {
@@ -22,6 +23,8 @@ Future<void> _pump(
   required bool isSelf,
   required bool showHostAdminSlot,
   ValueChanged<String>? onNameChanged,
+  ValueChanged<String>? onColorChanged,
+  Set<String> takenColorIds = const {},
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -31,6 +34,8 @@ Future<void> _pump(
           isSelf: isSelf,
           showHostAdminSlot: showHostAdminSlot,
           onNameChanged: onNameChanged,
+          onColorChanged: onColorChanged,
+          takenColorIds: takenColorIds,
         ),
       ),
     ),
@@ -86,8 +91,52 @@ void main() {
       isSelf: true,
       showHostAdminSlot: false,
       onNameChanged: (_) => fail('disconnected row must not be editable'),
+      onColorChanged: (_) => fail('disconnected row must not open color'),
     );
     expect(find.byType(TextField), findsNothing);
+    expect(find.byKey(const Key('lobby-color-button')), findsNothing);
     expect(find.text('Desconectado'), findsOneWidget);
+  });
+
+  testWidgets('Color control only on own connected row', (tester) async {
+    final color = find.byKey(const Key('lobby-color-button'));
+    await _pump(
+      tester,
+      _player(),
+      isSelf: true,
+      showHostAdminSlot: false,
+      onColorChanged: (_) {},
+    );
+    expect(color, findsOneWidget);
+
+    await _pump(tester, _player(), isSelf: false, showHostAdminSlot: false);
+    expect(color, findsNothing);
+
+    await _pump(
+      tester,
+      _player(connected: false),
+      isSelf: true,
+      showHostAdminSlot: false,
+      onColorChanged: (_) {},
+    );
+    expect(color, findsNothing);
+  });
+
+  testWidgets('Color opens sheet and reports selection', (tester) async {
+    var newColorId = '';
+    await _pump(
+      tester,
+      _player(),
+      isSelf: true,
+      showHostAdminSlot: false,
+      takenColorIds: const {'color_2'},
+      onColorChanged: (value) => newColorId = value,
+    );
+    await tester.tap(find.byKey(const Key('lobby-color-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('color-option-color_3')));
+    await tester.pumpAndSettle();
+    expect(newColorId, 'color_3');
+    expect(find.byType(ColorPickerSheet), findsNothing);
   });
 }
