@@ -1,0 +1,101 @@
+import 'package:flutter/material.dart';
+
+import '../../../core/catalogs/color_catalog.dart';
+import '../../../core/models/player.dart';
+import 'lobby_name_field.dart';
+
+/// Single player row shared by host and client lobby views.
+///
+/// Same structure for both roles; only the local, connected player's row
+/// is editable. The trailing admin slot is host-only and disabled here
+/// (reorder lands in a later slice); it is absent for clients.
+class LobbyPlayerRow extends StatelessWidget {
+  const LobbyPlayerRow({
+    super.key,
+    required this.player,
+    required this.isSelf,
+    required this.showHostAdminSlot,
+    this.onNameChanged,
+  });
+
+  final Player player;
+  final bool isSelf;
+  final bool showHostAdminSlot;
+  final ValueChanged<String>? onNameChanged;
+
+  bool get _isEditable => isSelf && player.connected && onNameChanged != null;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = ColorCatalog.byId(player.colorId)?.color ?? Colors.grey;
+    final onBackground =
+        ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+            ? Colors.white
+            : Colors.black;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Opacity(
+              opacity: player.connected ? 1 : 0.6,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Jugador ${player.slotNumber}${isSelf ? " (Tú)" : ""}',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.circle,
+                        size: 10,
+                        color: player.connected ? Colors.green : Colors.grey,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(player.connected ? 'Conectado' : 'Desconectado'),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: background,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: _isEditable
+                        ? LobbyNameField(
+                            initialName: player.displayName,
+                            onChanged: onNameChanged!,
+                          )
+                        : Text(
+                            player.displayName,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(color: onBackground),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (showHostAdminSlot)
+            const IconButton(
+              key: Key('lobby-admin-slot'),
+              icon: Icon(Icons.drag_handle),
+              tooltip: 'Reordenar (próximamente)',
+              onPressed: null,
+            ),
+        ],
+      ),
+    );
+  }
+}

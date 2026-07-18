@@ -16,6 +16,7 @@ import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/providers/profile_providers.dart';
+import 'widgets/lobby_player_row.dart';
 
 /// Pre-game lobby for host and joining clients.
 class LobbyScreen extends ConsumerStatefulWidget {
@@ -211,7 +212,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
         children: [
           Text('Jugadores (${players.length}/${room.config.maxPlayers})'),
           const SizedBox(height: 8),
-          ...players.map((player) => _playerTile(player, isHost: true)),
+          ...players.map(
+            (player) => LobbyPlayerRow(
+              key: ValueKey(player.playerId),
+              player: player,
+              isSelf: player.playerId == room.hostPlayerId,
+              showHostAdminSlot: true,
+              onNameChanged: player.playerId == room.hostPlayerId
+                  ? (value) => controller.updateLocalPlayer(
+                        player.playerId,
+                        displayName: value,
+                      )
+                  : null,
+            ),
+          ),
           const Divider(height: 32),
           Text('Configuración', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -337,7 +351,20 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           if (players.isEmpty)
             const Text('Esperando LOBBY_STATE…')
           else
-            ...players.map((player) => _playerTile(player, isHost: false)),
+            ...players.map(
+              (player) => LobbyPlayerRow(
+                key: ValueKey(player.playerId),
+                player: player,
+                isSelf: player.playerId == localPlayerId,
+                showHostAdminSlot: false,
+                onNameChanged: player.playerId == localPlayerId
+                    ? (value) => _client?.sendUpdatePlayer(
+                          playerId: player.playerId,
+                          displayName: value,
+                        )
+                    : null,
+              ),
+            ),
           if (localPlayer != null) ...[
             const Divider(height: 32),
             Text('Tu perfil', style: Theme.of(context).textTheme.titleMedium),
@@ -363,17 +390,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
 
     return Column(
       children: [
-        TextField(
-          decoration: const InputDecoration(labelText: 'Nombre'),
-          controller: TextEditingController(text: player.displayName),
-          onSubmitted: (value) {
-            _client?.sendUpdatePlayer(
-              playerId: player.playerId,
-              displayName: value,
-            );
-          },
-        ),
-        const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: player.colorId,
           decoration: const InputDecoration(labelText: 'Color'),
@@ -431,23 +447,6 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     return _playersFromLobbyState(lobbyState)
         .map((player) => player.soundId)
         .toSet();
-  }
-
-  Widget _playerTile(Player player, {required bool isHost}) {
-    final color = ColorCatalog.byId(player.colorId)?.color ?? Colors.grey;
-    return ListTile(
-      leading: CircleAvatar(backgroundColor: color),
-      title: Text(player.displayName),
-      subtitle: Text(
-        'Slot ${player.slotNumber} · ${player.connected ? "conectado" : "desconectado"}',
-      ),
-      trailing: player.playerId ==
-              (isHost
-                  ? ref.read(hostRoomControllerProvider).room?.hostPlayerId
-                  : _client?.localPlayerId)
-          ? const Text('Tú')
-          : null,
-    );
   }
 
   Widget _configRow({
