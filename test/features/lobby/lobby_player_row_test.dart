@@ -1,9 +1,14 @@
+import 'dart:async';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:turnos_juegos/core/audio/sound_preview_service.dart';
 import 'package:turnos_juegos/core/models/player.dart';
 import 'package:turnos_juegos/features/lobby/widgets/color_picker_sheet.dart';
 import 'package:turnos_juegos/features/lobby/widgets/lobby_player_row.dart';
+import 'package:turnos_juegos/features/lobby/widgets/sound_picker_sheet.dart';
 
 Player _player({String displayName = 'Ana', bool connected = true}) {
   return Player(
@@ -24,7 +29,10 @@ Future<void> _pump(
   required bool showHostAdminSlot,
   ValueChanged<String>? onNameChanged,
   ValueChanged<String>? onColorChanged,
+  ValueChanged<String>? onSoundChanged,
   Set<String> takenColorIds = const {},
+  Set<String> takenSoundIds = const {},
+  SoundPreviewService? previewService,
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -35,7 +43,10 @@ Future<void> _pump(
           showHostAdminSlot: showHostAdminSlot,
           onNameChanged: onNameChanged,
           onColorChanged: onColorChanged,
+          onSoundChanged: onSoundChanged,
           takenColorIds: takenColorIds,
+          takenSoundIds: takenSoundIds,
+          previewService: previewService,
         ),
       ),
     ),
@@ -85,6 +96,9 @@ void main() {
   });
 
   testWidgets('a disconnected self row disables editing', (tester) async {
+    final preview =
+        SoundPreviewService(player: _Noop(), audioContext: AudioContext());
+    addTearDown(preview.dispose);
     await _pump(
       tester,
       _player(connected: false),
@@ -92,25 +106,40 @@ void main() {
       showHostAdminSlot: false,
       onNameChanged: (_) => fail('disconnected row must not be editable'),
       onColorChanged: (_) => fail('disconnected row must not open color'),
+      onSoundChanged: (_) => fail('disconnected row must not open sound'),
+      previewService: preview,
     );
     expect(find.byType(TextField), findsNothing);
     expect(find.byKey(const Key('lobby-color-button')), findsNothing);
+    expect(find.byKey(const Key('lobby-sound-button')), findsNothing);
     expect(find.text('Desconectado'), findsOneWidget);
   });
 
-  testWidgets('Color control only on own connected row', (tester) async {
+  testWidgets('Color and Sound controls only on own connected row',
+      (tester) async {
     final color = find.byKey(const Key('lobby-color-button'));
+    final sound = find.byKey(const Key('lobby-sound-button'));
+    final preview =
+        SoundPreviewService(player: _Noop(), audioContext: AudioContext());
+    addTearDown(preview.dispose);
     await _pump(
       tester,
       _player(),
       isSelf: true,
       showHostAdminSlot: false,
       onColorChanged: (_) {},
+      onSoundChanged: (_) {},
+      previewService: preview,
     );
     expect(color, findsOneWidget);
+    expect(sound, findsOneWidget);
+    await tester.tap(sound);
+    await tester.pumpAndSettle();
+    expect(find.byType(SoundPickerSheet), findsOneWidget);
 
     await _pump(tester, _player(), isSelf: false, showHostAdminSlot: false);
     expect(color, findsNothing);
+    expect(sound, findsNothing);
 
     await _pump(
       tester,
@@ -118,8 +147,11 @@ void main() {
       isSelf: true,
       showHostAdminSlot: false,
       onColorChanged: (_) {},
+      onSoundChanged: (_) {},
+      previewService: preview,
     );
     expect(color, findsNothing);
+    expect(sound, findsNothing);
   });
 
   testWidgets('Color opens sheet and reports selection', (tester) async {
@@ -139,4 +171,22 @@ void main() {
     expect(newColorId, 'color_3');
     expect(find.byType(ColorPickerSheet), findsNothing);
   });
+}
+
+class _Noop implements SoundPreviewPlayer {
+  final _s = StreamController<PlayerState>.broadcast();
+  @override
+  Stream<PlayerState> get onPlayerStateChanged => _s.stream;
+  @override
+  Future<void> stop() async {}
+  @override
+  Future<void> playAsset(
+    String p, {
+    required double volume,
+    required PlayerMode mode,
+    AudioContext? ctx,
+    ReleaseMode releaseMode = ReleaseMode.release,
+  }) async {}
+  @override
+  Future<void> dispose() async => _s.close();
 }
