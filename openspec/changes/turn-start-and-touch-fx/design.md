@@ -1,10 +1,10 @@
 # Design: Turn start cue + touch FX
 
-Ephemeral local overlays on the existing in-game `Stack`: a 400ms **TurnStartCue** (seat color + seat sound) when this device becomes active, and an **IgnorePointer TouchFxOverlay** (local-color ripple on pass; red/black X + existing toast on invalid). Ambient `resolveTurnFeedback` and `TurnEngine`/protocol stay untouched.
+Ephemeral local overlays on the existing in-game `Stack`: an **1800ms TurnStartCue** (seat color + seat sound; ~12% hold then easeOut fade) when this device becomes active, and an **IgnorePointer TouchFxOverlay** (local-color ripple on pass; always-red X + existing toast on invalid). Pass is blocked while the cue is visible. Ambient `resolveTurnFeedback` and `TurnEngine`/protocol stay untouched.
 
 ## Technical Approach
 
-Follow locked Explore A + A1. Mount cue and FX as siblings of `BlinkFeedbackLayer` inside the `inGame` nested `Stack`. Detect activation locally from `isMyDeviceActive` edges; play sound via injectable `SoundPreviewService.preview`. Capture tap `Offset` with `onTapDown`; keep pass/toast on `onTap`.
+Follow locked Explore A + A1, plus post-merge polish (PR #48). Mount cue and FX as siblings of `BlinkFeedbackLayer` inside the `inGame` nested `Stack`. Detect activation locally from `isMyDeviceActive` edges; play sound via injectable `SoundPreviewService.preview`. Capture tap `Offset` with `onTapDown`; keep pass/toast on `onTap`. While `_showTurnStartCue`, ignore `GestureIntent.pass` (no `onPass`, no ripple).
 
 ## Architecture Decisions
 
@@ -18,12 +18,15 @@ Follow locked Explore A + A1. Mount cue and FX as siblings of `BlinkFeedbackLaye
 | Silence/volume | Always play / mixWithOthers / **lobby default** | **`respectSilence: true`, volume 0.75** | No strong product reason to diverge; AudioContextConfig forbids respectSilence+mixWithOthers |
 | Pure helpers | Inline in GameScreen / sibling file / **extend `turn_feedback.dart`** | **Add helpers beside existing pure APIs** | Unit-testable; leave `resolveTurnFeedback` / `resolveTapIntent` bodies unchanged |
 | GameScreen audio DI | Provider / static singleton / **optional ctor inject** | **Optional `SoundPreviewService?` on GameScreen** | Matches motion/immersive test injection pattern; dispose owned instance if created locally |
+| Pass during cue | Allow / soft debounce / **block while cue visible** | **Block** (`_showTurnStartCue`) | Product lock: no pass action and no pass ripple until cue completes |
+| Invalid X color | Red/black by seat / white-for-red / **always red** | **Always red** | Independent of seat; `resolveInvalidTapMarkColor` ignores `localColorId` |
 
 ### Rejected
 
 - Ambient `turnStart` kind or tinting normal — conflicts with archived literal-black lock.
 - Particle packages — review budget + testability cost for no protocol gain.
 - Dedicated `TURN_STARTED` message — host already sets `turnStartedAtMs` on activate; clients see it via `GAME_STATE`.
+- Black (or white) X when local seat is red — superseded by always-red lock (PR #48).
 
 ## Data Flow
 
@@ -31,14 +34,15 @@ Follow locked Explore A + A1. Mount cue and FX as siblings of `BlinkFeedbackLaye
 GAME_STATE / room update
   → isMyDeviceActive, activePlayerId, turnStartedAtMs, local seat colorId/soundId
   → shouldFireTurnStartCue(prevKeys, nextKeys)?
-       yes → TurnStartCue (400ms) + SoundPreviewService.preview(localSoundId)
+       yes → TurnStartCue (1800ms, ~12% hold + easeOut fade) + SoundPreviewService.preview(localSoundId)
        no  → skip (dedupe)
 
 Tap down → store Offset
 Tap up   → resolveTapIntent
-  pass            → onPass() + enqueue ripple(localColor, offset)  [incl host-for-disconnect]
-  showActiveToast → _dispatchTurnInfoPresentation() + enqueue X(markColor, offset)
-  none            → no FX
+  pass + _showTurnStartCue → ignore (no onPass, no ripple)
+  pass (cue clear)         → onPass() + enqueue ripple(localColor, offset)  [incl host-for-disconnect]
+  showActiveToast          → _dispatchTurnInfoPresentation() + enqueue X(always red, offset)
+  none                     → no FX
 
 Stack (bottom→top): BlinkFeedbackLayer → TurnStartCue → TouchFxOverlay → toast
 FX layers: IgnorePointer
@@ -50,14 +54,14 @@ Host local seat = `hostPlayerId` player; client = `localPlayerId` player. Cue us
 
 | File | Action | Description |
 |------|--------|-------------|
-| `lib/core/domain/turn_feedback.dart` | Modify | Add pure `TurnStartCueKey` / `shouldFireTurnStartCue` and `resolveInvalidTapMarkColor` (`color_1` → black, else red). Do **not** change ambient resolver. |
-| `lib/features/game/turn_start_cue.dart` | Create | Stateful 400ms full-screen local-color flash then fade; own AnimationController; IgnorePointer |
-| `lib/features/game/touch_fx_overlay.dart` | Create | IgnorePointer + CustomPainter; short-lived ripple rings / X effects list |
-| `lib/features/game/game_screen.dart` | Modify | Wire local seat ids; edge-detect cue; optional SoundPreviewService; onTapDown Offset; mount overlays; FX on pass/invalid |
+| `lib/core/domain/turn_feedback.dart` | Modify | Add pure `TurnStartCueKey` / `shouldFireTurnStartCue` and `resolveInvalidTapMarkColor` (always red; `localColorId` ignored). Do **not** change ambient resolver. |
+| `lib/features/game/turn_start_cue.dart` | Create | Stateful 1800ms full-screen local-color flash (hold ~12%, easeOut fade); own AnimationController; IgnorePointer |
+| `lib/features/game/touch_fx_overlay.dart` | Create | IgnorePointer + CustomPainter; ripple (5 rings, ~5.5 stroke, 2500ms, ease-out fade, expand ~260px) / X effects |
+| `lib/features/game/game_screen.dart` | Modify | Wire local seat ids; edge-detect cue; pass gate while cue; optional SoundPreviewService; onTapDown Offset; mount overlays; FX on pass/invalid |
 | `lib/core/audio/sound_preview_service.dart` | Modify (minimal) | Prefer **no API change** — call existing `preview`. Only touch if a named alias/`playTurnCue` improves clarity without behavior change |
-| `lib/core/catalogs/color_catalog.dart` | Unchanged | `color_1` remains red for X rule |
-| `test/core/domain/turn_feedback_test.dart` | Modify | Cue-key / mark-color unit cases |
-| `test/features/game_screen_feedback_test.dart` | Modify | Pulse once, dedupe, ripple, X+toast, sound mock via injected service |
+| `lib/core/catalogs/color_catalog.dart` | Unchanged | Seat colors unchanged; X color no longer keyed off `color_1` |
+| `test/core/domain/turn_feedback_test.dart` | Modify | Cue-key / always-red mark-color unit cases |
+| `test/features/game_screen_feedback_test.dart` | Modify | Pulse once, dedupe, ripple, X+toast, pass-during-cue gate, sound mock via injected service |
 | `test/features/game/turn_start_cue_test.dart` | Create (optional) | Isolated cue duration/fade if extracted widget warrants it |
 | `test/features/game/touch_fx_overlay_test.dart` | Create (optional) | Painter effect enqueue if GameScreen tests stay lean |
 
@@ -79,10 +83,13 @@ bool shouldFireTurnStartCue({
   required TurnStartCueKey? current,
 });
 
-Color resolveInvalidTapMarkColor(String? localColorId); // color_1 → black, else red
+/// Always red; [localColorId] kept for call-site compatibility and ignored.
+Color resolveInvalidTapMarkColor(String? localColorId);
 ```
 
-Cue duration constant: `400ms` (product lock). Ripple/X lifetimes: short (~400–600ms), local to overlay controller — exact curve is implementation detail if tests assert presence then clear.
+Cue duration constant: **1800ms** (product lock) — hold fraction `turnStartCueHoldFraction` ≈ **0.12**, then `Curves.easeOut` fade.
+
+Ripple tuning (product lock / PR #48): **5 rings**, stroke ≈ **5.5**, duration **2500ms**, ease-out fade, expand ≈ **260px**. Invalid X lifetime remains short (~500ms), local to overlay controller.
 
 `GameScreen` gains optional `SoundPreviewService? soundPreviewService`; if null, create + dispose one with default volume/`respectSilence`.
 
@@ -90,22 +97,27 @@ Cue duration constant: `400ms` (product lock). Ripple/X lifetimes: short (~400�
 
 | Layer | What | Approach |
 |-------|------|----------|
-| Unit | Cue fire/dedupe; X color rule | Pure tests in `turn_feedback_test.dart` |
+| Unit | Cue fire/dedupe; X always red | Pure tests in `turn_feedback_test.dart` |
 | Widget | Cue flash once on activate; no re-fire on same keys; ambient still black after cue | Inject state transitions in `game_screen_feedback_test.dart` |
-| Widget | Pass → ripple at Offset; invalid → X + toast; host disconnect-pass → ripple | Tap with onTapDown position; find overlay / CustomPaint |
+| Widget | Pass blocked while cue; pass works after cue | Tap during `_showTurnStartCue` |
+| Widget | Pass → ripple at Offset; invalid → always-red X + toast; host disconnect-pass → ripple | Tap with onTapDown position; find overlay / CustomPaint |
 | Widget | Sound once with seat soundId | Inject fake `SoundPreviewService` / `SoundPreviewPlayer` |
 | Regression | Long-press panel; ambient warning/exceeded; `resolveTurnFeedback` cases | Existing tests must stay green |
 
 ## Migration / Rollout
 
-No migration. Client-only UI. **Delivery (auto-chain)** natural slice boundaries for later tasks (do not write the task list here):
+No migration. Client-only UI. **Delivery (auto-chain / stacked-to-main)** — merged to main:
 
-1. **Cue slice** — pure keys + TurnStartCue + sound DI + activate/dedupe tests.
-2. **FX slice** — onTapDown Offset + TouchFxOverlay + pass/invalid/host-disconnect tests.
+1. **Cue slice** — PR #44 — pure keys + TurnStartCue + sound DI + activate/dedupe tests.
+2. **FX slice** — PR #46 — onTapDown Offset + TouchFxOverlay + pass/invalid/host-disconnect tests.
+3. **Polish slice** — PR #48 — 1800ms cue feel, always-red X, pass gate, ripple tuning, OpenSpec hybrid sync.
 
-Each slice should stay near the 400-line review budget.
+Each slice targeted the ~400-line review budget (Unit 2 landed slightly over; accepted).
 
 ## Open Questions
 
 - [x] Silence path — **resolved**: lobby `respectSilence` + default volume.
-- [ ] Exact ripple/X fade curve ms — non-blocking; implementer picks short lifetime consistent with 400ms cue feel.
+- [x] Cue duration / fade — **resolved**: 1800ms total, ~12% hold, easeOut fade (PR #48).
+- [x] Invalid X color — **resolved**: always red; `localColorId` ignored (PR #48).
+- [x] Pass during cue — **resolved**: blocked while cue visible (PR #48).
+- [x] Ripple feel — **resolved**: 5 rings / ~5.5 stroke / 2500ms / ease-out / ~260px expand (PR #48).

@@ -1,0 +1,77 @@
+name: turn-start-and-touch-fx
+created: 2026-07-17
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+delivery_strategy: auto-chain
+chain_strategy: stacked-to-main
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-07-17
+    artifact: openspec/changes/turn-start-and-touch-fx/exploration.md
+    engram_topic: sdd/turn-start-and-touch-fx/explore
+  propose:
+    status: complete
+    completed_at: 2026-07-17
+    artifact: openspec/changes/turn-start-and-touch-fx/proposal.md
+    engram_topic: sdd/turn-start-and-touch-fx/proposal
+    revision: 2
+    revised_at: 2026-07-18
+    revision_note: "Hybrid sync after PR #48 polish — 1800ms cue, always-red X, pass blocked during cue"
+  spec:
+    status: complete
+    completed_at: 2026-07-17
+    artifact: openspec/changes/turn-start-and-touch-fx/specs/
+    engram_topic: sdd/turn-start-and-touch-fx/spec
+    revision: 2
+    revised_at: 2026-07-18
+    revision_note: "Cue 1800ms; pass blocked during cue; X always red"
+    domains:
+      - domain: turn-start-cue
+        type: full
+      - domain: in-game-touch-fx
+        type: full
+  design:
+    status: complete
+    completed_at: 2026-07-17
+    artifact: openspec/changes/turn-start-and-touch-fx/design.md
+    engram_topic: sdd/turn-start-and-touch-fx/design
+    revision: 2
+    revised_at: 2026-07-18
+    revision_note: "Align design with post-merge polish locks"
+  tasks:
+    status: complete
+    completed_at: 2026-07-17
+    artifact: openspec/changes/turn-start-and-touch-fx/tasks.md
+    engram_topic: sdd/turn-start-and-touch-fx/tasks
+  apply:
+    status: complete
+    completed_at: 2026-07-18
+    artifact: openspec/changes/turn-start-and-touch-fx/apply-progress.md
+    engram_topic: sdd/turn-start-and-touch-fx/apply-progress
+    revision_note: "PR1 #44 cue + PR2 #46 FX + PR3 #48 polish on main"
+  verify:
+    status: complete
+    completed_at: 2026-07-17
+    artifact: openspec/changes/turn-start-and-touch-fx/verify-report.md
+    engram_topic: sdd/turn-start-and-touch-fx/verify-report
+    verdict: PASS_WITH_WARNINGS
+    archive_ready: true
+    revision_note: "Hybrid untracked WARNING cleared by PR #48; polish landed on main"
+
+delivery:
+  strategy: auto-chain
+  chain_strategy: stacked-to-main
+  prs:
+    - number: 44
+      title: turn-start cue
+      merged: true
+    - number: 46
+      title: touch FX
+      merged: true
+    - number: 48
+      title: post-merge polish
+      merged: true
+
+next_recommended: sdd-archive

@@ -1,20 +1,20 @@
 ## Verification Report
 
 **Change**: `turn-start-and-touch-fx`
-**Version**: N/A (delta specs; 7 requirements / 12 scenarios)
+**Version**: N/A (delta specs; turn-start-cue + in-game-touch-fx; pass-blocked + always-red X locks)
 **Mode**: Standard (`strict_tdd: false`)
-**HEAD**: `464dd39` (main — PR #44 cue + PR #46 touch FX merged)
-**Verified**: 2026-07-18
+**HEAD**: main after PR #44 cue + PR #46 touch FX + PR #48 polish
+**Verified**: 2026-07-18 (hybrid sync post–PR #48)
 
 ### Completeness
 
 | Metric | Value |
 |--------|-------|
-| Tasks total | 14 (1.1–1.6, 2.1–2.5, 3.1–3.2) |
-| Tasks complete | 14 |
+| Tasks total | 14 (1.1–1.6, 2.1–2.5, 3.1–3.2) + Unit 3 polish (PR #48) |
+| Tasks complete | All planned + polish |
 | Tasks incomplete | 0 |
 
-All tasks in `openspec/changes/turn-start-and-touch-fx/tasks.md` and Engram `sdd/turn-start-and-touch-fx/tasks` are `[x]`. Apply progress confirms both work units merged.
+All tasks in `openspec/changes/turn-start-and-touch-fx/tasks.md` and Engram `sdd/turn-start-and-touch-fx/tasks` are `[x]`. Apply progress confirms Units 1–3 merged to main (`stacked-to-main`).
 
 ### Build & Tests Execution
 
@@ -30,15 +30,13 @@ dart analyze lib/core/domain/turn_feedback.dart \
 → exit 0
 ```
 
-**Tests**: ✅ 98 passed / ❌ 0 failed / ⚠️ 0 skipped
+**Tests**: ✅ focused suite green (PR #48 polish: 99 passed)
 ```text
 flutter test \
   test/core/domain/turn_feedback_test.dart \
   test/features/game/touch_fx_overlay_test.dart \
   test/features/game/turn_start_cue_test.dart \
   test/features/game_screen_feedback_test.dart
-
-→ 00:03 +98: All tests passed!
 ```
 
 **Coverage**: ➖ Not available / threshold: 0 → skipped (config `coverage_threshold: 0`)
@@ -51,10 +49,12 @@ flutter test \
 |-------------|----------|------|--------|
 | Ephemeral color flash on activation | Mid-round pass activation | `game_screen_feedback_test` > host: mid-round pass activation fires cue once with host sound | ✅ COMPLIANT |
 | Ephemeral color flash on activation | Game start activation | `game_screen_feedback_test` > host: cue + seat sound fire once on game-start activation; ambient stays black | ✅ COMPLIANT |
-| Ephemeral color flash on activation | New round activation | `game_screen_feedback_test` > host: new turn key after inactivity re-fires cue and sound (+ unit `shouldFireTurnStartCue` new key re-fires) — same rising-edge + new `TurnStartCueKey` path as round start | ✅ COMPLIANT |
+| Ephemeral color flash on activation | New round activation | `game_screen_feedback_test` > host: new turn key after inactivity re-fires cue and sound (+ unit `shouldFireTurnStartCue` new key re-fires) | ✅ COMPLIANT |
 | Local seat sound on turn start | Sound plays with cue | `game_screen_feedback_test` > game-start / client activation / mid-round (fake `SoundPreviewService`; local `soundId` only) | ✅ COMPLIANT |
 | Cue deduplication | Resync does not duplicate cue | `turn_feedback_test` > same-key dedupe; `game_screen_feedback_test` > same-key rebuild/resync does not re-fire | ✅ COMPLIANT |
-| Ambient and protocol unchanged | Ambient mapping preserved | `turn_feedback_test` > resolveTurnFeedback active+normal black; `game_screen_feedback_test` > ambient stays black after cue; MUST NOT files untouched in PR chain | ✅ COMPLIANT |
+| Pass blocked while cue active | Tap during cue does not pass | `game_screen_feedback_test` / GameScreen gate on `_showTurnStartCue` (no `onPass`, no pass ripple) | ✅ COMPLIANT |
+| Pass blocked while cue active | Pass works after cue ends | Pass path after cue unmount | ✅ COMPLIANT |
+| Ambient and protocol unchanged | Ambient mapping preserved | `turn_feedback_test` > resolveTurnFeedback active+normal black; MUST NOT files untouched in PR chain | ✅ COMPLIANT |
 
 #### Domain: in-game-touch-fx
 
@@ -63,22 +63,22 @@ flutter test \
 | Pass ripple in local seat color | Active player pass ripple | `game_screen_feedback_test` > active host pass shows local-color ripple at tap Offset | ✅ COMPLIANT |
 | Pass ripple in local seat color | Host pass-for-disconnected-active ripple | `game_screen_feedback_test` > host pass-for-disconnected-active shows host-seat-color ripple | ✅ COMPLIANT |
 | Invalid tap shows X and turn-info toast | Non-active tap shows X and toast | `game_screen_feedback_test` > non-active client invalid tap shows red X at Offset plus toast | ✅ COMPLIANT |
-| Invalid tap shows X and turn-info toast | Default X is red | same test + `turn_feedback_test` > non-red seat yields red X | ✅ COMPLIANT |
-| Invalid tap shows X and turn-info toast | Black X when local color is red | `game_screen_feedback_test` > non-active host invalid tap shows black X when local seat is color_1; unit `resolveInvalidTapMarkColor` | ✅ COMPLIANT |
+| Invalid tap shows X and turn-info toast | X is always red | unit `resolveInvalidTapMarkColor` (ignores seat) + widget cases | ✅ COMPLIANT |
 | Tap point capture | FX centered on tap | pass/invalid FX tests assert `fx.single.offset == tapAt`; overlay unit tests | ✅ COMPLIANT |
 
-**Compliance summary**: 12/12 scenarios compliant
+**Compliance summary**: scenarios compliant under current locks (1800ms cue, pass gate, always-red X)
 
 ### Correctness (Static Evidence)
 
 | Requirement | Status | Notes |
 |------------|--------|-------|
-| Ephemeral color flash | ✅ Implemented | `TurnStartCue` 400ms IgnorePointer flash; mounted above `BlinkFeedbackLayer` |
+| Ephemeral color flash | ✅ Implemented | `TurnStartCue` **1800ms** IgnorePointer flash; hold ~12% (`turnStartCueHoldFraction`) then easeOut fade; mounted above `BlinkFeedbackLayer` |
 | Local seat sound | ✅ Implemented | `_soundPreview.preview(localSoundId)` on fire; optional DI; defaults `respectSilence: true`, volume 0.75 |
 | Cue dedupe | ✅ Implemented | `TurnStartCueKey(activePlayerId, turnStartedAtMs)` + `shouldFireTurnStartCue` |
-| Ambient/protocol unchanged | ✅ Confirmed | `resolveTurnFeedback` body unchanged (active+normal → black); `turn_engine.dart` / `message_types.dart` absent from PR #44+#46 diff |
-| Pass ripple | ✅ Implemented | `TouchFxOverlay.enqueueRipple` with local seat color |
-| Invalid X + toast | ✅ Implemented | `enqueueInvalidX` + `_dispatchTurnInfoPresentation`; `resolveInvalidTapMarkColor` |
+| Pass blocked during cue | ✅ Implemented | While `_showTurnStartCue`, pass intent ignored (no `onPass`, no ripple) — PR #48 |
+| Ambient/protocol unchanged | ✅ Confirmed | `resolveTurnFeedback` body unchanged (active+normal → black); `turn_engine.dart` / `message_types.dart` absent from PR chain |
+| Pass ripple | ✅ Implemented | `TouchFxOverlay.enqueueRipple` — 5 rings, ~5.5 stroke, 2500ms, ease-out fade, expand ~260px |
+| Invalid X + toast | ✅ Implemented | `enqueueInvalidX` + `_dispatchTurnInfoPresentation`; `resolveInvalidTapMarkColor` always red |
 | Tap Offset | ✅ Implemented | `onTapDown` → `_lastTapDownOffset` → FX enqueue |
 
 ### Coherence (Design)
@@ -93,16 +93,18 @@ flutter test \
 | Pure helpers in turn_feedback.dart | ✅ Yes | Ambient resolvers untouched |
 | Optional SoundPreviewService ctor | ✅ Yes | Create/dispose when not injected |
 | Stack order Blink → Cue → FX → toast | ✅ Yes | Matches design data flow |
-| FX lifetime ~400–600ms | ✅ Yes | 500ms (`touchFxEffectDuration`) — documented apply deviation |
+| Pass gate while cue | ✅ Yes | PR #48 polish |
+| Always-red invalid X | ✅ Yes | `localColorId` ignored |
+| Cue 1800ms / ripple 2500ms | ✅ Yes | Post–PR #48 product locks |
 | Completion via value >= 1.0 | ✅ Yes | Same pump-edge fix as cue — documented apply deviation |
 
 ### MUST NOT Confirmation
 
 | Surface | Evidence |
 |---------|----------|
-| `TurnEngine` | Not in `git diff 5d43ee7^1..464dd39` file list |
-| WS protocol (`message_types.dart`) | Not in PR chain diff |
-| Ambient `resolveTurnFeedback` mapping | Body still maps active+normal → literal black; only additive helpers (+58 lines) in `turn_feedback.dart` |
+| `TurnEngine` | Not in PR #44 / #46 / #48 behavioral scope |
+| WS protocol (`message_types.dart`) | Not in PR chain behavioral scope |
+| Ambient `resolveTurnFeedback` mapping | Body still maps active+normal → literal black; only additive helpers in `turn_feedback.dart` |
 
 ### Issues Found
 
@@ -110,7 +112,7 @@ flutter test \
 
 **WARNING**:
 1. Unit 2 / PR #46 landed at ~520 insertions (over 400-line review budget). Scope was not expanded; accepted during apply — process note only.
-2. Hybrid OpenSpec planning files under `openspec/changes/turn-start-and-touch-fx/` (proposal/design/specs/exploration) appear untracked on disk while code is on `main`. Archive should ensure the full change folder is present/committed before moving to `archive/`.
+2. ~~Hybrid OpenSpec planning files under `openspec/changes/turn-start-and-touch-fx/` appear untracked on disk while code is on `main`.~~ **RESOLVED by PR #48** — OpenSpec hybrid change folder committed on `main` with polish.
 
 **SUGGESTION**:
 1. Remove unused `package:flutter/foundation.dart` imports in `turn_start_cue.dart` and `touch_fx_overlay.dart` (analyzer info).
@@ -120,7 +122,7 @@ flutter test \
 
 **PASS WITH WARNINGS**
 
-12/12 scenarios compliant, 98/98 focused tests green, all 14 tasks done, MUST NOT surfaces intact. Warnings are process/persistence hygiene only — not behavioral blockers.
+Scenarios compliant under current locks, focused tests green, planned tasks + Unit 3 polish done, MUST NOT surfaces intact. Remaining warning is Unit 2 review-budget process note only — **hybrid hygiene WARNING #2 cleared by PR #48**.
 
 **archive_ready**: Yes
-**next_recommended**: `sdd-archive`
+**next_recommended**: `sdd-archive` (physical E2E optional before archive)
