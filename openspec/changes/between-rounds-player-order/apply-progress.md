@@ -16,8 +16,10 @@
 ### PR2 / Phase 2 host between-rounds UI (THIS BATCH)
 
 - **Branch**: `feat/between-rounds-host-ui-02`
+- **Commit**: `4b5aa2a`
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/56
+- **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/55
 - **Base**: `main` @ `16f0902` (PR1 merged)
-- **PR**: (opened after push)
 
 ## Completed Tasks
 
