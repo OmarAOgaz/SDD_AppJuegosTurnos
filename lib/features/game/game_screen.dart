@@ -22,11 +22,14 @@ import '../../core/models/discovered_room.dart';
 import '../../core/models/game_phase.dart';
 import '../../core/models/game_room.dart';
 import '../../core/models/player.dart';
+import '../../core/models/room_config.dart';
 import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/sensors/motion_sensor_source.dart';
+import '../../server/host_room_controller.dart';
+import '../lobby/widgets/lobby_player_row.dart';
 import 'touch_fx_overlay.dart';
 import 'turn_start_cue.dart';
 
@@ -55,6 +58,26 @@ const turnInfoTimeKey = Key('turn-info-time');
 /// How long tap/motion turn-info stays visible (immutable through timeout).
 @visibleForTesting
 const turnInfoPresentationTimeout = Duration(seconds: 2);
+
+/// Root of the between-rounds break body (host or client).
+@visibleForTesting
+const betweenRoundsBodyKey = Key('betweenRoundsBody');
+
+/// Synced break elapsed label (`stamp` + host/`serverNow` clock).
+@visibleForTesting
+const betweenRoundsElapsedKey = Key('betweenRoundsElapsed');
+
+/// Next-round duration preview using current `roundIncrementSeconds`.
+@visibleForTesting
+const betweenRoundsDurationPreviewKey = Key('betweenRoundsDurationPreview');
+
+/// Host-only round-increment slider on the break screen.
+@visibleForTesting
+const betweenRoundsIncrementSliderKey = Key('betweenRoundsIncrement');
+
+/// Host-only start-next-round CTA.
+@visibleForTesting
+const betweenRoundsStartKey = Key('betweenRoundsStart');
 
 /// In-game turn timer UI for host and clients.
 class GameScreen extends ConsumerStatefulWidget {
@@ -1292,16 +1315,142 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           }
         },
         onExit: exitAsHost,
-        betweenRoundsActions: room.gamePhase == GameRoomPhase.betweenRounds
-            ? [
-                FilledButton(
-                  onPressed: () {
-                    controller.startNextRound();
-                  },
-                  child: const Text('Iniciar siguiente ronda'),
-                ),
-              ]
+        betweenRoundsBody: room.gamePhase == GameRoomPhase.betweenRounds
+            ? _buildHostBetweenRoundsBody(
+                context,
+                controller: controller,
+                room: room,
+                serverNowMs: serverNow,
+              )
             : null,
+      ),
+    );
+  }
+
+  /// Host-authoritative between-rounds break: sequence list, reorder, increment,
+  /// synced elapsed, duration preview, and start-next-round CTA.
+  Widget _buildHostBetweenRoundsBody(
+    BuildContext context, {
+    required HostRoomController controller,
+    required GameRoom room,
+    required int serverNowMs,
+  }) {
+    final sequenceIds = List<String>.from(room.turnSequence);
+    final players = <Player>[
+      for (final id in sequenceIds)
+        room.playersById[id] ??
+            Player(
+              playerId: id,
+              displayName: 'Vacío',
+              colorId: '',
+              soundId: '',
+              deviceId: '',
+              connected: false,
+            ),
+    ];
+
+    final stampMs = room.turnState.betweenRoundsEnteredAtMs;
+    final elapsedSeconds = stampMs == null
+        ? null
+        : ((serverNowMs - stampMs) / 1000).floor().clamp(0, 86400 * 7);
+    final durationPreview = TurnEngine.nextRoundDurationPreview(room);
+    final increment = room.config.roundIncrementSeconds;
+
+    void applyOrder(List<String> orderedIds) {
+      controller.reorderTurnOrderBetweenRounds(orderedIds);
+    }
+
+    void movePlayer(int fromIndex, int toIndex) {
+      if (fromIndex < 0 ||
+          toIndex < 0 ||
+          fromIndex >= sequenceIds.length ||
+          toIndex >= sequenceIds.length) {
+        return;
+      }
+      final ids = List<String>.from(sequenceIds);
+      final moved = ids.removeAt(fromIndex);
+      ids.insert(toIndex, moved);
+      applyOrder(ids);
+    }
+
+    return Padding(
+      key: betweenRoundsBodyKey,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Entre rondas',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          Text('Ronda ${room.turnState.currentRound} completada'),
+          if (elapsedSeconds != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              key: betweenRoundsElapsedKey,
+              'Tiempo de pausa: ${elapsedSeconds}s',
+            ),
+          ],
+          if (durationPreview != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              key: betweenRoundsDurationPreviewKey,
+              'Próxima duración: ${durationPreview}s',
+            ),
+          ],
+          const SizedBox(height: 16),
+          Text(
+            'Orden de la siguiente ronda',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ReorderableListView(
+              buildDefaultDragHandles: false,
+              onReorderItem: (oldIndex, newIndex) {
+                final ids = List<String>.from(sequenceIds);
+                final moved = ids.removeAt(oldIndex);
+                ids.insert(newIndex, moved);
+                applyOrder(ids);
+              },
+              children: [
+                for (var i = 0; i < players.length; i++)
+                  LobbyPlayerRow(
+                    key: ValueKey(players[i].playerId),
+                    player: players[i],
+                    isSelf: players[i].playerId == room.hostPlayerId,
+                    showHostAdminSlot: true,
+                    reorderIndex: i,
+                    reorderCount: players.length,
+                    onMoveUp: () => movePlayer(i, i - 1),
+                    onMoveDown: () => movePlayer(i, i + 1),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text('Incremento por ronda (s): $increment'),
+          Slider(
+            key: betweenRoundsIncrementSliderKey,
+            value: increment.toDouble(),
+            min: RoomConfig.minRoundIncrementSeconds.toDouble(),
+            max: RoomConfig.maxRoundIncrementSeconds.toDouble(),
+            divisions: RoomConfig.maxRoundIncrementSeconds > 0
+                ? RoomConfig.maxRoundIncrementSeconds
+                : null,
+            onChanged: (value) {
+              controller.setRoundIncrement(value.round());
+            },
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            key: betweenRoundsStartKey,
+            onPressed: () {
+              controller.startNextRound();
+            },
+            child: const Text('Iniciar siguiente ronda'),
+          ),
+        ],
       ),
     );
   }
@@ -1385,7 +1534,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required String exitActionLabel,
     required VoidCallback onPass,
     required Future<void> Function() onExit,
-    List<Widget>? betweenRoundsActions,
+    Widget? betweenRoundsBody,
   }) {
     final color = ColorCatalog.byId(activeColorId ?? '')?.color ?? Colors.grey;
     final localSeatColor = ColorCatalog.byId(localColorId ?? '')?.color;
@@ -1402,17 +1551,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     if (gamePhase == GameRoomPhase.betweenRounds) {
       _wasMyDeviceActive = false;
-      return Center(
+      // Host supplies the full break body (PR2). Clients keep the stub until PR3.
+      if (betweenRoundsBody != null) {
+        return betweenRoundsBody;
+      }
+      return const Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('Entre rondas'),
-              const SizedBox(height: 16),
-              if (betweenRoundsActions != null) ...betweenRoundsActions,
-            ],
-          ),
+          padding: EdgeInsets.all(24),
+          child: Text('Entre rondas'),
         ),
       );
     }

@@ -38,10 +38,10 @@ Chain strategy locked by user to **stacked-to-main**: each PR targets `main` (or
 
 ## Phase 2: Host between-rounds UI (PR2)
 
-- [ ] 2.1 Replace stub between-rounds body in `game_screen.dart` with full `turnSequence` list (incl. disconnected) via reused `lobby_reorder_controls.dart`.
-- [ ] 2.2 Host-only: wire reorder settle → `controller.reorderTurnOrderBetweenRounds`; increment editor → `setRoundIncrement`; CTA → `startNextRound`.
-- [ ] 2.3 Host elapsed display from stamp + `serverNow` (host clock path); duration preview uses substituted increment.
-- [ ] 2.4 Widget tests in `test/features/game_screen_feedback_test.dart` (or sibling): host shows reorder/increment/start; variable-only break body.
+- [x] 2.1 Replace stub between-rounds body in `game_screen.dart` with full `turnSequence` list (incl. disconnected) via reused `lobby_reorder_controls.dart`.
+- [x] 2.2 Host-only: wire reorder settle → `controller.reorderTurnOrderBetweenRounds`; increment editor → `setRoundIncrement`; CTA → `startNextRound`.
+- [x] 2.3 Host elapsed display from stamp + `serverNow` (host clock path); duration preview uses substituted increment.
+- [x] 2.4 Widget tests in `test/features/game_screen_feedback_test.dart` (or sibling): host shows reorder/increment/start; variable-only break body.
 
 ## Phase 3: Client view-only + sync (PR3)
 
@@ -53,5 +53,5 @@ Chain strategy locked by user to **stacked-to-main**: each PR targets `main` (or
 ## Phase 4: Slice verification
 
 - [x] 4.1 PR1: `flutter test` domain/controller suites; lobby mutators still lobby-only.
-- [ ] 4.2 PR2: host can complete break flow end-to-end on device/emulator.
+- [x] 4.2 PR2: host can complete break flow end-to-end on device/emulator.
 - [ ] 4.3 PR3: client matches list/timer/increment; acting-host controls appear after succession.
