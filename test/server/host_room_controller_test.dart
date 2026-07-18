@@ -1079,6 +1079,45 @@ void main() {
       expect(controller.room, isNull);
     });
 
+    test('intentional endGame stops FGS, mDNS, and clears room', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final fgs = _FakeForegroundServiceBridge();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+        foregroundServiceBridge: fgs,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      expect(mdns.startCount, greaterThan(0));
+      expect(fgs.startCount, 1);
+      server.broadcasts.clear();
+
+      await controller.endGame();
+
+      expect(fgs.stopCount, greaterThan(0));
+      expect(mdns.stopCount, greaterThan(0));
+      expect(controller.room, isNull);
+      expect(controller.hasHostingAuthority, isFalse);
+      expect(
+        server.broadcasts.any(
+          (e) =>
+              e.type == MessageTypes.gameState &&
+              e.payload['gamePhase'] == GameRoomPhase.ended.wireValue,
+        ),
+        isTrue,
+      );
+    });
+
     test('intentional endGame does not emit HOST_MIGRATED', () async {
       final server = _LobbySyncRecordingServer();
       final controller = HostRoomController(
