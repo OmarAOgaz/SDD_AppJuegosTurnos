@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
@@ -255,6 +256,21 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('resolveInvalidTapMarkColor', () {
+    test('color_1 (red seat) yields black X', () {
+      expect(resolveInvalidTapMarkColor('color_1'), Colors.black);
+    });
+
+    test('non-red seat yields red X', () {
+      expect(resolveInvalidTapMarkColor('color_2'), Colors.red);
+      expect(resolveInvalidTapMarkColor('color_3'), Colors.red);
+    });
+
+    test('null local color yields red X', () {
+      expect(resolveInvalidTapMarkColor(null), Colors.red);
     });
   });
 }

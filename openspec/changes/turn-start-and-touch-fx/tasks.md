@@ -38,13 +38,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Touch FX (Work Unit 2)
 
-- [ ] 2.1 Add `resolveInvalidTapMarkColor` to `lib/core/domain/turn_feedback.dart` (`color_1` → black, else red) + unit cases in `turn_feedback_test.dart`.
-- [ ] 2.2 Create `lib/features/game/touch_fx_overlay.dart`: IgnorePointer + CustomPainter; short-lived ripple rings / X effect list (~400–600ms).
-- [ ] 2.3 Optional: `test/features/game/touch_fx_overlay_test.dart` for enqueue/clear if GameScreen tests stay lean.
-- [ ] 2.4 Wire `GameScreen`: store `Offset` from existing `onTapDown`; mount `TouchFxOverlay` above cue; on `pass` enqueue local-color ripple (incl. host-for-disconnect); on `showActiveToast` enqueue X via 2.1 + existing `_dispatchTurnInfoPresentation()`; no FX on `none`.
-- [ ] 2.5 Extend `game_screen_feedback_test.dart`: pass ripple at P; host disconnect-pass ripple; invalid X+toast; red vs black X; effect centered on tap Offset. Regression: long-press panel + ambient warning/exceeded stay green.
+- [x] 2.1 Add `resolveInvalidTapMarkColor` to `lib/core/domain/turn_feedback.dart` (`color_1` → black, else red) + unit cases in `turn_feedback_test.dart`.
+- [x] 2.2 Create `lib/features/game/touch_fx_overlay.dart`: IgnorePointer + CustomPainter; short-lived ripple rings / X effect list (~400–600ms).
+- [x] 2.3 Optional: `test/features/game/touch_fx_overlay_test.dart` for enqueue/clear if GameScreen tests stay lean.
+- [x] 2.4 Wire `GameScreen`: store `Offset` from existing `onTapDown`; mount `TouchFxOverlay` above cue; on `pass` enqueue local-color ripple (incl. host-for-disconnect); on `showActiveToast` enqueue X via 2.1 + existing `_dispatchTurnInfoPresentation()`; no FX on `none`.
+- [x] 2.5 Extend `game_screen_feedback_test.dart`: pass ripple at P; host disconnect-pass ripple; invalid X+toast; red vs black X; effect centered on tap Offset. Regression: long-press panel + ambient warning/exceeded stay green.
 
 ## Phase 3: Slice verification
 
 - [x] 3.1 Unit 1 done when cue/sound/dedupe/ambient-black scenarios pass and `TurnEngine`/protocol untouched.
-- [ ] 3.2 Unit 2 done when ripple/X/toast/Offset scenarios pass and ambient mapping still unchanged.
+- [x] 3.2 Unit 2 done when ripple/X/toast/Offset scenarios pass and ambient mapping still unchanged.

@@ -1,4 +1,9 @@
+import 'package:flutter/material.dart';
+
 import '../models/game_phase.dart';
+
+/// Seat color id that is itself red — invalid-tap X must use black instead.
+const _redSeatColorId = 'color_1';
 
 /// Ambient screen state derived from turn phase + local device identity.
 enum TurnFeedbackKind { black, flashing, fixed }
@@ -122,4 +127,13 @@ bool shouldFireTurnStartCue({
     return false;
   }
   return !wasActive;
+}
+
+/// Color for the invalid-tap X mark: black when the local seat is already
+/// red ([_redSeatColorId] / `color_1`), otherwise red.
+Color resolveInvalidTapMarkColor(String? localColorId) {
+  if (localColorId == _redSeatColorId) {
+    return Colors.black;
+  }
+  return Colors.red;
 }
