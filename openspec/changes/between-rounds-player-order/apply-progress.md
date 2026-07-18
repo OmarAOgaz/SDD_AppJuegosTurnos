@@ -16,19 +16,26 @@
 ### PR2 / Phase 2 host between-rounds UI (MERGED)
 
 - **Branch**: `feat/between-rounds-host-ui-02`
-- **Commit**: `4b5aa2a` / merged as `ebada68` via PR #56
+- **Commit**: `ebada68` (merged via PR #56)
 - **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/56
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/55
 - **Base**: `main` @ `16f0902` (PR1 merged)
 
-### PR3 / Phase 3 client view-only + sync (THIS BATCH)
+### PR3 / Phase 3 client view-only + sync (MERGED)
 
 - **Branch**: `feat/between-rounds-client-sync-03`
-- **Commits**: `948e391`, `f09ac69`
+- **Commit**: `76bfead` (merged via PR #58)
 - **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/58
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/57
 - **Base**: `main` @ `ebada68` (PR1+PR2 merged)
-- **Diff budget**: 357 insertions / 29 deletions (386 total; under 400)
+
+### Follow-up / verify PARTIAL gaps (MERGED)
+
+- **Branch**: `test/between-rounds-partial-gaps`
+- **Commit**: `4425884` (merged via PR #60)
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/60
+- **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/59
+- Closes verify PARTIAL gaps: `SYNC_REQUEST` during break + acting-host reorder mid-break
 
 ## Completed Tasks
 
@@ -61,19 +68,7 @@
 
 ## Remaining Tasks
 
-None — **18/18 tasks complete**. Ready for `sdd-verify` then `sdd-archive`.
-
-## Files Changed (PR3)
-
-| File | Action | What Was Done |
-|------|--------|---------------|
-| `lib/core/lifecycle/client_sync_state.dart` | Modified | `isBetweenRounds` + `betweenRoundsElapsedSeconds()` |
-| `test/core/client_sync_state_test.dart` | Modified | Unit tests for elapsed helper |
-| `lib/features/game/game_screen.dart` | Modified | Client view-only between-rounds body wired into `_buildClient` |
-| `test/features/game_screen_feedback_test.dart` | Modified | Client break fixtures + 3 PR3 widget tests |
-| `openspec/changes/between-rounds-player-order/tasks.md` | Modified | PR3 + 4.3 checkboxes |
-| `openspec/changes/between-rounds-player-order/state.yaml` | Modified | apply progress for PR3 / all done |
-| `openspec/changes/between-rounds-player-order/apply-progress.md` | Modified | Merged PR1+PR2+PR3 progress |
+None — **18/18 tasks complete**. Implementation chain (PR1–PR3) + PARTIAL-gap tests (PR #60) are on `main`.
 
 ## Deviations from Design
 
@@ -81,29 +76,20 @@ None material. Client duration preview uses `GameRoom.fromSnapshot` + `TurnEngin
 
 ## Issues Found
 
-None blocking.
+None blocking. Verify WARNING about stale “PR3 OPEN” apply-progress is resolved by this refresh.
 
 ## Workload / PR Boundary
 
-- Mode: stacked PR slice (auto-chain)
-- Current work unit: PR3 client view-only + sync
-- Boundary: start = main @ ebada68 (PR1+PR2 merged); finish = client break UI + elapsed helper + widget/unit tests green
-- Estimated review budget impact: ~200–280 product LOC (under 400)
-- Rollback: revert PR3 branch / PR; clients return to stub “Entre rondas” text
-
-## Verification
-
-```
-flutter test test/core/client_sync_state_test.dart
-→ 7 passed
-
-flutter test test/features/game_screen_feedback_test.dart
-→ 59 passed (incl. 3 Between-rounds client UI + sync)
-
-dart analyze (touched paths)
-→ No issues found
-```
+- Mode: stacked PR slices (auto-chain) — all merged to `main`
+- PR1 → PR2 → PR3 → test follow-up #60
+- Rollback: revert the corresponding merge commits on `main`
 
 ## Status
 
-18/18 tasks complete (PR1+PR2+PR3). Ready for `sdd-verify`.
+**All apply batches MERGED** on `main`:
+- PR1 #54 → `16f0902`
+- PR2 #56 → `ebada68`
+- PR3 #58 → `76bfead`
+- PARTIAL tests #60 → `4425884`
+
+Next: `sdd-archive` (verify already run; optional refresh of verify-report PARTIAL rows after #60).

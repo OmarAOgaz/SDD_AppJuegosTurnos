@@ -1,5 +1,5 @@
 change: between-rounds-player-order
-phase: apply
+phase: verify
 artifact_store: hybrid
 execution_mode: interactive
 delivery_strategy: auto-chain
@@ -11,7 +11,7 @@ artifacts:
   design: true
   tasks: true
   apply-progress: true
-  verify: false
+  verify: true
 tasks_progress:
   completed:
     - 1.1
@@ -33,10 +33,13 @@ tasks_progress:
     - 3.4
     - 4.3
   pending: []
+verify_verdict: PASS WITH WARNINGS
 last_updated: 2026-07-18
 notes: |
-  PR1 domain merged to main (PR #54 / 16f0902).
-  PR2 host between-rounds UI merged to main (PR #56 / ebada68).
-  PR3 client view-only + sync applied on feat/between-rounds-client-sync-03 (tasks 3.1–3.4 + 4.3).
-  All 18/18 tasks complete. Chain strategy USER LOCKED: stacked-to-main.
-  Next: sdd-verify, then sdd-archive.
+  PR1 domain merged (PR #54 / 16f0902).
+  PR2 host UI merged (PR #56 / ebada68).
+  PR3 client sync merged (PR #58 / 76bfead) on main.
+  PARTIAL-gap tests merged (PR #60 / 4425884) — SYNC_REQUEST break + acting-host reorder.
+  Apply-progress refreshed: PR1–PR3 + #60 all MERGED (stale PR3 OPEN warning cleared).
+  Verify: PASS WITH WARNINGS (manual device E2E for 4.2 still not run).
+  Next: sdd-archive (optional refresh verify-report PARTIAL rows to COMPLIANT after #60).
