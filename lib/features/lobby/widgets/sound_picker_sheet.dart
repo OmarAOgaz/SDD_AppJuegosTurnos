@@ -42,29 +42,41 @@ class SoundPickerSheet extends StatefulWidget {
 }
 
 class _SoundPickerSheetState extends State<SoundPickerSheet> {
+  String? _pendingId;
   String? _errorMessage;
 
+  bool get _isPending => _pendingId != null;
+
   Future<void> _tap(String id) async {
-    setState(() => _errorMessage = null);
+    // Visual/tactile/semantic lock already blocks tiles; guard is defense-in-depth.
+    if (_isPending) return;
+    setState(() {
+      _pendingId = id;
+      _errorMessage = null;
+    });
     final result = await widget.previewService.preview(id);
     if (!mounted) return;
     if (result is SoundPreviewStarted) {
       widget.onCommitted(id);
+      if (mounted) {
+        setState(() => _pendingId = null);
+      }
       if (Navigator.of(context).canPop()) Navigator.of(context).pop();
       return;
     }
     if (result is! SoundPreviewFailure) return;
-    if (result.error == SoundPreviewError.cancelled) {
-      // Replaced by a newer tap; leave UI for the in-flight successor.
+    if (result.error == SoundPreviewError.cancelled && _pendingId != id) {
       return;
     }
     setState(() {
+      if (_pendingId == id) _pendingId = null;
       _errorMessage = 'No se pudo reproducir el sonido';
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final interactionEnabled = !_isPending;
     return SafeArea(
       child: ListView(
         shrinkWrap: true,
@@ -87,7 +99,10 @@ class _SoundPickerSheetState extends State<SoundPickerSheet> {
               option: o,
               label: SoundCatalog.byId(o.id)?.displayName ?? o.id,
               isSelected: o.id == widget.currentSoundId,
-              leading: const Icon(Icons.volume_up),
+              interactionEnabled: interactionEnabled,
+              leading: Icon(
+                _pendingId == o.id ? Icons.hourglass_top : Icons.volume_up,
+              ),
               onSelected: () => _tap(o.id),
             ),
         ],
