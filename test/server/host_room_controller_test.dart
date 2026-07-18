@@ -923,6 +923,70 @@ void main() {
       expect(controller.isHosting, isTrue);
     });
 
+    test(
+      'applyAuthoritativeSnapshot updates room without stopping server/mDNS',
+      () async {
+        final server = _LobbySyncRecordingServer();
+        final mdns = _FakeMdnsAdvertiser();
+        final fgs = _FakeForegroundServiceBridge();
+        final seed = HostRoomController(
+          server: _LobbySyncRecordingServer(),
+          mdnsAdvertiser: _FakeMdnsAdvertiser(),
+          foregroundServiceBridge: _FakeForegroundServiceBridge(),
+        );
+        await seed.startRoom(displayName: 'Sala', hostDeviceId: 'host-device');
+        seed.debugDispatchMessage(
+          'client-1',
+          _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+        );
+        final seedRoom = seed.room!;
+        expect(TurnEngine.startGame(seedRoom, 1000), isTrue);
+        final snapshot = seed.exportRoomSnapshot()!;
+        final originalHostId = seedRoom.originalHostPlayerId;
+        await seed.stopRoom(broadcastDiscarded: false);
+
+        final controller = HostRoomController(
+          server: server,
+          mdnsAdvertiser: mdns,
+          foregroundServiceBridge: fgs,
+        );
+        await controller.startFromSnapshot(
+          snapshot: snapshot,
+          actingHostPlayerId: originalHostId,
+        );
+        final mdnsStopsBefore = mdns.stopCount;
+        final mdnsStartsBefore = mdns.startCount;
+        final fgsStopsBefore = fgs.stopCount;
+
+        final updated = Map<String, dynamic>.from(snapshot);
+        final config = Map<String, dynamic>.from(
+          updated['config'] as Map? ?? const {},
+        );
+        config['roundIncrementSeconds'] = 42;
+        updated['config'] = config;
+        final applied = controller.applyAuthoritativeSnapshot(
+          updated,
+          actingHostPlayerId: originalHostId,
+        );
+
+        expect(applied, isTrue);
+        expect(controller.room!.config.roundIncrementSeconds, 42);
+        expect(controller.room!.hostPlayerId, originalHostId);
+        expect(
+          controller.room!.playersById[originalHostId]!.connected,
+          isTrue,
+        );
+        expect(mdns.stopCount, mdnsStopsBefore);
+        expect(mdns.startCount, mdnsStartsBefore);
+        expect(fgs.stopCount, fgsStopsBefore);
+        expect(controller.isHosting, isTrue);
+        expect(
+          server.broadcasts.any((e) => e.type == MessageTypes.gameState),
+          isTrue,
+        );
+      },
+    );
+
     test('HOST_RECLAIM transfers to original and rejects stale acting host',
         () async {
       final server = _LobbySyncRecordingServer();
