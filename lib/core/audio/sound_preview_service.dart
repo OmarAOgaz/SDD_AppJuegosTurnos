@@ -72,6 +72,10 @@ class AudioplayersPreviewPlayer implements SoundPreviewPlayer {
 /// One player: stop → play; successful [playAsset] means started (plugin contract).
 /// Newer previews cancel older ones. Do not require a `playing` stream event —
 /// short lowLatency clips may finish before that event is observed.
+///
+/// Default [audioContext] is duck-then-resume short SFX (lobby + turn-start share
+/// this policy). Built as a custom [AudioContext] because [AudioContextConfig]
+/// asserts against combining respectSilence with duckOthers.
 class SoundPreviewService {
   SoundPreviewService({
     SoundPreviewPlayer? player,
@@ -79,15 +83,32 @@ class SoundPreviewService {
     this.playingTimeout = const Duration(milliseconds: 1500),
     AudioContext? audioContext,
   })  : _player = player ?? AudioplayersPreviewPlayer(),
-        // Prefer silent-mode respect; AudioContextConfig forbids combining
-        // respectSilence with mixWithOthers — background mix is out of scope.
-        _ctx = audioContext ?? AudioContextConfig(respectSilence: true).build();
+        _ctx = audioContext ?? defaultAudioContext();
+
+  /// Shared short-SFX policy: Android transient duck + sonification usage;
+  /// iOS ambient honors the Silent switch (no duckOthers — Config assert).
+  static AudioContext defaultAudioContext() {
+    return AudioContext(
+      android: const AudioContextAndroid(
+        contentType: AndroidContentType.sonification,
+        usageType: AndroidUsageType.assistanceSonification,
+        audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+      ),
+      iOS: AudioContextIOS(
+        category: AVAudioSessionCategory.ambient,
+        options: const {},
+      ),
+    );
+  }
 
   static const double defaultVolume = 0.75;
   final SoundPreviewPlayer _player;
   final double volume;
   final Duration playingTimeout;
   final AudioContext _ctx;
+
+  /// Context passed to [SoundPreviewPlayer.playAsset] (inject or [defaultAudioContext]).
+  AudioContext get audioContext => _ctx;
   int _gen = 0;
   bool _disposed = false;
   Future<void> _chain = Future<void>.value();
