@@ -68,6 +68,24 @@ void main() {
   SoundPreviewService svc(_Fake f) =>
       SoundPreviewService(player: f, audioContext: AudioContext());
 
+  test('default short-SFX audio context fields (no inject)', () {
+    final expected = SoundPreviewService.defaultAudioContext();
+    expect(expected.android.contentType, AndroidContentType.sonification);
+    expect(
+      expected.android.usageType,
+      AndroidUsageType.assistanceSonification,
+    );
+    expect(
+      expected.android.audioFocus,
+      AndroidAudioFocus.gainTransientMayDuck,
+    );
+    expect(expected.iOS.category, AVAudioSessionCategory.ambient);
+    expect(expected.iOS.options, isEmpty);
+
+    final s = SoundPreviewService(player: _Fake());
+    expect(s.audioContext, expected);
+  });
+
   test('preview core: path, stop/play, volume, failure, timeout, dispose',
       () async {
     expect(
