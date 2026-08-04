@@ -1,0 +1,63 @@
+name: dismiss-toast-on-turn-start-cue
+created: 2026-07-21
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+delivery_strategy: auto-chain
+chain_strategy: deferred
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/exploration.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/explore
+  propose:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/proposal.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/proposal
+  spec:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/specs/
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/spec
+  design:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/design.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/design
+  tasks:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/tasks.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/tasks
+  apply:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/apply-progress.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/apply-progress
+  verify:
+    status: complete
+    completed_at: 2026-07-21
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/verify-report.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/verify-report
+    verdict: PASS
+  archive:
+    status: complete
+    completed_at: 2026-08-03
+    artifact: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/archive-report.md
+    engram_topic: sdd/dismiss-toast-on-turn-start-cue/archive-report
+
+archive:
+  status: complete
+  cycle_closed: true
+  archived_at: 2026-08-03
+  archived_to: openspec/changes/archive/2026-08-03-dismiss-toast-on-turn-start-cue/
+  main_specs:
+    - openspec/specs/turn-start-cue/spec.md
+    - openspec/specs/in-game-touch-fx/spec.md
+  notes: Main specs already merged during apply Phase 4; archive skipped duplicate merge. No E2E checklist for this change.
+
+next_recommended: none
+# verify PASS — 12/12 tasks, 7/7 scenarios, 67 tests; SDD cycle closed
+last_updated: 2026-08-03

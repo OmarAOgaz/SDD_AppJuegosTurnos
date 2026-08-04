@@ -88,6 +88,24 @@ class TouchFxOverlayState extends State<TouchFxOverlay>
     _enqueue(TouchFxKind.invalidX, offset, color);
   }
 
+  /// Disposes and removes in-flight [TouchFxKind.invalidX] effects only.
+  ///
+  /// Pass ripples ([TouchFxKind.ripple]) keep running.
+  void clearInvalidXMarks() {
+    final toClear =
+        _effects.where((fx) => fx.kind == TouchFxKind.invalidX).toList();
+    if (toClear.isEmpty) {
+      return;
+    }
+    for (final fx in toClear) {
+      fx.controller.dispose();
+      _effects.remove(fx);
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   void _enqueue(TouchFxKind kind, Offset offset, Color color) {
     final duration = switch (kind) {
       TouchFxKind.ripple => touchFxRippleDuration,

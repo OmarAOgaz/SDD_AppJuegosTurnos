@@ -47,4 +47,30 @@ void main() {
     await tester.pump(touchFxInvalidXDuration);
     expect(key.currentState!.debugEffects, isEmpty);
   });
+
+  testWidgets('clearInvalidXMarks removes X and leaves ripples', (tester) async {
+    final key = GlobalKey<TouchFxOverlayState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TouchFxOverlay(key: key),
+      ),
+    );
+
+    key.currentState!.enqueueInvalidX(const Offset(10, 20), Colors.red);
+    key.currentState!.enqueueRipple(
+      const Offset(40, 60),
+      const Color(0xFF1E88E5),
+    );
+    await tester.pump();
+
+    expect(key.currentState!.debugEffects, hasLength(2));
+
+    key.currentState!.clearInvalidXMarks();
+    await tester.pump();
+
+    final remaining = key.currentState!.debugEffects;
+    expect(remaining, hasLength(1));
+    expect(remaining.single.kind, TouchFxKind.ripple);
+    expect(remaining.single.offset, const Offset(40, 60));
+  });
 }

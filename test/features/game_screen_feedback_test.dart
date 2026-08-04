@@ -1318,10 +1318,35 @@ void main() {
     });
 
     testWidgets(
-        'visible presentation keeps dispatch-time snapshot through turn change',
+        'visible presentation keeps dispatch-time snapshot through non-activation turn flip',
         (tester) async {
-      final room =
-          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
+      // Three seats so host (local) can stay inactive while turn flips
+      // between the other two players (Approach C: only local rising edge clears).
+      const peerId = 'peer-3';
+      final players = _players()
+        ..[peerId] = Player(
+          playerId: peerId,
+          displayName: 'Peer',
+          colorId: 'color_3',
+          soundId: 'sound_3',
+          deviceId: 'device-peer',
+        );
+      final room = GameRoom(
+        roomId: 'room-1',
+        displayName: 'Sala test',
+        hostPlayerId: _hostId,
+        gamePhase: GameRoomPhase.inGame,
+        turnSequence: [_hostId, _clientId, peerId],
+        slots: [_hostId, _clientId, peerId],
+        playersById: players,
+      );
+      room.turnState
+        ..activePlayerId = _clientId
+        ..currentRound = 1
+        ..baseTurnDurationSeconds = 60
+        ..currentRoundDurationSeconds = 60
+        ..turnStartedAtMs =
+            DateTime.now().millisecondsSinceEpoch - 30 * 1000;
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
 
@@ -1331,10 +1356,11 @@ void main() {
       final timeBefore = tester.widget<Text>(_turnInfoTime).data;
       final whoseBefore = _whoseTurnSpanTree(tester).toPlainText();
 
-      // Turn flips while overlay is still visible.
-      room.turnState.activePlayerId = _hostId;
+      // Turn flips between other seats; this device stays non-active.
+      room.turnState.activePlayerId = peerId;
       _fixedNow = DateTime(2026, 7, 16, 16, 45);
-      await tester.pump(const Duration(milliseconds: 500));
+      controller.notifyListeners();
+      await tester.pump();
 
       expect(_activeTurnToast, findsOneWidget);
       expect(tester.widget<Text>(_turnInfoTime).data, timeBefore);
@@ -1343,15 +1369,6 @@ void main() {
 
       await tester.pump(turnInfoPresentationTimeout);
       expect(_activeTurnToast, findsNothing);
-
-      // Host became active earlier — drain cue before pass is allowed.
-      await _drainTurnStartCue(tester);
-
-      // Post-timeout event uses latest ownership + new captured time.
-      await tester.tap(_gestureLayer);
-      await tester.pump();
-      // Host is now active — tap passes, no presentation.
-      expect(controller.passTurnCalls, [_hostId]);
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -1779,6 +1796,143 @@ void main() {
       await tester.pump();
 
       expect(controller.passTurnCalls, [_hostId]);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'activation clears toast and invalid X when cue fires',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      const tapAt = Offset(33, 66);
+      await _tapGestureAt(tester, tapAt);
+      expect(_activeTurnToast, findsOneWidget);
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isNotEmpty,
+      );
+
+      room.turnState
+        ..activePlayerId = _hostId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump(); // post-frame rising-edge clear + cue
+
+      expect(_activeTurnToast, findsNothing);
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isEmpty,
+      );
+      expect(find.byType(TurnStartCue), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'cue-dedupe activation still clears toast and invalid X',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final originalTurnStartedAtMs = room.turnState.turnStartedAtMs!;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      await _drainTurnStartCue(tester);
+
+      room.turnState.activePlayerId = _clientId;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      const tapAt = Offset(40, 70);
+      await _tapGestureAt(tester, tapAt);
+      expect(_activeTurnToast, findsOneWidget);
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isNotEmpty,
+      );
+
+      // Same turn identity as previously cued → shouldFire false, rising true.
+      room.turnState
+        ..activePlayerId = _hostId
+        ..turnStartedAtMs = originalTurnStartedAtMs;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_activeTurnToast, findsNothing);
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isEmpty,
+      );
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_sounds.previewedIds, ['sound_1']); // no second cue sound
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'open info panel stays open across activation clear',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      await _longPressOpenPanel(tester);
+      expect(_infoPanel, findsOneWidget);
+
+      room.turnState
+        ..activePlayerId = _hostId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_infoPanel, findsOneWidget);
+      expect(_activeTurnToast, findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'motion-dispatched toast clears on rising edge',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+      expect(_activeTurnToast, findsOneWidget);
+
+      room.turnState
+        ..activePlayerId = _hostId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_activeTurnToast, findsNothing);
 
       await tester.pumpWidget(const SizedBox());
     });

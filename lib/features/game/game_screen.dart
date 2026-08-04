@@ -916,11 +916,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.dispose();
   }
 
-  /// Edge-detects local activation and schedules a one-shot color/sound cue.
+  /// Edge-detects local activation: clears ephemeral turn-info on rising edge
+  /// and schedules a one-shot color/sound cue when [shouldFireTurnStartCue].
   ///
-  /// Safe to call from build: side effects run only when [shouldFireTurnStartCue]
-  /// is true, and [wasActive]/[lastFired] update synchronously to prevent
-  /// duplicate fires on the next rebuild.
+  /// Safe to call from build: side effects (presentation clear, cue mount, sound)
+  /// run in a single post-frame callback. [wasActive]/[lastFired] update
+  /// synchronously to prevent duplicate fires on the next rebuild. Clear runs
+  /// on every local non-active→active rising edge even when the cue is deduped.
   void _syncTurnStartCue({
     required GameRoomPhase gamePhase,
     required bool isMyDeviceActive,
@@ -933,6 +935,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
 
+    final rising = !_wasMyDeviceActive && isMyDeviceActive;
     final shouldFire = shouldFireTurnStartCue(
       wasActive: _wasMyDeviceActive,
       isMyDeviceActive: isMyDeviceActive,
@@ -940,25 +943,38 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       current: currentKey,
     );
     _wasMyDeviceActive = isMyDeviceActive;
-    if (!shouldFire || currentKey == null) {
+
+    final fireCue = shouldFire && currentKey != null;
+    if (!rising && !fireCue) {
       return;
     }
 
-    _lastFiredCue = currentKey;
+    if (fireCue) {
+      _lastFiredCue = currentKey;
+    }
     final cueColor = localColor ?? Colors.white;
     final soundId = localSoundId;
-    final nextEpoch = ++_turnStartCueEpoch;
+    final nextEpoch = fireCue ? ++_turnStartCueEpoch : _turnStartCueEpoch;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || nextEpoch != _turnStartCueEpoch) {
+      if (!mounted) {
         return;
       }
-      setState(() {
-        _showTurnStartCue = true;
-        _turnStartCueColor = cueColor;
-        _turnStartCueInstanceKey = ValueKey(nextEpoch);
-      });
-      if (soundId != null && soundId.isNotEmpty) {
-        unawaited(_soundPreview.preview(soundId));
+      if (rising) {
+        _clearPresentation(notify: true);
+        _touchFxKey.currentState?.clearInvalidXMarks();
+      }
+      if (fireCue) {
+        if (nextEpoch != _turnStartCueEpoch) {
+          return;
+        }
+        setState(() {
+          _showTurnStartCue = true;
+          _turnStartCueColor = cueColor;
+          _turnStartCueInstanceKey = ValueKey(nextEpoch);
+        });
+        if (soundId != null && soundId.isNotEmpty) {
+          unawaited(_soundPreview.preview(soundId));
+        }
       }
     });
   }
