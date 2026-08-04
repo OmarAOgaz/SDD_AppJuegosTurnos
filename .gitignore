@@ -5,15 +5,26 @@
 .pr2a_*
 .codegraph/
 
-# Flutter / Dart (anticipated)
+# Flutter / Dart
 .dart_tool/
 .packages
+.flutter-plugins
 .flutter-plugins-dependencies
+.pub-cache/
+.pub/
 build/
+**/doc/api/
+migrate_working_dir/
 *.iml
 .idea/
 .vscode/
 pubspec.lock
+
+# Android (generated / local)
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/local.properties
 
 # OS
 .DS_Store
