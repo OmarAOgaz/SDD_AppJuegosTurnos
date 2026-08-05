@@ -1,0 +1,63 @@
+name: keep-screen-on-between-turns
+created: 2026-08-03
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-08-03
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/exploration.md
+    engram_topic: sdd/keep-screen-on-between-turns/explore
+    engram_observation_id: 322
+  propose:
+    status: complete
+    completed_at: 2026-08-03
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/proposal.md
+    engram_topic: sdd/keep-screen-on-between-turns/proposal
+    engram_observation_id: 323
+  spec:
+    status: complete
+    completed_at: 2026-08-04
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/specs/
+    engram_topic: sdd/keep-screen-on-between-turns/spec
+    engram_observation_id: 324
+  design:
+    status: complete
+    completed_at: 2026-08-04
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/design.md
+    engram_topic: sdd/keep-screen-on-between-turns/design
+    engram_observation_id: 325
+  tasks:
+    status: complete
+    completed_at: 2026-08-04
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/tasks.md
+    engram_topic: sdd/keep-screen-on-between-turns/tasks
+    engram_observation_id: 326
+  apply:
+    status: complete
+    completed_at: 2026-08-04
+    commit: 82a9a5d
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/apply-progress.md
+  verify:
+    status: complete
+    completed_at: 2026-08-04
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/verify-report.md
+    verdict: PASS
+  archive:
+    status: complete
+    completed_at: 2026-08-04
+    artifact: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/archive-report.md
+    engram_topic: sdd/keep-screen-on-between-turns/archive-report
+
+archive:
+  status: complete
+  cycle_closed: true
+  archived_at: 2026-08-04
+  archived_to: openspec/changes/archive/2026-08-04-keep-screen-on-between-turns/
+  main_specs:
+    - openspec/specs/between-rounds/spec.md
+  notes: Main spec merged during apply; archive skipped duplicate merge.
+
+next_recommended: none
+last_updated: 2026-08-04
