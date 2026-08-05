@@ -559,11 +559,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
-  /// Keeps the display awake for the duration of `inGame` on every device
-  /// (host and clients). Idempotent — only toggles the platform wakelock
-  /// when the desired state actually changes.
+  /// Keeps the display awake for the active match (`inGame` and
+  /// `betweenRounds`) on every device (host and clients). Idempotent — only
+  /// toggles the platform wakelock when the desired state actually changes.
   void _syncWakelock(GameRoomPhase gamePhase) {
-    final shouldBeOn = gamePhase == GameRoomPhase.inGame;
+    final shouldBeOn = _isResumablePhase(gamePhase);
     if (shouldBeOn == _wakelockOn) {
       return;
     }
@@ -623,7 +623,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   void _syncImmersive(GameRoomPhase gamePhase) {
-    if (gamePhase == GameRoomPhase.inGame) {
+    if (_isResumablePhase(gamePhase)) {
       // Idempotent enter: skip if already applied. Resume path reapplies
       // explicitly via [_onAppResumed].
       if (!_immersive.isActive) {
@@ -1049,7 +1049,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _debugMotion('degraded cleared on resume');
     }
     final phase = _cachedPhase;
-    if (phase == GameRoomPhase.inGame) {
+    if (phase != null && _isResumablePhase(phase)) {
       unawaited(_immersive.apply());
     }
     if (phase != null) {

@@ -976,7 +976,7 @@ void main() {
 
   group('Verify coverage gaps (CRITICAL + WARNING)', () {
     testWidgets(
-        'wakelock enables on inGame for host and client, disables on leave/dispose',
+        'wakelock enables on inGame for host and client, stays on in betweenRounds, disables on leave/dispose',
         (tester) async {
       expect(_wakelock.enabledValue, isFalse);
 
@@ -992,8 +992,8 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(
         _wakelock.enabledValue,
-        isFalse,
-        reason: 'leaving inGame must release display wakelock',
+        isTrue,
+        reason: 'active match keeps display wakelock through betweenRounds',
       );
 
       room.gamePhase = GameRoomPhase.inGame;
@@ -1415,9 +1415,8 @@ void main() {
 
       room.gamePhase = GameRoomPhase.betweenRounds;
       await tester.pump(const Duration(seconds: 1));
-      expect(_immersive.isActive, isFalse);
-      expect(_immersive.restoreCallCount, greaterThan(0));
-      expect(find.byType(AppBar), findsOneWidget);
+      expect(_immersive.isActive, isTrue);
+      expect(_immersive.restoreCallCount, 0);
 
       room.gamePhase = GameRoomPhase.inGame;
       await tester.pump(const Duration(seconds: 1));
@@ -1521,7 +1520,7 @@ void main() {
       room.gamePhase = GameRoomPhase.betweenRounds;
       await tester.pump(const Duration(seconds: 1));
       expect(_motion.hasListener, isFalse);
-      expect(_immersive.isActive, isFalse);
+      expect(_immersive.isActive, isTrue);
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -1531,6 +1530,29 @@ void main() {
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_immersive.isActive, isTrue);
+      final appliesBefore = _immersive.applyCallCount;
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+
+      expect(_immersive.isActive, isTrue);
+      expect(_immersive.applyCallCount, greaterThan(appliesBefore));
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'immersive resume reapplies while still in betweenRounds (apply count increases)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostBetweenRoundsRoom(elapsedBreakSeconds: 8),
       );
       await _mount(tester, _wrapHost(controller));
       await tester.pump();
