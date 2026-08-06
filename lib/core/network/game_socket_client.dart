@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -39,23 +38,20 @@ typedef GameSocketConnectionFactory = Future<GameSocketConnection> Function(
   Uri uri,
 );
 
-/// WebSocket client with heartbeat and short reconnect window.
+/// WebSocket client with heartbeat and in-game TCP retry.
 class GameSocketClient {
   GameSocketClient({
     required this.deviceId,
     this.onEnvelope,
     GameSocketConnectionFactory? connect,
     Duration reconnectDelay = const Duration(seconds: 1),
-    Future<bool> Function()? lanLikelyAvailable,
   })  : _connect = connect,
-        _reconnectDelay = reconnectDelay,
-        _lanLikelyAvailable = lanLikelyAvailable ?? _defaultLanLikelyAvailable;
+        _reconnectDelay = reconnectDelay;
 
   final String deviceId;
   final void Function(WsEnvelope envelope)? onEnvelope;
   final GameSocketConnectionFactory? _connect;
   final Duration _reconnectDelay;
-  final Future<bool> Function() _lanLikelyAvailable;
 
   GameSocketConnection? _connection;
   StreamSubscription<dynamic>? _subscription;
@@ -89,6 +85,7 @@ class GameSocketClient {
   Map<String, dynamic>? get lastLobbyState => _lastLobbyState;
   Map<String, dynamic>? get lastGameState => _lastGameState;
   String? get localPlayerId => _localPlayerId;
+  DateTime? get disconnectStartedAt => _disconnectStartedAt;
 
   Future<void> connect({
     required String host,
@@ -254,7 +251,6 @@ class GameSocketClient {
       _disconnectStartedAt = null;
       _setState(SocketClientState.connected);
       _startHeartbeat();
-      // Heartbeat + SYNC only — no RECONNECT_*/RESUME_* types.
       sendSyncRequest();
 
       _subscription = _connection!.stream.listen(
@@ -304,7 +300,6 @@ class GameSocketClient {
     if (_suppressCloseEvent) {
       return;
     }
-    // Fresh window for each unexpected drop from a live connection.
     if (_state == SocketClientState.connected) {
       _disconnectStartedAt = DateTime.now();
       _reconnectGeneration++;
@@ -321,30 +316,9 @@ class GameSocketClient {
     }
 
     _disconnectStartedAt ??= DateTime.now();
-    final elapsed = DateTime.now().difference(_disconnectStartedAt!);
-    final lanUp = await _lanLikelyAvailable();
-    if (generation != _reconnectGeneration) {
-      return;
-    }
 
-    // Host-loss (LAN up, host unreachable): short grace ≤3s then disconnect
-    // so peers can elect. Client Wi‑Fi down: keep the longer reconnect window
-    // and keep retrying instead of succession.
-    final grace = Duration(
-      milliseconds: lanUp ? kHostLossGraceMs : kReconnectWindowMs,
-    );
-    if (elapsed > grace) {
-      if (!lanUp) {
-        // Client likely lost Wi‑Fi — keep trying; do not treat as host loss yet.
-        _disconnectStartedAt = DateTime.now();
-      } else {
-        // LAN up but host unreachable → host-loss path (UI may succession).
-        _disconnectStartedAt = null;
-        _setState(SocketClientState.disconnected);
-        return;
-      }
-    }
-
+    // Keep retrying while endpoint is known. Host-loss vs client blip is decided
+    // in GameScreen via mDNS liveness (ClientReconnectOrchestrator), not here.
     _setState(SocketClientState.reconnecting);
     await Future<void>.delayed(_reconnectDelay);
     if (generation != _reconnectGeneration) {
@@ -405,7 +379,6 @@ class GameSocketClient {
     }
     _connection = null;
     if (intentional) {
-      // Allow async onDone from the old socket to be ignored briefly.
       await Future<void>.value();
       _suppressCloseEvent = false;
     }
@@ -418,26 +391,6 @@ class GameSocketClient {
     _state = next;
     if (!_stateController.isClosed) {
       _stateController.add(next);
-    }
-  }
-
-  static Future<bool> _defaultLanLikelyAvailable() async {
-    try {
-      final interfaces = await NetworkInterface.list(
-        includeLinkLocal: false,
-        type: InternetAddressType.IPv4,
-      );
-      for (final iface in interfaces) {
-        for (final addr in iface.addresses) {
-          if (!addr.isLoopback) {
-            return true;
-          }
-        }
-      }
-      return false;
-    } catch (_) {
-      // Fail open: assume LAN up so host-loss succession can still run.
-      return true;
     }
   }
 }
