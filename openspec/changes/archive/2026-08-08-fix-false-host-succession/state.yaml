@@ -1,0 +1,60 @@
+name: fix-false-host-succession
+created: 2026-08-05
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-08-05
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/proposal.md
+    notes: Problem analysis recovered from backup branch; no separate exploration.md.
+  propose:
+    status: complete
+    completed_at: 2026-08-05
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/proposal.md
+  spec:
+    status: complete
+    completed_at: 2026-08-05
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/specs/
+  design:
+    status: complete
+    completed_at: 2026-08-05
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/design.md
+  tasks:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/tasks.md
+  apply:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/apply-progress.md
+  verify:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/verify-report.md
+    verdict: PASS
+  archive:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-08-fix-false-host-succession/archive-report.md
+
+archive:
+  status: complete
+  archived_at: 2026-08-08
+  location: openspec/changes/archive/2026-08-08-fix-false-host-succession/
+  main_specs:
+    - openspec/specs/host-succession/spec.md
+    - openspec/specs/lan-transport/spec.md
+    - openspec/specs/in-game-resume/spec.md
+    - openspec/specs/lan-discovery/spec.md
+    - openspec/specs/turn-timer/spec.md
+  implementation_commits:
+    - caf7257
+    - e4b1138
+  pr: 82
+  issue: 83
+
+next_recommended: null
+cycle_closed: true
+last_updated: 2026-08-08
