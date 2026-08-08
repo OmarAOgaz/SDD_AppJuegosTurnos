@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bonsoir/bonsoir.dart';
 
 import '../../constants/network_constants.dart';
+import '../../domain/room_discovery.dart';
 import '../../models/discovered_room.dart';
 
 /// Browses `_turnos._tcp` services and emits resolved [DiscoveredRoom] entries.
@@ -14,6 +15,7 @@ class MdnsBrowser {
       StreamController<List<DiscoveredRoom>>.broadcast();
 
   final Map<String, DiscoveredRoom> _roomsById = {};
+  final Map<String, String> _serviceKeyToRoomId = {};
 
   Stream<List<DiscoveredRoom>> get roomsStream => _roomsController.stream;
 
@@ -61,17 +63,26 @@ class MdnsBrowser {
       final room = _mapService(event.service);
       if (room != null) {
         _roomsById[room.roomId] = room;
+        _serviceKeyToRoomId[mdnsServiceKey(
+          name: event.service.name,
+          type: event.service.type,
+        )] = room.roomId;
         _emit();
       }
       return;
     }
 
     if (event is BonsoirDiscoveryServiceLostEvent) {
-      final roomId = event.service.attributes['roomId'];
-      if (roomId != null && roomId.isNotEmpty) {
-        _roomsById.remove(roomId);
-        _emit();
-      }
+      removeRoomsLostWithService(
+        roomsById: _roomsById,
+        serviceKeyToRoomId: _serviceKeyToRoomId,
+        serviceName: event.service.name,
+        serviceType: event.service.type,
+        roomIdFromAttributes: event.service.attributes['roomId'],
+        lostHostIp: _resolveHostIp(event.service),
+        lostPort: event.service.port,
+      );
+      _emit();
     }
   }
 

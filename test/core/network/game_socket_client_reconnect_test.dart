@@ -126,7 +126,6 @@ void main() {
       final client = GameSocketClient(
         deviceId: 'device-test',
         reconnectDelay: Duration.zero,
-        lanLikelyAvailable: () async => true,
         connect: (uri) async {
           connectCount++;
           if (failNext) {
@@ -160,30 +159,28 @@ void main() {
       await incoming.close();
     });
 
-    test('without LAN keeps reconnecting instead of hard disconnect', () async {
+    test('unreachable host keeps reconnecting instead of hard disconnect',
+        () async {
       final client = GameSocketClient(
         deviceId: 'device-test',
         reconnectDelay: const Duration(milliseconds: 5),
-        lanLikelyAvailable: () async => false,
         connect: (uri) async => throw Exception('no route'),
       );
 
-      // Force a reconnect window already expired via failed opens.
       await client.connect(host: '10.0.0.1', port: 9);
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      // Still trying (reconnecting), not terminal disconnected.
-      expect(client.state, isNot(SocketClientState.disconnected));
+      expect(client.state, SocketClientState.reconnecting);
       expect(client.lastHost, '10.0.0.1');
+      expect(client.disconnectStartedAt, isNotNull);
 
       await client.disconnect();
     });
 
-    test('LAN up + unreachable host disconnects after host-loss grace (~3s)',
+    test('unreachable host still reconnecting after host-loss grace window',
         () async {
       final client = GameSocketClient(
         deviceId: 'device-test',
         reconnectDelay: const Duration(milliseconds: 20),
-        lanLikelyAvailable: () async => true,
         connect: (uri) async => throw Exception('connection refused'),
       );
 
@@ -191,11 +188,10 @@ void main() {
       final sub = client.stateChanges.listen(states.add);
 
       await client.connect(host: '10.0.0.1', port: 9);
-      // Wait past kHostLossGraceMs (3s) plus a little slack.
       await Future<void>.delayed(const Duration(milliseconds: 3500));
 
-      expect(client.state, SocketClientState.disconnected);
-      expect(states, contains(SocketClientState.disconnected));
+      expect(client.state, SocketClientState.reconnecting);
+      expect(states, isNot(contains(SocketClientState.disconnected)));
       expect(client.lastHost, '10.0.0.1');
 
       await sub.cancel();

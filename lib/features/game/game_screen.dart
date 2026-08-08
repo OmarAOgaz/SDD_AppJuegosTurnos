@@ -9,7 +9,11 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/audio/sound_preview_service.dart';
 import '../../core/catalogs/color_catalog.dart';
 import '../../core/constants/message_types.dart';
+import '../../core/constants/network_constants.dart';
+import '../../core/domain/client_reconnect_orchestrator.dart';
+import '../../core/domain/game_session_banner_texts.dart';
 import '../../core/domain/host_succession_coordinator.dart';
+import '../../core/domain/room_discovery.dart';
 import '../../core/domain/pickup_detector.dart';
 import '../../core/domain/turn_engine.dart';
 import '../../core/domain/turn_feedback.dart';
@@ -32,6 +36,7 @@ import '../../server/host_room_controller.dart';
 import '../lobby/widgets/lobby_player_row.dart';
 import 'touch_fx_overlay.dart';
 import 'turn_start_cue.dart';
+import 'widgets/game_session_banners.dart';
 
 /// Identifies the sole full-screen tap/long-press layer during `inGame` —
 /// exposed so widget tests can target it unambiguously (Scaffold/MaterialApp
@@ -122,6 +127,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   StreamSubscription<SocketClientState>? _socketStateSub;
   StreamSubscription<WsEnvelope>? _socketMessageSub;
   StreamSubscription<List<DiscoveredRoom>>? _mdnsSub;
+  Timer? _clientRecoveryTimer;
+  DateTime? _clientDisconnectStartedAt;
+  bool _clientRecoveryInFlight = false;
+  String? _dismissedPeerBannerKey;
   StreamSubscription<PickupSample>? _motionSub;
   Future<void> _motionLifecycle = Future<void>.value();
   int _motionSessionGen = 0;
@@ -184,7 +193,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (!_isHost) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_ensureClientConnected());
-        _bindClientSuccessionListeners();
+        _bindClientRecoveryListeners();
       });
     }
   }
@@ -300,7 +309,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  void _bindClientSuccessionListeners() {
+  void _bindClientRecoveryListeners() {
     final client = ref.read(gameSocketClientProvider);
     if (client == null) {
       return;
@@ -308,18 +317,114 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _socketStateSub?.cancel();
     _socketMessageSub?.cancel();
     _socketStateSub = client.stateChanges.listen((state) {
-      if (state == SocketClientState.disconnected) {
-        // Reached only when LAN looks up but host unreachable (see GameSocketClient).
-        unawaited(_onClientHostLost());
+      if (state == SocketClientState.reconnecting ||
+          state == SocketClientState.connecting) {
+        _startClientRecoveryOrchestration();
       }
       if (state == SocketClientState.connected) {
+        _stopClientRecoveryOrchestration();
         unawaited(_maybeSendHostReclaim(client));
       }
     });
     _socketMessageSub = client.messages.listen(_onClientEnvelope);
+    if (client.state == SocketClientState.reconnecting ||
+        client.state == SocketClientState.connecting) {
+      _startClientRecoveryOrchestration();
+    }
   }
 
-  Future<void> _onClientHostLost() async {
+  void _startClientRecoveryOrchestration() {
+    final client = ref.read(gameSocketClientProvider);
+    _clientDisconnectStartedAt =
+        client?.disconnectStartedAt ?? _clientDisconnectStartedAt ?? DateTime.now();
+    _clientRecoveryTimer?.cancel();
+    unawaited(_orchestrateClientRecovery());
+    _clientRecoveryTimer = Timer.periodic(
+      const Duration(milliseconds: kMdnsProbeIntervalMs),
+      (_) => unawaited(_orchestrateClientRecovery()),
+    );
+  }
+
+  void _stopClientRecoveryOrchestration() {
+    _clientRecoveryTimer?.cancel();
+    _clientRecoveryTimer = null;
+    _clientDisconnectStartedAt = null;
+  }
+
+  Future<String?> _resolveClientRoomId() async {
+    final client = ref.read(gameSocketClientProvider);
+    final lastState = _newestGameState(
+      ref.read(clientSyncProvider).lastGameState,
+      client?.lastGameState,
+    );
+    final store = await ref.read(gameResumeStoreProvider.future);
+    final entry = store.load();
+    return lastState?['roomId'] as String? ??
+        entry?.roomId ??
+        client?.handshakeRoomId;
+  }
+
+  Future<void> _orchestrateClientRecovery() async {
+    if (_clientRecoveryInFlight ||
+        !mounted ||
+        _isHost ||
+        _successionInFlight ||
+        _reclaimInFlight ||
+        _hostMigrationInFlight) {
+      return;
+    }
+    final client = ref.read(gameSocketClientProvider);
+    if (client == null) {
+      return;
+    }
+    if (client.state != SocketClientState.reconnecting &&
+        client.state != SocketClientState.connecting) {
+      return;
+    }
+
+    _clientRecoveryInFlight = true;
+    try {
+      final roomId = await _resolveClientRoomId();
+      if (roomId == null || !mounted) {
+        return;
+      }
+
+      final browser = ref.read(mdnsBrowserProvider);
+      if (!browser.isBrowsing) {
+        await browser.start();
+      }
+      final controller = ref.read(hostRoomControllerProvider);
+      final match = findLiveRoomAdvertisement(
+        roomId: roomId,
+        rooms: browser.currentRooms,
+        excludeHost: controller.hostLanIp,
+        excludePort: controller.port,
+      );
+
+      final disconnectStarted = client.disconnectStartedAt ??
+          _clientDisconnectStartedAt ??
+          DateTime.now();
+      final action = ClientReconnectOrchestrator.decide(
+        mdnsMatch: match,
+        unreachableDuration: DateTime.now().difference(disconnectStarted),
+        lastKnownHost: client.lastHost,
+        lastKnownPort: client.lastPort,
+      );
+
+      switch (action) {
+        case ClientRecoveryAction.keepRetrying:
+          return;
+        case ClientRecoveryAction.reconnectToEndpoint:
+          await _reconnectToEndpoint(match!.hostIp, match.port);
+        case ClientRecoveryAction.runHostSuccession:
+          await _runHostSuccessionIfNeeded();
+      }
+    } finally {
+      _clientRecoveryInFlight = false;
+    }
+  }
+
+  Future<void> _runHostSuccessionIfNeeded() async {
     if (!mounted ||
         _isHost ||
         _successionInFlight ||
@@ -327,6 +432,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         _hostMigrationInFlight) {
       return;
     }
+    _stopClientRecoveryOrchestration();
     final client = ref.read(gameSocketClientProvider);
     final localPlayerId = client?.localPlayerId;
     final lastState = _newestGameState(
@@ -360,6 +466,33 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (_successionInFlight || decision.snapshot == null) {
       return;
     }
+    final roomId = decision.roomId;
+    if (roomId != null) {
+      final browser = ref.read(mdnsBrowserProvider);
+      if (!browser.isBrowsing) {
+        await browser.start();
+      }
+      final controller = ref.read(hostRoomControllerProvider);
+      final live = findLiveRoomAdvertisement(
+        roomId: roomId,
+        rooms: browser.currentRooms,
+        excludeHost: controller.hostLanIp,
+        excludePort: controller.port,
+      );
+      final client = ref.read(gameSocketClientProvider);
+      final sameFailedEndpoint = live != null &&
+          client?.lastHost != null &&
+          client?.lastPort != null &&
+          isSameRoomEndpoint(
+            live,
+            host: client!.lastHost!,
+            port: client.lastPort!,
+          );
+      if (live != null && !sameFailedEndpoint) {
+        await _reconnectToEndpoint(live.hostIp, live.port);
+        return;
+      }
+    }
     _successionInFlight = true;
     try {
       final client = ref.read(gameSocketClientProvider);
@@ -385,15 +518,20 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
     await _mdnsSub?.cancel();
     _mdnsSub = browser.roomsStream.listen((rooms) {
-      final match = rooms.where((r) => r.roomId == roomId).firstOrNull;
+      final match = findLiveRoomAdvertisement(
+        roomId: roomId,
+        rooms: rooms,
+      );
       if (match != null) {
         unawaited(_reconnectToEndpoint(match.hostIp, match.port));
       }
     });
-    final existing = browser.currentRooms.where((r) => r.roomId == roomId);
-    final first = existing.firstOrNull;
-    if (first != null) {
-      await _reconnectToEndpoint(first.hostIp, first.port);
+    final match = findLiveRoomAdvertisement(
+      roomId: roomId,
+      rooms: browser.currentRooms,
+    );
+    if (match != null) {
+      await _reconnectToEndpoint(match.hostIp, match.port);
     }
   }
 
@@ -905,6 +1043,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
     unawaited(_mdnsSub?.cancel() ?? Future<void>.value());
+    _clientRecoveryTimer?.cancel();
+    _clientRecoveryTimer = null;
     if (_ownsSoundPreview) {
       unawaited(_soundPreview.dispose());
     }
@@ -992,6 +1132,83 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return null;
     }
     return Player.fromJson(Map<String, dynamic>.from(json));
+  }
+
+  List<Player> _seatedPlayersFromState(Map<String, dynamic>? state) {
+    if (state == null) {
+      return const [];
+    }
+    final sequenceIds =
+        (state['turnSequence'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
+    return [
+      for (final id in sequenceIds)
+        _playerById(state, id) ??
+            Player(
+              playerId: id,
+              displayName: 'Vacío',
+              colorId: '',
+              soundId: '',
+              deviceId: '',
+              connected: false,
+            ),
+    ];
+  }
+
+  List<Player> _seatedPlayersFromRoom(GameRoom room) {
+    return [
+      for (final id in room.turnSequence)
+        room.playersById[id] ??
+            Player(
+              playerId: id,
+              displayName: 'Vacío',
+              colorId: '',
+              soundId: '',
+              deviceId: '',
+              connected: false,
+            ),
+    ];
+  }
+
+  Widget _wrapWithSessionBanners({
+    required GameSessionBannerTexts texts,
+    required Widget body,
+  }) {
+    final peerKey = GameSessionBannerTexts.disconnectedPeersKey(
+      texts.disconnectedPeers,
+    );
+    if (texts.disconnectedPeers.isEmpty && _dismissedPeerBannerKey != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _dismissedPeerBannerKey = null);
+        }
+      });
+    }
+
+    final showPeerBanner = texts.disconnectedPeers.isNotEmpty &&
+        peerKey != _dismissedPeerBannerKey;
+    final effectiveTexts = GameSessionBannerTexts(
+      reconnectMessage: texts.reconnectMessage,
+      disconnectedPeers:
+          showPeerBanner ? texts.disconnectedPeers : const [],
+    );
+
+    if (effectiveTexts.isEmpty) {
+      return body;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GameSessionBanners(
+          texts: effectiveTexts,
+          onDismissPeerBanner: showPeerBanner
+              ? () => setState(() => _dismissedPeerBannerKey = peerKey)
+              : null,
+        ),
+        Expanded(child: body),
+      ],
+    );
   }
 
   void _onClientResumed() {
@@ -1304,6 +1521,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final activeId = room.turnState.activePlayerId;
     final startedAt = room.turnState.turnStartedAtMs;
     final onBlackBackground = room.gamePhase == GameRoomPhase.inGame;
+    final sessionBanners = _isResumablePhase(room.gamePhase)
+        ? GameSessionBannerTexts.resolve(
+            showLocalReconnect: false,
+            seatedPlayers: _seatedPlayersFromRoom(room),
+            localPlayerId: room.hostPlayerId,
+          )
+        : const GameSessionBannerTexts();
 
     Future<void> exitAsHost() async {
       _intentionalHostExit = true;
@@ -1336,7 +1560,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ),
               ],
             ),
-      body: _gameBody(
+      body: _wrapWithSessionBanners(
+        texts: sessionBanners,
+        body: _gameBody(
         context,
         gamePhase: room.gamePhase,
         phase: room.turnState.phase,
@@ -1374,6 +1600,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 serverNowMs: serverNow,
               )
             : null,
+        ),
       ),
     );
   }
@@ -1522,6 +1749,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         localPlayerId == activeId;
     _syncInGameChrome(gamePhase, turnPhase: phase);
     final onBlackBackground = gamePhase == GameRoomPhase.inGame;
+    final isLocalReconnecting =
+        client?.state == SocketClientState.reconnecting;
+    final sessionBanners = _isResumablePhase(gamePhase)
+        ? GameSessionBannerTexts.resolve(
+            showLocalReconnect: isLocalReconnecting,
+            seatedPlayers: _seatedPlayersFromState(state),
+            localPlayerId: localPlayerId,
+            excludeLocalFromPeerDisconnect: isLocalReconnecting,
+          )
+        : const GameSessionBannerTexts();
 
     Future<void> exitAsClient() async {
       if (client != null && localPlayerId != null) {
@@ -1543,7 +1780,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           : AppBar(
               title: Text('Ronda ${currentRound ?? '—'}'),
             ),
-      body: _gameBody(
+      body: _wrapWithSessionBanners(
+        texts: sessionBanners,
+        body: _gameBody(
         context,
         gamePhase: gamePhase,
         phase: phase,
@@ -1574,6 +1813,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 localPlayerId: localPlayerId,
               )
             : null,
+        ),
       ),
     );
   }
