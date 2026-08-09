@@ -5,8 +5,8 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: 3 (GameScreen client sync)
 **Status**: Unit 2 done (Unit 1 merged via PR #85)
-**PR**: (pending push)
-**Issue**: (pending create)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87
+**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/86
 **Branch**: `feat/android-client-fgs-host`
 
 ## Completed Tasks
