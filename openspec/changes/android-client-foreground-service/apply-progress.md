@@ -5,7 +5,7 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: none (apply complete → verify)
 **Status**: Unit 4 done — all apply tasks complete (Units 1–3 merged via PR #85 / #87 / #89)
-**PR**: (Unit 4 — see PR after push)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/91
 **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/90
 **Branch**: `docs/android-client-fgs-spec-merge`
 
