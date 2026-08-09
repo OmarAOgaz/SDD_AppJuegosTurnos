@@ -22,10 +22,10 @@ Chain strategy: stacked-to-main
 |------|------|-----------|-------|
 | 1 | Bridge ensure/stop + permission + symmetric strings | PR 1 (#85) | Base = main; DONE |
 | 2 | HostRoomController demotion preserve + ensure wiring | PR 2 (#87) | Base = main after PR1; DONE |
-| 3 | GameScreen `_syncActiveMatchFgs` client lifecycle | PR 3 | Base = main after PR2 merges (stacked); client phase sync tests | DONE |
+| 3 | GameScreen `_syncActiveMatchFgs` client lifecycle | PR 3 (#89) | Base = main after PR2; DONE |
 | 4 | Main-spec merge for four deltas | PR 4 or verify slice | Merge at apply close / archive; not code |
 
-Chain strategy resolved: `stacked-to-main`. PR1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/85 — PR2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87 — PR3: (this unit)
+Chain strategy resolved: `stacked-to-main`. PR1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/85 — PR2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87 — PR3: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/89
 
 ## Phase 1: Bridge foundation (Unit 1)
 

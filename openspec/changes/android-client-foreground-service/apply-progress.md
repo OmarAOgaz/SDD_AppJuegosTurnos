@@ -5,7 +5,7 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: 4 (main-spec merge)
 **Status**: Unit 3 done (Units 1–2 merged via PR #85 / #87)
-**PR**: (set after open)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/89
 **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/88
 **Branch**: `feat/android-client-fgs-client`
 
