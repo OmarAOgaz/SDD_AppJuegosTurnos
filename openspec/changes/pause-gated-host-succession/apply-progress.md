@@ -5,6 +5,7 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: 2
 **Status**: Unit 1 done — Phase 1 tasks 1.1–1.4 complete
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/93
 **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/92
 **Branch**: `feat/pause-gated-succession-gate`
 
