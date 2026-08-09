@@ -2,27 +2,55 @@
 
 ## Requirements
 
-### Requirement: Foreground service for Android host in game
+### Requirement: Foreground service for Android participants in active match
 
-When the device is the room host and game status is `IN_GAME` on Android, the system MUST start a foreground service with a persistent notification so the WebSocket server and authoritative state remain active while the app is backgrounded. The foreground service MUST stop when the game ends (`END_GAME`) or the device is no longer host. After host succession or reclaim, FGS MUST run on the current acting host device and MUST NOT remain on a device that lost host authority.
+When an Android device is host or client in an active match (`IN_GAME` or `BETWEEN_ROUNDS`), the system MUST start FGS with a persistent notification for LAN WebSocket keep-alive while backgrounded. Host and client MUST share one foreground-service bridge. Notification copy MUST be identical for host and client. MUST NOT start FGS in lobby only. MUST stop FGS when that device leaves the active match (`END_GAME`, leave, or phase exits active-match). Continuing participants after succession/reclaim MUST keep FGS; demotion MUST NOT drop FGS; promotion MUST NOT double-start. iOS FGS out of scope.
 
-#### Scenario: Android host switches apps during spike session
+#### Scenario: Android host backgrounds during active match
 
-- GIVEN an Android host with an active in-game session
-- WHEN the user leaves the app to another app
-- THEN a foreground notification remains visible and the host server continues accepting connections
+- GIVEN an Android host in active match with FGS running
+- WHEN the user leaves the app
+- THEN the notification stays visible and the host server keeps accepting connections
 
-#### Scenario: Game ends on Android host
+#### Scenario: Android client backgrounds during active match
 
-- GIVEN an Android host running the foreground service
-- WHEN `END_GAME` is processed or the host role is lost
-- THEN the foreground service stops and its notification is removed
+- GIVEN an Android client in active match with FGS running
+- WHEN the user leaves the app
+- THEN the notification stays visible and heartbeats MAY continue within timeout
 
-#### Scenario: FGS follows acting host after succession
+#### Scenario: No lobby client FGS
 
-- GIVEN Android device A was host with FGS and succession elects device B
-- WHEN handoff completes
-- THEN FGS stops on A and MUST run on B while B remains acting host in-game
+- GIVEN an Android client in lobby only
+- WHEN the app is backgrounded
+- THEN the system MUST NOT start participant FGS
+
+#### Scenario: Active match end stops FGS
+
+- GIVEN an Android host or client with FGS in active match
+- WHEN `END_GAME` is processed or the device leaves the active match
+- THEN FGS stops and its notification is removed
+
+#### Scenario: Symmetric notification for host and client
+
+- GIVEN Android host and client both run FGS in the same active match
+- WHEN each shows its FGS notification
+- THEN title and body copy MUST match
+
+### Requirement: Request notification permission before first FGS start
+
+On Android versions requiring runtime notification permission, the system MUST request `POST_NOTIFICATIONS` before the first participant FGS start. If denied, the system MUST NOT block entering or staying in the match; the device MUST continue degraded via reconnect/`SYNC_REQUEST` only.
+
+#### Scenario: Permission granted then FGS starts
+
+- GIVEN an Android device enters an active match without notification permission
+- WHEN the user grants `POST_NOTIFICATIONS`
+- THEN participant FGS starts with a visible notification
+
+#### Scenario: Permission denied continues match degraded
+
+- GIVEN an Android device enters or stays in an active match
+- WHEN the user denies `POST_NOTIFICATIONS`
+- THEN the device MUST remain in the match using reconnect/`SYNC_REQUEST` only
 
 ### Requirement: iOS host foreground policy
 

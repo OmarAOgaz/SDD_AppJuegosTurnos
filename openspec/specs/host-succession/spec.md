@@ -88,6 +88,22 @@ While mDNS advertises the in-progress `roomId`, a client whose socket is reconne
 - THEN that client MUST proceed with succession
 - AND MUST NOT redirect back to reconnect to that same failed endpoint
 
+### Requirement: Active-match FGS continuity across succession
+
+When succession or reclaim changes host authority during `IN_GAME` or `BETWEEN_ROUNDS`, Android devices that remain participants MUST keep FGS per `app-lifecycle-sync`. Demotion MUST NOT stop FGS while still in active match. Promotion of a client already running FGS MUST NOT start a duplicate instance.
+
+#### Scenario: Demoted acting host keeps FGS as client
+
+- GIVEN device B was acting host with FGS in active match
+- WHEN original host reclaims and B resumes as same client seat
+- THEN FGS MUST remain running on B while match stays active
+
+#### Scenario: Newly elected host does not double-start FGS
+
+- GIVEN device C already runs participant FGS as client in active match
+- WHEN succession elects C as acting host
+- THEN C MUST keep a single FGS instance
+
 ### Requirement: Demoted acting host keeps seat identity
 
 When the original host successfully **reclaims** and the acting host stops authoritative hosting, the demoted device MUST resume as a **client seat with the same `playerId`** it held before it became acting host. Reconnect MUST target the reclaiming host’s endpoint (from `HOST_MIGRATED` / reclaim handoff / mDNS same `roomId`), not the demoted device’s own former listen address.
