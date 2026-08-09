@@ -165,7 +165,8 @@ class HostRoomController extends ChangeNotifier {
     required Map<String, dynamic> snapshot,
     String? actingHostPlayerId,
   }) async {
-    await stopRoom(broadcastDiscarded: false);
+    // Preserve FGS across promotion: client may already hold the session.
+    await stopRoom(broadcastDiscarded: false, stopForegroundService: false);
 
     final room = GameRoom.fromSnapshot(snapshot);
     if (actingHostPlayerId != null) {
@@ -196,7 +197,9 @@ class HostRoomController extends ChangeNotifier {
 
     if (room.gamePhase == GameRoomPhase.inGame ||
         room.gamePhase == GameRoomPhase.betweenRounds) {
-      await _foregroundServiceBridge.startGameSession();
+      await _foregroundServiceBridge.ensureActiveMatchSession();
+    } else {
+      await _foregroundServiceBridge.stopActiveMatchSession();
     }
 
     notifyListeners();
@@ -248,6 +251,7 @@ class HostRoomController extends ChangeNotifier {
   Future<void> stopRoom({
     bool broadcastDiscarded = true,
     bool notify = true,
+    bool stopForegroundService = true,
   }) async {
     if (broadcastDiscarded) {
       _broadcastRoomDiscarded();
@@ -260,10 +264,12 @@ class HostRoomController extends ChangeNotifier {
     _heartbeatWatchdog = null;
     _sessions.clear();
 
-    try {
-      await _foregroundServiceBridge.stopGameSession();
-    } catch (_) {
-      // Best-effort teardown.
+    if (stopForegroundService) {
+      try {
+        await _foregroundServiceBridge.stopActiveMatchSession();
+      } catch (_) {
+        // Best-effort teardown.
+      }
     }
     try {
       await _mdnsAdvertiser.stop();
@@ -430,7 +436,7 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     _broadcastGameState(serverNow);
-    await _foregroundServiceBridge.startGameSession();
+    await _foregroundServiceBridge.ensureActiveMatchSession();
     return true;
   }
 
@@ -496,7 +502,7 @@ class HostRoomController extends ChangeNotifier {
       WsEnvelope(type: MessageTypes.gameState, payload: finalPayload),
     );
     notifyListeners();
-    await _foregroundServiceBridge.stopGameSession();
+    await _foregroundServiceBridge.stopActiveMatchSession();
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await stopRoom(broadcastDiscarded: false);
     return finalPayload;
@@ -756,7 +762,7 @@ class HostRoomController extends ChangeNotifier {
   }
 
   /// Original host reclaim: validate identity, hand snapshot + HOST_MIGRATED,
-  /// then stop acting-host authority (FGS/mDNS follow the reclaiming host).
+  /// then stop acting-host authority while preserving FGS for the demoted client.
   Future<void> _handleHostReclaim(
     HostSession session,
     WsEnvelope envelope,
@@ -834,10 +840,10 @@ class HostRoomController extends ChangeNotifier {
       ),
     );
 
-    // Reject further stale acting-host authority; FGS stops with stopRoom.
+    // Reject further stale acting-host authority; keep FGS while still in match.
     _hostingAuthorityActive = false;
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    await stopRoom(broadcastDiscarded: false);
+    await stopRoom(broadcastDiscarded: false, stopForegroundService: false);
   }
 
   void _onSessionClosed(String sessionId) {

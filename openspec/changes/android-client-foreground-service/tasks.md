@@ -20,12 +20,12 @@ Chain strategy: stacked-to-main
 
 | Unit | Goal | Likely PR | Notes |
 |------|------|-----------|-------|
-| 1 | Bridge ensure/stop + permission + symmetric strings | PR 1 | Base = main; include bridge unit tests |
-| 2 | HostRoomController demotion preserve + ensure wiring | PR 2 | Base = main after PR1 merges (stacked); host tests with demotion/promotion/end |
+| 1 | Bridge ensure/stop + permission + symmetric strings | PR 1 (#85) | Base = main; DONE |
+| 2 | HostRoomController demotion preserve + ensure wiring | PR 2 (#87) | Base = main after PR1; DONE |
 | 3 | GameScreen `_syncActiveMatchFgs` client lifecycle | PR 3 | Base = main after PR2 merges (stacked); client phase sync tests |
 | 4 | Main-spec merge for four deltas | PR 4 or verify slice | Merge at apply close / archive; not code |
 
-Chain strategy resolved: `stacked-to-main` (Unit 1 targets main).
+Chain strategy resolved: `stacked-to-main`. PR1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/85 — PR2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87
 
 ## Phase 1: Bridge foundation (Unit 1)
 
@@ -37,9 +37,9 @@ Chain strategy resolved: `stacked-to-main` (Unit 1 targets main).
 
 ## Phase 2: Host ownership (Unit 2)
 
-- [ ] 2.1 Extend `HostRoomController.stopRoom` with `stopForegroundService` (default true); demotion/`HOST_RECLAIM` in active match calls `stopRoom(stopForegroundService: false)`
-- [ ] 2.2 Wire `startGame` / `startFromSnapshot` (active phases) → `ensureActiveMatchSession`; `endGame` / leave / non-demotion `stopRoom` → `stopActiveMatchSession`
-- [ ] 2.3 Tests in `test/server/host_room_controller_test.dart`: demotion preserves FGS; promotion no double-start; end/leave still stops (extend `_FakeForegroundServiceBridge` counters)
+- [x] 2.1 Extend `HostRoomController.stopRoom` with `stopForegroundService` (default true); demotion/`HOST_RECLAIM` in active match calls `stopRoom(stopForegroundService: false)`
+- [x] 2.2 Wire `startGame` / `startFromSnapshot` (active phases) → `ensureActiveMatchSession`; `endGame` / leave / non-demotion `stopRoom` → `stopActiveMatchSession`
+- [x] 2.3 Tests in `test/server/host_room_controller_test.dart`: demotion preserves FGS; promotion no double-start; end/leave still stops (extend `_FakeForegroundServiceBridge` counters)
 
 ## Phase 3: Client GameScreen sync (Unit 3)
 
