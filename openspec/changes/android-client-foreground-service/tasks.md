@@ -37,9 +37,9 @@ Chain strategy resolved: `stacked-to-main` (Unit 1 targets main).
 
 ## Phase 2: Host ownership (Unit 2)
 
-- [ ] 2.1 Extend `HostRoomController.stopRoom` with `stopForegroundService` (default true); demotion/`HOST_RECLAIM` in active match calls `stopRoom(stopForegroundService: false)`
-- [ ] 2.2 Wire `startGame` / `startFromSnapshot` (active phases) → `ensureActiveMatchSession`; `endGame` / leave / non-demotion `stopRoom` → `stopActiveMatchSession`
-- [ ] 2.3 Tests in `test/server/host_room_controller_test.dart`: demotion preserves FGS; promotion no double-start; end/leave still stops (extend `_FakeForegroundServiceBridge` counters)
+- [x] 2.1 Extend `HostRoomController.stopRoom` with `stopForegroundService` (default true); demotion/`HOST_RECLAIM` in active match calls `stopRoom(stopForegroundService: false)`
+- [x] 2.2 Wire `startGame` / `startFromSnapshot` (active phases) → `ensureActiveMatchSession`; `endGame` / leave / non-demotion `stopRoom` → `stopActiveMatchSession`
+- [x] 2.3 Tests in `test/server/host_room_controller_test.dart`: demotion preserves FGS; promotion no double-start; end/leave still stops (extend `_FakeForegroundServiceBridge` counters)
 
 ## Phase 3: Client GameScreen sync (Unit 3)
 
