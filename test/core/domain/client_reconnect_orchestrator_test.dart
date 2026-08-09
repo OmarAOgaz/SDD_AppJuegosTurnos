@@ -78,5 +78,49 @@ void main() {
         ClientRecoveryAction.runHostSuccession,
       );
     });
+
+    test(
+      'non-foreground + grace elapsed + no mDNS → keepRetrying (no succession)',
+      () {
+        expect(
+          ClientReconnectOrchestrator.decide(
+            mdnsMatch: null,
+            unreachableDuration: Duration(milliseconds: kHostLossGraceMs),
+            lastKnownHost: '10.0.0.1',
+            lastKnownPort: 8080,
+            isForeground: false,
+          ),
+          ClientRecoveryAction.keepRetrying,
+        );
+      },
+    );
+
+    test(
+      'non-foreground ignores live mDNS reconnect (Lock/FGS gate)',
+      () {
+        expect(
+          ClientReconnectOrchestrator.decide(
+            mdnsMatch: liveRoom,
+            unreachableDuration: Duration(milliseconds: kHostLossGraceMs),
+            lastKnownHost: '10.0.0.1',
+            lastKnownPort: 8080,
+            isForeground: false,
+          ),
+          ClientRecoveryAction.keepRetrying,
+        );
+      },
+    );
+
+    test('isForeground defaults to true → succession still allowed', () {
+      expect(
+        ClientReconnectOrchestrator.decide(
+          mdnsMatch: null,
+          unreachableDuration: Duration(milliseconds: kHostLossGraceMs),
+          lastKnownHost: '10.0.0.1',
+          lastKnownPort: 8080,
+        ),
+        ClientRecoveryAction.runHostSuccession,
+      );
+    });
   });
 }

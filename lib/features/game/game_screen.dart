@@ -414,6 +414,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         unreachableDuration: DateTime.now().difference(disconnectStarted),
         lastKnownHost: client.lastHost,
         lastKnownPort: client.lastPort,
+        isForeground: _appInForeground,
       );
 
       switch (action) {
