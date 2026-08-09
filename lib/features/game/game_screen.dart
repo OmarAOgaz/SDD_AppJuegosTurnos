@@ -20,6 +20,7 @@ import '../../core/domain/turn_feedback.dart';
 import '../../core/domain/turn_info_presentation.dart';
 import '../../core/lifecycle/app_lifecycle_sync.dart';
 import '../../core/lifecycle/client_sync_state.dart';
+import '../../core/lifecycle/foreground_service_bridge.dart';
 import '../../core/lifecycle/immersive_system_ui.dart';
 import '../../core/lifecycle/session_lifecycle_listener.dart';
 import '../../core/models/discovered_room.dart';
@@ -142,6 +143,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
   bool _wakelockOn = false;
+  /// Client-only: tracks desired active-match FGS (mirrors [_wakelockOn]).
+  bool _activeMatchFgsOn = false;
+  /// Cached for dispose — Riverpod `ref` is unsafe after unmount.
+  ForegroundServiceBridge? _fgsBridge;
   TurnInfoPresentation? _activePresentation;
   Timer? _presentationTimer;
   bool _panelOpen = false;
@@ -451,6 +456,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       case SuccessionAction.none:
         return;
       case SuccessionAction.endGame:
+        await _stopClientActiveMatchFgs();
         await _clearResumeStore();
         if (mounted) {
           context.go('/ended');
@@ -713,6 +719,40 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
+  /// Client-only active-match FGS: mirrors [_syncWakelock] / [_isResumablePhase].
+  ///
+  /// Host FGS is owned by [HostRoomController] — this path MUST NOT start or
+  /// stop FGS when [widget.role] is host.
+  void _syncActiveMatchFgs(GameRoomPhase gamePhase) {
+    if (_isHost) {
+      return;
+    }
+    final shouldBeOn = _isResumablePhase(gamePhase);
+    if (shouldBeOn == _activeMatchFgsOn) {
+      return;
+    }
+    _activeMatchFgsOn = shouldBeOn;
+    final bridge = ref.read(foregroundServiceBridgeProvider);
+    _fgsBridge = bridge;
+    if (shouldBeOn) {
+      // permissionDenied is non-throwing; match continues degraded.
+      unawaited(bridge.ensureActiveMatchSession());
+    } else {
+      unawaited(bridge.stopActiveMatchSession());
+    }
+  }
+
+  Future<void> _stopClientActiveMatchFgs() async {
+    if (_isHost || !_activeMatchFgsOn) {
+      return;
+    }
+    _activeMatchFgsOn = false;
+    final ForegroundServiceBridge bridge =
+        _fgsBridge ?? ref.read(foregroundServiceBridgeProvider);
+    _fgsBridge = bridge;
+    await bridge.stopActiveMatchSession();
+  }
+
   /// Coordinates wakelock, immersive System UI, and motion subscription for
   /// the current phase. Called from host/client build paths (outside stream
   /// creation in `build` body widgets) and from lifecycle / panel edges.
@@ -727,6 +767,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _cachedPhase = gamePhase;
     _cachedTurnPhase = turnPhase;
     _syncWakelock(gamePhase);
+    _syncActiveMatchFgs(gamePhase);
     _syncImmersive(gamePhase);
     if (leftInGame) {
       // Avoid setState during build; overlay is already off-tree outside inGame.
@@ -1052,6 +1093,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       _wakelockOn = false;
       unawaited(WakelockPlus.disable());
     }
+    if (_activeMatchFgsOn) {
+      _activeMatchFgsOn = false;
+      final bridge = _fgsBridge;
+      if (bridge != null) {
+        unawaited(bridge.stopActiveMatchSession());
+      }
+    }
     unawaited(_immersive.restore());
     super.dispose();
   }
@@ -1348,6 +1396,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (!_isHost) {
       ref.listen(clientSyncProvider, (previous, next) {
         if (next.isEnded && mounted) {
+          unawaited(_stopClientActiveMatchFgs());
           unawaited(_clearResumeStore());
           context.go('/ended');
         }
@@ -1761,6 +1810,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         : const GameSessionBannerTexts();
 
     Future<void> exitAsClient() async {
+      await _stopClientActiveMatchFgs();
       if (client != null && localPlayerId != null) {
         client.sendLeave(playerId: localPlayerId);
       }
