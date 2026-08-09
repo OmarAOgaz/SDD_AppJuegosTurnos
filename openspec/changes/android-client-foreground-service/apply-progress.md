@@ -1,13 +1,13 @@
 # Apply Progress: android-client-foreground-service
 
 **Mode**: Standard (strict_tdd: false)
-**Batch**: Unit 2 / PR2 — HostRoomController demotion preserve + ensure wiring
+**Batch**: Unit 3 / PR3 — GameScreen `_syncActiveMatchFgs` client lifecycle
 **Chain strategy**: stacked-to-main
-**Next unit**: 3 (GameScreen client sync)
-**Status**: Unit 2 done (Unit 1 merged via PR #85)
-**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87
-**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/86
-**Branch**: `feat/android-client-fgs-host`
+**Next unit**: 4 (main-spec merge)
+**Status**: Unit 3 done (Units 1–2 merged via PR #85 / #87)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/89
+**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/88
+**Branch**: `feat/android-client-fgs-client`
 
 ## Completed Tasks
 
@@ -19,20 +19,23 @@
 - [x] 1.4 `foregroundServiceBridgeProvider` in `network_providers.dart`
 - [x] 1.5 Unit tests for skipped / alreadyRunning / permissionDenied / started (11 passed)
 
-### Unit 2 (this batch)
+### Unit 2 (PR #87 → main)
 
 - [x] 2.1 `stopRoom(stopForegroundService:)` default true; `HOST_RECLAIM` demotion uses `false`
 - [x] 2.2 `startGame` / `startFromSnapshot` → `ensureActiveMatchSession`; `endGame` / non-demotion `stopRoom` → `stopActiveMatchSession`
 - [x] 2.3 Host tests: demotion preserves FGS; promotion no double-start; end/leave still stops (32 passed)
 
+### Unit 3 (this batch)
+
+- [x] 3.1 `_syncActiveMatchFgs` in `game_screen.dart` (client-only; mirrors `_isResumablePhase` / wakelock); stop on leave/`END_GAME`/dispose; lobby no start; host path does not own FGS
+- [x] 3.2 Client/widget tests: ensure on active; stop on ended/lobby/leave/dispose; permissionDenied no throw; host GameScreen does not ensure (8 passed)
+
 ## Remaining
 
-- [ ] Phase 3 (Unit 3): GameScreen client sync
 - [ ] Phase 4 (Unit 4): main-spec merge
 
 ## Notes
 
-- `startFromSnapshot` clears prior hosting with `stopForegroundService: false`, then ensure (active) or stop (non-active) so promotion keeps a single FGS instance.
-- Fake bridge overrides `ensure`/`stop` with running/idempotent counters (legacy aliases hit those).
-- Unit 3 (GameScreen) and Unit 4 (main-spec merge) intentionally out of scope.
-- Review budget: host controller + tests only; OpenSpec tasks/apply-progress updates included.
+- Host FGS remains `HostRoomController`; GameScreen caches bridge for dispose (Riverpod `ref` unsafe after unmount).
+- Unit 4 (main-spec merge) intentionally out of scope for this PR.
+- Review budget: GameScreen + focused FGS sync tests + OpenSpec checkoffs.
