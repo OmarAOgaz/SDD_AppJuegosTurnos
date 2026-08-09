@@ -35,6 +35,7 @@ Main paths: `openspec/specs/{host-succession,lan-transport,in-game-resume,lan-di
 - tasks.md ✅ (14/15 checked; 4.1 manual E2E deferred)
 - apply-progress.md ✅
 - verify-report.md ✅
+- e2e-checklist.md ✅ (task 4.1 — pending device sign-off)
 - specs/ (5 delta specs) ✅
 - state.yaml ✅ (cycle_closed)
 - archive-report.md ✅ (this file)

@@ -24,5 +24,5 @@ Fresh implementation on `fix/false-host-succession-v2` (specs recovered from `ba
 
 ## 4. Close change
 
-- [ ] 4.1 Manual E2E: 2p client blip 60s; 2p host kill ≤3s succession; acting-host migration via mDNS
+- [ ] 4.1 Manual E2E: 2p client blip 60s; 2p host kill ≤3s succession; acting-host migration via mDNS — see [`e2e-checklist.md`](./e2e-checklist.md)
 - [x] 4.2 Merge spec deltas → `openspec/specs/`; `verify-report.md` PASS; archive change
