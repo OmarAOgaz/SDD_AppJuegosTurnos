@@ -4,6 +4,19 @@ library;
 const bool kEnableMdns = true;
 const bool kEnableForegroundService = true;
 
+/// Android FGS notification channel id (must stay stable across releases).
+const String kFgsChannelId = 'turnos_active_game';
+
+/// Role-neutral FGS notification title / channel name (ES hardcoded).
+const String kFgsNotificationTitle = 'Partida activa';
+
+/// Role-neutral FGS notification body for host and client (ES hardcoded).
+const String kFgsNotificationBody =
+    'Turnos Juegos de mesa — partida en LAN';
+
+/// Role-neutral Android notification channel description (ES hardcoded).
+const String kFgsChannelDescription = 'Mantiene la partida activa en LAN';
+
 const String kMdnsServiceType = '_turnos._tcp';
 const String kWsPath = '/ws';
 
