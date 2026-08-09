@@ -39,17 +39,29 @@ class _FakeMdnsAdvertiser extends MdnsAdvertiser {
 }
 
 class _FakeForegroundServiceBridge extends ForegroundServiceBridge {
+  int ensureCount = 0;
   int startCount = 0;
   int stopCount = 0;
+  bool running = false;
+  ActiveMatchFgsResult? lastEnsureResult;
 
   @override
-  Future<void> startGameSession() async {
+  Future<ActiveMatchFgsResult> ensureActiveMatchSession() async {
+    ensureCount++;
+    if (running) {
+      lastEnsureResult = ActiveMatchFgsResult.alreadyRunning;
+      return lastEnsureResult!;
+    }
+    running = true;
     startCount++;
+    lastEnsureResult = ActiveMatchFgsResult.started;
+    return lastEnsureResult!;
   }
 
   @override
-  Future<void> stopGameSession() async {
+  Future<void> stopActiveMatchSession() async {
     stopCount++;
+    running = false;
   }
 }
 
@@ -1008,7 +1020,10 @@ void main() {
       final room = controller.room!;
       final originalHostId = room.hostPlayerId;
       final originalDeviceId = room.playersById[originalHostId]!.deviceId;
-      expect(TurnEngine.startGame(room, 1), isTrue);
+      expect(await controller.startGame(), isTrue);
+      expect(fgs.startCount, 1);
+      expect(fgs.running, isTrue);
+      final stopsBeforeReclaim = fgs.stopCount;
 
       // Simulate succession: acting host is the joined client.
       final actingId = room.turnSequence[1];
@@ -1061,6 +1076,10 @@ void main() {
       expect(controller.room, isNull);
       expect(controller.hasHostingAuthority, isFalse);
 
+      // Demotion preserves FGS while the device remains in the active match.
+      expect(fgs.stopCount, stopsBeforeReclaim);
+      expect(fgs.running, isTrue);
+
       final demotion = controller.takePendingDemotionResume();
       expect(demotion, isNotNull);
       expect(demotion!.seatPlayerId, actingId);
@@ -1077,6 +1096,130 @@ void main() {
         ),
       );
       expect(controller.room, isNull);
+    });
+
+    test('HOST_RECLAIM demotion preserves FGS session', () async {
+      final server = _LobbySyncRecordingServer();
+      final fgs = _FakeForegroundServiceBridge();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+        foregroundServiceBridge: fgs,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      final room = controller.room!;
+      final originalHostId = room.hostPlayerId;
+      final originalDeviceId = room.playersById[originalHostId]!.deviceId;
+      expect(await controller.startGame(), isTrue);
+      final stopsBefore = fgs.stopCount;
+
+      final actingId = room.turnSequence[1];
+      room.hostPlayerId = actingId;
+      room.playersById[originalHostId]!.connected = false;
+
+      controller.debugRegisterSession('reclaim-session');
+      controller.debugDispatchMessage(
+        'reclaim-session',
+        WsEnvelope(
+          type: MessageTypes.heartbeat,
+          payload: {'deviceId': originalDeviceId, 'clientNow': 1},
+        ),
+      );
+      controller.debugDispatchMessage(
+        'reclaim-session',
+        WsEnvelope(
+          type: MessageTypes.hostReclaim,
+          payload: {
+            'roomId': room.roomId,
+            'originalHostPlayerId': originalHostId,
+            'deviceId': originalDeviceId,
+            'host': '10.0.0.50',
+            'port': 5555,
+          },
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
+      expect(fgs.stopCount, stopsBefore);
+      expect(fgs.running, isTrue);
+      expect(controller.room, isNull);
+    });
+
+    test('promotion startFromSnapshot does not double-start FGS', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final fgs = _FakeForegroundServiceBridge();
+      // Simulate client already holding participant FGS before promotion.
+      expect(
+        await fgs.ensureActiveMatchSession(),
+        ActiveMatchFgsResult.started,
+      );
+      expect(fgs.startCount, 1);
+      expect(fgs.running, isTrue);
+
+      final seed = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+        foregroundServiceBridge: _FakeForegroundServiceBridge(),
+      );
+      await seed.startRoom(displayName: 'Sala', hostDeviceId: 'host-device');
+      seed.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      final seedRoom = seed.room!;
+      expect(TurnEngine.startGame(seedRoom, 1000), isTrue);
+      final snapshot = seed.exportRoomSnapshot()!;
+      final nextHost = seedRoom.turnSequence[1];
+      await seed.stopRoom(broadcastDiscarded: false);
+
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+        foregroundServiceBridge: fgs,
+      );
+      await controller.startFromSnapshot(
+        snapshot: snapshot,
+        actingHostPlayerId: nextHost,
+      );
+
+      expect(fgs.ensureCount, 2);
+      expect(fgs.startCount, 1);
+      expect(fgs.stopCount, 0);
+      expect(fgs.lastEnsureResult, ActiveMatchFgsResult.alreadyRunning);
+      expect(fgs.running, isTrue);
+      expect(controller.hasHostingAuthority, isTrue);
+    });
+
+    test('stopRoom without demotion still stops FGS', () async {
+      final fgs = _FakeForegroundServiceBridge();
+      final controller = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+        foregroundServiceBridge: fgs,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      expect(await controller.startGame(), isTrue);
+      expect(fgs.running, isTrue);
+
+      await controller.stopRoom(broadcastDiscarded: false);
+
+      expect(fgs.stopCount, greaterThan(0));
+      expect(fgs.running, isFalse);
     });
 
     test('intentional endGame stops FGS, mDNS, and clears room', () async {
@@ -1096,7 +1239,6 @@ void main() {
         'client-1',
         _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
       );
-      final room = controller.room!;
       expect(await controller.startGame(), isTrue);
       expect(mdns.startCount, greaterThan(0));
       expect(fgs.startCount, 1);
@@ -1105,6 +1247,7 @@ void main() {
       await controller.endGame();
 
       expect(fgs.stopCount, greaterThan(0));
+      expect(fgs.running, isFalse);
       expect(mdns.stopCount, greaterThan(0));
       expect(controller.room, isNull);
       expect(controller.hasHostingAuthority, isFalse);
