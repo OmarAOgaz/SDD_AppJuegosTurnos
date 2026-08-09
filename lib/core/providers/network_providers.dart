@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../constants/message_types.dart';
 import '../lifecycle/client_sync_state.dart';
+import '../lifecycle/foreground_service_bridge.dart';
 import '../models/ws_envelope.dart';
 import '../network/device_id_store.dart';
 import '../network/discovery/mdns_browser.dart';
@@ -17,6 +16,12 @@ import '../../server/host_room_controller.dart';
 final hostRoomControllerProvider =
     ChangeNotifierProvider<HostRoomController>((ref) {
   return HostRoomController();
+});
+
+/// Shared FGS bridge for host/client active-match keep-alive (overridable in tests).
+final foregroundServiceBridgeProvider =
+    Provider<ForegroundServiceBridge>((ref) {
+  return ForegroundServiceBridge();
 });
 
 final manualEndpointStoreProvider = FutureProvider<ManualEndpointStore>((ref) {

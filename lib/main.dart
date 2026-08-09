@@ -3,15 +3,16 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'core/constants/network_constants.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   FlutterForegroundTask.init(
     androidNotificationOptions: AndroidNotificationOptions(
-      channelId: 'turnos_active_game',
-      channelName: 'Partida activa',
-      channelDescription: 'Host LAN activo durante la partida',
+      channelId: kFgsChannelId,
+      channelName: kFgsNotificationTitle,
+      channelDescription: kFgsChannelDescription,
       onlyAlertOnce: true,
     ),
     iosNotificationOptions: const IOSNotificationOptions(
