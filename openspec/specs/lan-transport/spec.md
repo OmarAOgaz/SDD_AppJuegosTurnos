@@ -34,19 +34,25 @@ On successful WebSocket connect, the host MUST send an initial handshake message
 
 ### Requirement: Heartbeat and disconnect detection
 
-Peers MUST exchange heartbeat messages at a regular interval (SHOULD be ~3 s). The host MUST treat a peer as disconnected after a heartbeat timeout without response (MUST be between 5 s and 10 s). Entering background MUST NOT immediately mark a peer disconnected if heartbeats continue.
+Peers MUST exchange heartbeats at a regular interval (SHOULD be ~3 s). Host MUST mark a peer disconnected after heartbeat timeout without response (MUST be 5–10 s). Entering background MUST NOT immediately mark disconnected if heartbeats continue. Android participants in active match (`IN_GAME` or `BETWEEN_ROUNDS`) MUST use participant FGS per `app-lifecycle-sync` so heartbeats can continue while backgrounded; interval and timeout MUST stay unchanged.
 
 #### Scenario: Client stops responding
 
-- GIVEN an established connection with heartbeats enabled
-- WHEN the client sends no heartbeat for longer than the timeout
-- THEN the host marks that peer as disconnected
+- GIVEN established connection with heartbeats
+- WHEN client sends no heartbeat longer than timeout
+- THEN host marks peer disconnected
 
 #### Scenario: Brief background on client
 
-- GIVEN a client enters background but the socket remains alive
-- WHEN heartbeats continue within the timeout window
-- THEN the host MUST NOT mark the client disconnected solely due to `paused` lifecycle
+- GIVEN client enters background with alive socket
+- WHEN heartbeats continue within timeout
+- THEN host MUST NOT mark disconnected solely due to `paused` lifecycle
+
+#### Scenario: Android client FGS supports background heartbeats
+
+- GIVEN Android client in active match with participant FGS
+- WHEN app is backgrounded and heartbeats continue within timeout
+- THEN host MUST NOT mark disconnected solely due to backgrounding
 
 ### Requirement: Client reconnect window
 

@@ -255,22 +255,21 @@ When `endGame` is invoked, the host MUST finalize match statistics before broadc
 
 ### Requirement: END_GAME summary screen and teardown
 
-On host `END_GAME`, the host MUST finalize match statistics, broadcast the final `GAME_STATE` with `gamePhase` ended, stop FGS / host keep-alive per `app-lifecycle-sync`, tear down the room (stop server/mDNS, remove local room entry), and all devices MUST navigate to the ended route showing the full match summary per `match-summary` spec. The host device MUST seed its local ended snapshot (e.g. via `clientSync.lastGameState`) from the final authoritative payload before room teardown so the host sees the same summary as clients. Toast-only end UX MUST NOT satisfy this requirement.
+On host `END_GAME`, the host MUST finalize match statistics, broadcast final `GAME_STATE` with `gamePhase` ended, stop FGS/keep-alive on **all Android devices** that were in the active match per `app-lifecycle-sync`, tear down the room (stop server/mDNS, remove local room entry), and all devices MUST navigate to the ended route showing full match summary per `match-summary`. Host MUST seed local ended snapshot from final authoritative payload before teardown. Toast-only end UX MUST NOT satisfy this.
 
 #### Scenario: End game shows match summary
 
-- GIVEN an in-progress game with accumulated stats
-- WHEN the host confirms `END_GAME`
-- THEN all peers see the match summary screen per `match-summary`
-- AND the room is no longer advertised or joinable
-- AND host foreground keep-alive / FGS stops
+- GIVEN in-progress game with accumulated stats
+- WHEN host confirms `END_GAME`
+- THEN all peers see match summary per `match-summary`
+- AND room is no longer advertised or joinable
+- AND FGS/keep-alive stops on every Android match participant
 
 #### Scenario: Host device has summary data after teardown
 
-- GIVEN the host device ends the match
+- GIVEN host device ends the match
 - WHEN navigation to `/ended` occurs
-- THEN the host can render summary from the seeded ended snapshot
-- AND summary values match the final broadcast `GAME_STATE`
+- THEN host renders summary from seeded ended snapshot matching final `GAME_STATE`
 
 ### Requirement: In-game connection status banners
 

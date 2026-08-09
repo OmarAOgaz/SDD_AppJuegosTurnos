@@ -23,9 +23,9 @@ Chain strategy: stacked-to-main
 | 1 | Bridge ensure/stop + permission + symmetric strings | PR 1 (#85) | Base = main; DONE |
 | 2 | HostRoomController demotion preserve + ensure wiring | PR 2 (#87) | Base = main after PR1; DONE |
 | 3 | GameScreen `_syncActiveMatchFgs` client lifecycle | PR 3 (#89) | Base = main after PR2; DONE |
-| 4 | Main-spec merge for four deltas | PR 4 or verify slice | Merge at apply close / archive; not code |
+| 4 | Main-spec merge for four deltas | PR 4 | Base = main after PR3; DONE |
 
-Chain strategy resolved: `stacked-to-main`. PR1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/85 — PR2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87 — PR3: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/89
+Chain strategy resolved: `stacked-to-main`. PR1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/85 — PR2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/87 — PR3: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/89 — PR4: (this unit)
 
 ## Phase 1: Bridge foundation (Unit 1)
 
@@ -48,5 +48,5 @@ Chain strategy resolved: `stacked-to-main`. PR1: https://github.com/OmarAOgaz/SD
 
 ## Phase 4: Close / main-spec sync (Unit 4)
 
-- [ ] 4.1 Manual checklist: API 33+ deny notifications → match playable; FGS absent; resume reconnect/`SYNC_REQUEST` works
-- [ ] 4.2 At apply/verify close: merge deltas → `openspec/specs/{app-lifecycle-sync,turn-timer,host-succession,lan-transport}/spec.md`; rename requirement title; archive when verify PASS
+- [x] 4.1 Manual checklist: API 33+ deny notifications → match playable; FGS absent; resume reconnect/`SYNC_REQUEST` works — authored in [`e2e-checklist.md`](./e2e-checklist.md); device sign-off deferred to verify
+- [x] 4.2 At apply/verify close: merge deltas → `openspec/specs/{app-lifecycle-sync,turn-timer,host-succession,lan-transport}/spec.md`; rename requirement title; archive when verify PASS (merge done in Unit 4; archive deferred to verify PASS)
