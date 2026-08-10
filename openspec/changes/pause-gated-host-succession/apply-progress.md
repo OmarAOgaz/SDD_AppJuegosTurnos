@@ -5,8 +5,8 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: 3
 **Status**: Units 1–2 done — Phase 1–2 tasks complete; Phase 3–4 pending
-**PR**: (Unit 2 — pending create)
-**Issue**: (Unit 2 — pending create)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/95
+**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/94
 **Branch**: `feat/pause-gated-succession-heal`
 
 ## Completed Tasks
@@ -28,6 +28,9 @@
 - [x] 2.3 Coordinator tests: original preference + dual-acting tie-break + missing-seat keep
 - [x] 2.4 Controller tests: pending resume set; FGS not force-stopped; null-room no-op
 - Verification: `flutter test` coordinator + host_room_controller → 45 passed
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/95
+- **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/94
+- **Branch**: `feat/pause-gated-succession-heal`
 
 ## Remaining
 
