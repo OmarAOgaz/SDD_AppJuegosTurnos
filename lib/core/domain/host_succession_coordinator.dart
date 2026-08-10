@@ -94,6 +94,37 @@ class HostSuccessionCoordinator {
     return SuccessionDecision.waitForNewHost(roomId: room.roomId);
   }
 
+  /// Whether this acting host should yield to a peer advertising the same room.
+  ///
+  /// Rules: prefer [originalHostPlayerId] — if peer is original → yield; if
+  /// local is original → keep. Otherwise yield iff local's `turnSequence`
+  /// index is greater than peer's (lowest index wins). Missing seats keep.
+  static bool shouldYieldActingHost({
+    required String localPlayerId,
+    required String? originalHostPlayerId,
+    required List<String> turnSequence,
+    required String peerHostPlayerId,
+  }) {
+    if (localPlayerId == peerHostPlayerId) {
+      return false;
+    }
+    final original = originalHostPlayerId ?? '';
+    if (original.isNotEmpty) {
+      if (peerHostPlayerId == original) {
+        return true;
+      }
+      if (localPlayerId == original) {
+        return false;
+      }
+    }
+    final localIndex = turnSequence.indexOf(localPlayerId);
+    final peerIndex = turnSequence.indexOf(peerHostPlayerId);
+    if (localIndex < 0 || peerIndex < 0) {
+      return false;
+    }
+    return localIndex > peerIndex;
+  }
+
   /// Whether this seat should reclaim host after reconnecting to an acting host.
   static bool shouldReclaimHost({
     required Map<String, dynamic>? gameState,

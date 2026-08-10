@@ -1152,6 +1152,62 @@ void main() {
       expect(controller.room, isNull);
     });
 
+    test('yieldHostingToPeer sets pending resume and preserves FGS', () async {
+      final server = _LobbySyncRecordingServer();
+      final fgs = _FakeForegroundServiceBridge();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+        foregroundServiceBridge: fgs,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      final room = controller.room!;
+      final seatId = room.hostPlayerId;
+      expect(await controller.startGame(), isTrue);
+      expect(fgs.running, isTrue);
+      final stopsBefore = fgs.stopCount;
+      final formerHost = controller.hostLanIp;
+      final formerPort = controller.port;
+
+      await controller.yieldHostingToPeer(host: '10.0.0.77', port: 4242);
+
+      expect(controller.room, isNull);
+      expect(controller.hasHostingAuthority, isFalse);
+      expect(fgs.stopCount, stopsBefore);
+      expect(fgs.running, isTrue);
+
+      final demotion = controller.takePendingDemotionResume();
+      expect(demotion, isNotNull);
+      expect(demotion!.roomId, isNotEmpty);
+      expect(demotion.seatPlayerId, seatId);
+      expect(demotion.host, '10.0.0.77');
+      expect(demotion.port, 4242);
+      expect(demotion.formerListenHost, formerHost);
+      expect(demotion.formerListenPort, formerPort);
+      expect(controller.pendingDemotionResume, isNull);
+    });
+
+    test('yieldHostingToPeer no-ops when room is null', () async {
+      final fgs = _FakeForegroundServiceBridge();
+      final controller = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+        foregroundServiceBridge: fgs,
+      );
+
+      await controller.yieldHostingToPeer(host: '10.0.0.1', port: 1);
+
+      expect(controller.pendingDemotionResume, isNull);
+      expect(fgs.stopCount, 0);
+    });
+
     test('promotion startFromSnapshot does not double-start FGS', () async {
       final server = _LobbySyncRecordingServer();
       final mdns = _FakeMdnsAdvertiser();

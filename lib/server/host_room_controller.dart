@@ -96,7 +96,7 @@ class HostRoomController extends ChangeNotifier {
   /// When false, this device must not act as authoritative host (post-reclaim).
   bool _hostingAuthorityActive = true;
 
-  /// Set when this acting host is demoted by [HOST_RECLAIM]; consumed by UI.
+  /// Set when this acting host is demoted ([HOST_RECLAIM] or heal yield); UI consumes.
   HostDemotionResume? _pendingDemotionResume;
 
   GameRoom? get room => _room;
@@ -112,6 +112,31 @@ class HostRoomController extends ChangeNotifier {
     final value = _pendingDemotionResume;
     _pendingDemotionResume = null;
     return value;
+  }
+
+  /// Voluntarily yield hosting to a live peer (split-brain heal).
+  ///
+  /// Sets [HostDemotionResume] for the local seat, clears hosting authority, and
+  /// stops the room **without** stopping FGS so the device can reconnect as client.
+  Future<void> yieldHostingToPeer({
+    required String host,
+    required int port,
+  }) async {
+    final room = _room;
+    if (room == null) {
+      return;
+    }
+
+    _pendingDemotionResume = HostDemotionResume(
+      roomId: room.roomId,
+      seatPlayerId: room.hostPlayerId,
+      host: host,
+      port: port,
+      formerListenHost: _hostLanIp,
+      formerListenPort: _server.port,
+    );
+    _hostingAuthorityActive = false;
+    await stopRoom(broadcastDiscarded: false, stopForegroundService: false);
   }
 
   Future<GameRoom> startRoom({
