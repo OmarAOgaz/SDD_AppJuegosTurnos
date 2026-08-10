@@ -40,14 +40,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: GameScreen lifecycle + heal wiring
 
-- [ ] 3.1 GameScreen: on non-fg set `_appInForeground=false` immediately; after `kLifecyclePauseCoalesceMs` still non-fg → cancel `_clientRecoveryTimer` (brief inactive < coalesce MUST NOT cancel/reset grace)
-- [ ] 3.2 On `resumed` (reconnecting client): cancel coalesce; RESET `_clientDisconnectStartedAt`; re-probe mDNS; live R → reconnect+SYNC+banner; absent → restart recovery; succession only after full fg grace
-- [ ] 3.3 On `resumed` + hosting/acting + in-progress: browse exclude self; if peer ad && `shouldYieldActingHost` → `yieldHostingToPeer` → `_resumeAsClientAfterHostLost` + reconnect banner (`GameSessionBannerTexts` reuse)
-- [ ] 3.4 Post-demote: set/reuse `_hostMigrationInFlight`-style suppress so TCP fail → client retry only; no immediate succession while live ads
-- [ ] 3.5 Confirm FGS unchanged; no iOS lock/FGS claims; foreground ≤3s host-kill path untouched
+- [x] 3.1 GameScreen: on non-fg set `_appInForeground=false` immediately; after `kLifecyclePauseCoalesceMs` still non-fg → cancel `_clientRecoveryTimer` (brief inactive < coalesce MUST NOT cancel/reset grace)
+- [x] 3.2 On `resumed` (reconnecting client): cancel coalesce; RESET `_clientDisconnectStartedAt`; re-probe mDNS; live R → reconnect+SYNC+banner; absent → restart recovery; succession only after full fg grace
+- [x] 3.3 On `resumed` + hosting/acting + in-progress: browse exclude self; if peer ad && `shouldYieldActingHost` → `yieldHostingToPeer` → `_resumeAsClientAfterHostLost` + reconnect banner (`GameSessionBannerTexts` reuse)
+- [x] 3.4 Post-demote: set/reuse `_hostMigrationInFlight`-style suppress so TCP fail → client retry only; no immediate succession while live ads
+- [x] 3.5 Confirm FGS unchanged; no iOS lock/FGS claims; foreground ≤3s host-kill path untouched
 
 ## Phase 4: Verification + main-spec merge unit
 
-- [ ] 4.1 Cover MUST scenarios via unit/widget: shade coalesce; resume live host; resume host death; demote+banner; tie-break; post-demote TCP; deferred unlock succession; pause stops recovery
-- [ ] 4.2 Manual E2E checklist: lock+FGS no false acting host; unlock+live R reconnect banner; dual host demote+banner
+- [x] 4.1 Cover MUST scenarios via unit/widget: shade coalesce; resume live host; resume host death; demote+banner; tie-break; post-demote TCP; deferred unlock succession; pause stops recovery
+- [x] 4.2 Manual E2E checklist: lock+FGS no false acting host; unlock+live R reconnect banner; dual host demote+banner
 - [ ] 4.3 Archive/merge deltas into main specs (`host-succession`, `lan-discovery`, `app-lifecycle-sync`) when change archives — keep as merge unit with PR3 or follow-up archive PR
