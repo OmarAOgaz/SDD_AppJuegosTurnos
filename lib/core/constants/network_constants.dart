@@ -26,6 +26,8 @@ const int kHeartbeatTimeoutMs = 8000;
 const int kReconnectWindowMs = 30000;
 /// Host-loss grace when mDNS no longer advertises the in-progress roomId.
 const int kHostLossGraceMs = 3000;
+/// Coalesce brief inactive/shade flicker before canceling succession-capable recovery.
+const int kLifecyclePauseCoalesceMs = 400;
 /// In-game client recovery: how often to re-probe mDNS while reconnecting.
 const int kMdnsProbeIntervalMs = 3000;
 

@@ -23,8 +23,14 @@ class ClientReconnectOrchestrator {
     required Duration unreachableDuration,
     String? lastKnownHost,
     int? lastKnownPort,
+    bool isForeground = true,
     Duration hostLossGrace = const Duration(milliseconds: kHostLossGraceMs),
   }) {
+    // Non-foreground (paused/inactive/hidden): never elect — keep retrying only.
+    if (!isForeground) {
+      return ClientRecoveryAction.keepRetrying;
+    }
+
     if (mdnsMatch != null &&
         lastKnownHost != null &&
         lastKnownPort != null &&
