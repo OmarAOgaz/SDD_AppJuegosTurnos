@@ -126,6 +126,18 @@ class GameSocketClient {
     unawaited(_scheduleReconnect());
   }
 
+  /// Resets host-loss / reconnect grace without restarting the TCP retry loop.
+  ///
+  /// Used after sustained non-foreground → `resumed` so succession waits a full
+  /// foreground grace from the unlock moment.
+  void resetDisconnectClock([DateTime? at]) {
+    if (_state != SocketClientState.reconnecting &&
+        _state != SocketClientState.connecting) {
+      return;
+    }
+    _disconnectStartedAt = at ?? DateTime.now();
+  }
+
   void sendPing() {
     _send(const WsEnvelope(type: MessageTypes.ping, payload: {}));
   }
