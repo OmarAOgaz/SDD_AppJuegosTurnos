@@ -5,7 +5,7 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: 4 (main-spec merge / archive) or sdd-verify
 **Status**: Units 1–3 done — Phase 1–3 complete; Phase 4.1–4.2 done; 4.3 residual
-**PR**: (pending create)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/97
 **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/96
 **Branch**: `feat/pause-gated-succession-gamescreen`
 
@@ -42,6 +42,7 @@
 - [x] 4.1 Unit tests for MUST scenarios via `pause_gated_lifecycle` + existing Unit 1/2 coverage
 - [x] 4.2 Manual E2E checklist (`e2e-checklist.md`)
 - Verification: `flutter test` pause_gated_lifecycle + orchestrator + coordinator → 30 passed; analyze clean
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/97
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/96
 - **Branch**: `feat/pause-gated-succession-gamescreen`
 
