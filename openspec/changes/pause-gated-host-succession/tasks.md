@@ -33,10 +33,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Heal domain helpers
 
-- [ ] 2.1 Add pure `shouldYieldActingHost` to `lib/core/domain/host_succession_coordinator.dart` (original wins; else yield if local turnSequence index > peer)
-- [ ] 2.2 Add `yieldHostingToPeer({host, port})` in `lib/server/host_room_controller.dart`: set `HostDemotionResume`, clear authority, `stopRoom(stopForegroundService: false)`
-- [ ] 2.3 Tests in `test/core/domain/host_succession_coordinator_test.dart`: original preference + dual-acting lowest turnSequence wins
-- [ ] 2.4 Tests for `yieldHostingToPeer` (host_room_controller / demotion tests): pending resume set; FGS not force-stopped
+- [x] 2.1 Add pure `shouldYieldActingHost` to `lib/core/domain/host_succession_coordinator.dart` (original wins; else yield if local turnSequence index > peer)
+- [x] 2.2 Add `yieldHostingToPeer({host, port})` in `lib/server/host_room_controller.dart`: set `HostDemotionResume`, clear authority, `stopRoom(stopForegroundService: false)`
+- [x] 2.3 Tests in `test/core/domain/host_succession_coordinator_test.dart`: original preference + dual-acting lowest turnSequence wins
+- [x] 2.4 Tests for `yieldHostingToPeer` (host_room_controller / demotion tests): pending resume set; FGS not force-stopped
 
 ## Phase 3: GameScreen lifecycle + heal wiring
 

@@ -104,6 +104,79 @@ void main() {
     });
   });
 
+  group('HostSuccessionCoordinator.shouldYieldActingHost', () {
+    const sequence = ['p1', 'p2', 'p3'];
+
+    test('yields when peer is original host', () {
+      expect(
+        HostSuccessionCoordinator.shouldYieldActingHost(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          turnSequence: sequence,
+          peerHostPlayerId: 'p1',
+        ),
+        isTrue,
+      );
+    });
+
+    test('keeps when local is original host', () {
+      expect(
+        HostSuccessionCoordinator.shouldYieldActingHost(
+          localPlayerId: 'p1',
+          originalHostPlayerId: 'p1',
+          turnSequence: sequence,
+          peerHostPlayerId: 'p2',
+        ),
+        isFalse,
+      );
+    });
+
+    test('dual-acting: higher turnSequence index yields to lower', () {
+      expect(
+        HostSuccessionCoordinator.shouldYieldActingHost(
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          turnSequence: sequence,
+          peerHostPlayerId: 'p2',
+        ),
+        isTrue,
+      );
+      expect(
+        HostSuccessionCoordinator.shouldYieldActingHost(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          turnSequence: sequence,
+          peerHostPlayerId: 'p3',
+        ),
+        isFalse,
+      );
+    });
+
+    test('keeps when peer equals local', () {
+      expect(
+        HostSuccessionCoordinator.shouldYieldActingHost(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          turnSequence: sequence,
+          peerHostPlayerId: 'p2',
+        ),
+        isFalse,
+      );
+    });
+
+    test('keeps when seat missing from turnSequence', () {
+      expect(
+        HostSuccessionCoordinator.shouldYieldActingHost(
+          localPlayerId: 'p2',
+          originalHostPlayerId: null,
+          turnSequence: sequence,
+          peerHostPlayerId: 'p9',
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('HostSuccessionCoordinator.shouldReclaimHost', () {
     test('true when local is original and acting host differs', () {
       final state = _snapshot(
