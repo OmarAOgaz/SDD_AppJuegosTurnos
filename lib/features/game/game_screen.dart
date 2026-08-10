@@ -13,6 +13,7 @@ import '../../core/constants/network_constants.dart';
 import '../../core/domain/client_reconnect_orchestrator.dart';
 import '../../core/domain/game_session_banner_texts.dart';
 import '../../core/domain/host_succession_coordinator.dart';
+import '../../core/domain/pause_gated_lifecycle.dart';
 import '../../core/domain/room_discovery.dart';
 import '../../core/domain/pickup_detector.dart';
 import '../../core/domain/turn_engine.dart';
@@ -139,6 +140,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   bool _reclaimInFlight = false;
   /// Suppresses false succession while reconnecting after HOST_MIGRATED.
   bool _hostMigrationInFlight = false;
+  /// After heal demotion: client-retry only while peer ads remain live.
+  bool _suppressSuccessionAfterDemote = false;
   Completer<Map<String, dynamic>>? _reclaimSnapshotCompleter;
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
@@ -151,6 +154,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Timer? _presentationTimer;
   bool _panelOpen = false;
   bool _appInForeground = true;
+  /// Coalesce brief inactive/shade before canceling succession-capable recovery.
+  Timer? _pauseCoalesceTimer;
+  /// True after sustained non-fg canceled the recovery timer (grace kept).
+  bool _recoverySuspendedForNonForeground = false;
   bool _motionDegraded = false;
   GameRoomPhase? _cachedPhase;
   TurnPhase _cachedTurnPhase = TurnPhase.normal;
@@ -327,6 +334,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         _startClientRecoveryOrchestration();
       }
       if (state == SocketClientState.connected) {
+        _suppressSuccessionAfterDemote = false;
         _stopClientRecoveryOrchestration();
         unawaited(_maybeSendHostReclaim(client));
       }
@@ -423,6 +431,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         case ClientRecoveryAction.reconnectToEndpoint:
           await _reconnectToEndpoint(match!.hostIp, match.port);
         case ClientRecoveryAction.runHostSuccession:
+          if (shouldSuppressSuccessionAfterDemote(
+            suppressArmed: _suppressSuccessionAfterDemote,
+            liveAd: match,
+          )) {
+            await _reconnectToEndpoint(match!.hostIp, match.port);
+            return;
+          }
+          if (_suppressSuccessionAfterDemote && match == null) {
+            _suppressSuccessionAfterDemote = false;
+          }
           await _runHostSuccessionIfNeeded();
       }
     } finally {
@@ -437,6 +455,31 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         _reclaimInFlight ||
         _hostMigrationInFlight) {
       return;
+    }
+    if (_suppressSuccessionAfterDemote) {
+      final roomId = await _resolveClientRoomId();
+      if (!mounted) {
+        return;
+      }
+      DiscoveredRoom? live;
+      if (roomId != null) {
+        final browser = ref.read(mdnsBrowserProvider);
+        final controller = ref.read(hostRoomControllerProvider);
+        live = findLiveRoomAdvertisement(
+          roomId: roomId,
+          rooms: browser.currentRooms,
+          excludeHost: controller.hostLanIp,
+          excludePort: controller.port,
+        );
+      }
+      if (shouldSuppressSuccessionAfterDemote(
+        suppressArmed: true,
+        liveAd: live,
+      )) {
+        await _reconnectToEndpoint(live!.hostIp, live.port);
+        return;
+      }
+      _suppressSuccessionAfterDemote = false;
     }
     _stopClientRecoveryOrchestration();
     final client = ref.read(gameSocketClientProvider);
@@ -1081,6 +1124,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void dispose() {
     _uiTick?.cancel();
     _presentationTimer?.cancel();
+    _pauseCoalesceTimer?.cancel();
+    _pauseCoalesceTimer = null;
     unawaited(_stopMotion(resetDetector: true));
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
@@ -1270,8 +1315,106 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return;
     }
     ref.read(clientSyncProvider.notifier).onResumed();
+
+    final wasSuspended = _recoverySuspendedForNonForeground;
+    _recoverySuspendedForNonForeground = false;
+
+    final reconnecting = client.state == SocketClientState.reconnecting ||
+        client.state == SocketClientState.connecting;
+
+    if (reconnecting && wasSuspended) {
+      await _resumeReconnectingClientAfterSustainedPause(client);
+      return;
+    }
+
+    if (reconnecting && !wasSuspended) {
+      // Brief inactive coalesce — grace untouched; keep recovery armed.
+      if (_clientRecoveryTimer == null) {
+        _startClientRecoveryOrchestration();
+      }
+      return;
+    }
+
     final store = await ref.read(gameResumeStoreProvider.future);
     await syncOrReconnectSession(client: client, resume: store.load());
+  }
+
+  /// RESET grace, re-probe mDNS: live → reconnect+SYNC; else restart recovery.
+  Future<void> _resumeReconnectingClientAfterSustainedPause(
+    GameSocketClient client,
+  ) async {
+    client.resetDisconnectClock();
+    _clientDisconnectStartedAt = DateTime.now();
+
+    final roomId = await _resolveClientRoomId();
+    if (!mounted || roomId == null) {
+      _startClientRecoveryOrchestration();
+      return;
+    }
+
+    final browser = ref.read(mdnsBrowserProvider);
+    if (!browser.isBrowsing) {
+      await browser.start();
+    }
+    final controller = ref.read(hostRoomControllerProvider);
+    final live = findLiveRoomAdvertisement(
+      roomId: roomId,
+      rooms: browser.currentRooms,
+      excludeHost: controller.hostLanIp,
+      excludePort: controller.port,
+    );
+
+    switch (planClientResumeAfterSustainedPause(liveAd: live)) {
+      case PauseGatedClientResumePlan.reconnectToLiveHost:
+        await _reconnectToEndpoint(live!.hostIp, live.port);
+      case PauseGatedClientResumePlan.restartRecoveryGrace:
+        _startClientRecoveryOrchestration();
+    }
+  }
+
+  /// Host/acting-host resume heal toward original/live peer ads.
+  Future<void> _healHostingOnResume() async {
+    if (!mounted ||
+        !_isHost ||
+        _resumingAsClient ||
+        _intentionalHostExit ||
+        _suppressSuccessionAfterDemote) {
+      return;
+    }
+    final controller = ref.read(hostRoomControllerProvider);
+    final room = controller.room;
+    if (room == null || !_isResumablePhase(room.gamePhase)) {
+      return;
+    }
+
+    final browser = ref.read(mdnsBrowserProvider);
+    if (!browser.isBrowsing) {
+      await browser.start();
+    }
+    final peer = findLiveRoomAdvertisement(
+      roomId: room.roomId,
+      rooms: browser.currentRooms,
+      excludeHost: controller.hostLanIp,
+      excludePort: controller.port,
+    );
+    if (peer == null) {
+      return;
+    }
+
+    final yieldToPeer = shouldYieldHostingOnResume(
+      localPlayerId: room.hostPlayerId,
+      originalHostPlayerId: room.originalHostPlayerId,
+      turnSequence: List<String>.from(room.turnSequence),
+      hasPeerAd: true,
+      peerHostPlayerId: null,
+    );
+    if (!yieldToPeer) {
+      return;
+    }
+
+    _suppressSuccessionAfterDemote = true;
+    await controller.yieldHostingToPeer(host: peer.hostIp, port: peer.port);
+    // Room cleared → [_buildHost] post-frame resumes as client + reconnect banner.
   }
 
   bool _isClientSessionActive() {
@@ -1301,12 +1444,31 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void _onAppPaused() {
     _appInForeground = false;
     unawaited(_stopMotion(resetDetector: true));
+    _pauseCoalesceTimer?.cancel();
+    _pauseCoalesceTimer = Timer(
+      const Duration(milliseconds: kLifecyclePauseCoalesceMs),
+      _onSustainedNonForeground,
+    );
     if (!_isHost) {
       ref.read(clientSyncProvider.notifier).onPaused();
     }
   }
 
+  /// After coalesce, still non-fg → cancel recovery timer; keep grace clock.
+  void _onSustainedNonForeground() {
+    if (!shouldCancelRecoveryAfterPauseCoalesce(
+      stillNonForeground: !_appInForeground,
+    )) {
+      return;
+    }
+    _clientRecoveryTimer?.cancel();
+    _clientRecoveryTimer = null;
+    _recoverySuspendedForNonForeground = true;
+  }
+
   void _onAppResumed() {
+    _pauseCoalesceTimer?.cancel();
+    _pauseCoalesceTimer = null;
     _appInForeground = true;
     // Transient sensor glitches latch [_motionDegraded]; retry on resume so
     // pickup/tilt does not stay dead for the whole GameScreen lifetime.
@@ -1321,7 +1483,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (phase != null) {
       _syncMotionSubscription(phase);
     }
-    if (!_isHost) {
+    if (_isHost) {
+      unawaited(_healHostingOnResume());
+    } else {
       _onClientResumed();
     }
   }

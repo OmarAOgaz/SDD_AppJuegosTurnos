@@ -176,6 +176,27 @@ void main() {
       await client.disconnect();
     });
 
+    test('resetDisconnectClock refreshes grace while reconnecting', () async {
+      final client = GameSocketClient(
+        deviceId: 'device-test',
+        reconnectDelay: const Duration(milliseconds: 5),
+        connect: (uri) async => throw Exception('no route'),
+      );
+
+      await client.connect(host: '10.0.0.1', port: 9);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(client.state, SocketClientState.reconnecting);
+      final first = client.disconnectStartedAt;
+      expect(first, isNotNull);
+
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final resetAt = DateTime.now();
+      client.resetDisconnectClock(resetAt);
+      expect(client.disconnectStartedAt, resetAt);
+
+      await client.disconnect();
+    });
+
     test('unreachable host still reconnecting after host-loss grace window',
         () async {
       final client = GameSocketClient(
