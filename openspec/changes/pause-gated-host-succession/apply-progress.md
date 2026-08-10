@@ -5,7 +5,7 @@
 **Chain strategy**: stacked-to-main
 **Next unit**: none (apply complete → verify)
 **Status**: Unit 4 done — all apply tasks complete (Units 1–3 merged via PR #93 / #95 / #97)
-**PR**: (this batch)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/99
 **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/98
 **Branch**: `docs/pause-gated-succession-spec-merge`
 
@@ -49,7 +49,9 @@
 ### Unit 4 (this batch → main)
 
 - [x] 4.3 Merged deltas into main specs (`host-succession`, `lan-discovery`, `app-lifecycle-sync`); archive deferred until verify PASS
-
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/99
+- **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/98
+- **Branch**: `docs/pause-gated-succession-spec-merge`
 ## Spec merge summary
 
 | Domain | Action | Details |
