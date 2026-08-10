@@ -108,3 +108,36 @@ While backgrounded, clients MUST stop local timer interpolation. On `resumed` af
 - GIVEN the client was backgrounded during a turn
 - WHEN it resumes and receives `GAME_STATE`
 - THEN the UI shows the current phase from state without replaying past warning flashes
+
+### Requirement: FGS keep-alive does not confer succession eligibility
+
+Android FGS MUST keep LAN/WebSocket continuity while backgrounded but MUST NOT authorize succession or become-acting-host. FGS scope MUST NOT expand for this change. Pause-gated succession claims are Android-focused; iOS background hosting and iOS FGS remain out of scope.
+
+#### Scenario: FGS under lock does not elect
+
+- GIVEN an Android client with FGS while `paused`
+- WHEN browse falsely omits room R
+- THEN the device MUST NOT become acting host solely because FGS kept the process alive
+
+#### Scenario: iOS claims unchanged
+
+- GIVEN pause-gated succession rules
+- WHEN asserting platform behavior
+- THEN the system MUST NOT claim the same lock/FGS gate on iOS
+- AND iOS FGS remains out of scope
+
+### Requirement: Pause and resume constrain host-loss recovery
+
+Non-foreground MUST stop or no-op succession-capable recovery. On `resumed`, the device MUST follow `host-succession` resume rules (grace RESET, mDNS re-probe, reconnect-or-elect). Host and client GameScreen resume MUST run split-brain heal when applicable. Brief `inactive` MUST coalesce (~300–500 ms) before canceling succession-capable recovery.
+
+#### Scenario: Pause stops succession-capable recovery
+
+- GIVEN recovery is armed
+- WHEN the app stays non-foreground past the coalesce window
+- THEN succession-capable recovery MUST stop or no-op until `resumed`
+
+#### Scenario: Resume applies reset grace path
+
+- GIVEN recovery was deferred while non-foreground
+- WHEN the app becomes `resumed`
+- THEN grace resets and mDNS is re-probed before any succession decision
