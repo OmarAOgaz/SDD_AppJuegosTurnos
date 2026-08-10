@@ -1,13 +1,13 @@
 # Apply Progress: pause-gated-host-succession
 
 **Mode**: Standard (strict_tdd: false)
-**Batch**: Unit 3 / PR3 — GameScreen coalesce/pause/resume/heal/suppress + banner + verification
+**Batch**: Unit 4 / PR4 — Main-spec merge for three deltas
 **Chain strategy**: stacked-to-main
-**Next unit**: 4 (main-spec merge / archive) or sdd-verify
-**Status**: Units 1–3 done — Phase 1–3 complete; Phase 4.1–4.2 done; 4.3 residual
-**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/97
-**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/96
-**Branch**: `feat/pause-gated-succession-gamescreen`
+**Next unit**: none (apply complete → verify)
+**Status**: Unit 4 done — all apply tasks complete (Units 1–3 merged via PR #93 / #95 / #97)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/99
+**Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/98
+**Branch**: `docs/pause-gated-succession-spec-merge`
 
 ## Completed Tasks
 
@@ -32,7 +32,7 @@
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/94
 - **Branch**: `feat/pause-gated-succession-heal`
 
-### Unit 3 (this batch → main)
+### Unit 3 (PR #97 → main)
 
 - [x] 3.1 Coalesce ~400ms: brief inactive does not cancel/reset grace; sustained non-fg cancels recovery timer
 - [x] 3.2 Resume reconnecting client: RESET disconnect clock; mDNS re-probe; live → reconnect+SYNC+banner; absent → restart recovery
@@ -46,14 +46,26 @@
 - **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/96
 - **Branch**: `feat/pause-gated-succession-gamescreen`
 
+### Unit 4 (this batch → main)
+
+- [x] 4.3 Merged deltas into main specs (`host-succession`, `lan-discovery`, `app-lifecycle-sync`); archive deferred until verify PASS
+- **PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/99
+- **Issue**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/98
+- **Branch**: `docs/pause-gated-succession-spec-merge`
+## Spec merge summary
+
+| Domain | Action | Details |
+|--------|--------|---------|
+| `host-succession` | MODIFIED + ADDED | Foreground-gated short grace + deferred unlock; non-fg no elect; resume RESET+re-probe; split-brain heal |
+| `lan-discovery` | MODIFIED + ADDED | Host-liveness absence only under fg/resume grace; resume mDNS re-probe prefers reconnect |
+| `app-lifecycle-sync` | ADDED | FGS keep-alive ≠ succession eligibility; pause/resume constrain host-loss recovery |
+
 ## Remaining
 
-### Unit 4 (verify / archive)
-
-- [ ] 4.3 Archive/merge deltas into main specs (`host-succession`, `lan-discovery`, `app-lifecycle-sync`) — deferred to keep PR3 reviewable
+- None for apply. Next: **sdd-verify** (device checklist + archive on PASS).
 
 ## Notes
 
-- Pure helpers in `pause_gated_lifecycle.dart` keep GameScreen wiring thin and unit-testable.
-- When mDNS ads lack `hostPlayerId`, host heal yields if local is not original (prefer live ads); tie-break with known peer id still covered by Unit 2 + helper tests.
-- Main-spec merge (4.3) left as residual for archive / follow-up PR.
+- No product code in Unit 4.
+- Review budget: three main specs + OpenSpec task/progress docs only.
+- Change deltas under `openspec/changes/pause-gated-host-succession/specs/` retained until archive.

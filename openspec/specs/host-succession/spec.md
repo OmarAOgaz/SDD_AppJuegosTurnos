@@ -52,11 +52,11 @@ Host succession and reclaim MAY use `HOST_MIGRATED` and/or state-transfer envelo
 
 ### Requirement: Host-loss uses short grace then election
 
-When peers detect mid-game **host loss** (host process/socket dead and/or host seat unreachable—not a brief client blip to a live host), the system MUST run peer-local succession after a **short grace period of at most 3 seconds**, electing the next connected `turnSequence` seat or ending the game per existing election rules. The system MUST NOT require the full client reconnect window (~30s) to elapse before succession on this path.
+When **foreground** peers detect mid-game **host loss** (host process/socket dead and/or host seat unreachable—not a brief client blip to a live host), the system MUST run peer-local succession after a **short grace period of at most 3 seconds**, electing the next connected `turnSequence` seat or ending the game per existing election rules. The system MUST NOT require the full client reconnect window (~30s) to elapse before succession on this path. The foreground ≤3s host-loss path MUST NOT regress. While non-foreground, peers MUST NOT run succession; deferred unlock uses RESET grace on resume per the resume requirements below.
 
 #### Scenario: Host app killed — succession without 30s freeze
 
-- GIVEN a game is `IN_GAME` with at least one other connected seat
+- GIVEN foreground peers in `IN_GAME` with at least one other connected seat
 - WHEN the host app is force-stopped
 - THEN within ≤3s peers elect an acting host (or END_GAME if none connected)
 - AND the active player can pass turn once the acting host is authoritative
@@ -68,6 +68,70 @@ When peers detect mid-game **host loss** (host process/socket dead and/or host s
 - WHEN only a client socket drops briefly
 - THEN that client MAY use the existing ~30s reconnect + heartbeat + SYNC path
 - AND succession MUST NOT run solely because of that client drop
+
+#### Scenario: Deferred succession after unlock is allowed
+
+- GIVEN the host died while a peer was non-foreground
+- WHEN that peer becomes `resumed` and R remains absent for a full reset grace
+- THEN succession MAY complete after that grace
+- AND succession MUST NOT complete while the peer is non-foreground
+
+### Requirement: Non-foreground MUST NOT run peer-local succession
+
+While non-foreground (`paused` / `inactive` / `hidden`), the device MUST NOT start or complete peer-local succession or become acting host. Brief `inactive` MUST coalesce (~300–500 ms); notification-shade flicker MUST NOT thrash the host-loss grace clock.
+
+#### Scenario: Lock does not elect
+
+- GIVEN an Android client under FGS while `paused`
+- WHEN browse omits room R for at least the host-loss grace
+- THEN that device MUST NOT become acting host
+
+#### Scenario: Shade inactive coalesced
+
+- GIVEN a brief `inactive` (~≤500 ms) then `resumed`
+- WHEN that flicker ends
+- THEN grace MUST NOT reset solely from that flicker
+
+### Requirement: Resume resets grace and re-probes before succession
+
+On `resumed` for a reconnecting in-game client, the system MUST RESET the host-loss grace clock and re-probe mDNS for room R: if R is live, reconnect and SYNC; otherwise start a full foreground grace before succession. Host death while the peer was locked MAY defer succession until unlock.
+
+#### Scenario: Resume finds live host
+
+- GIVEN room R is advertised on LAN
+- WHEN a reconnecting in-game client becomes `resumed`
+- THEN grace resets, the client reconnects and SYNCs
+- AND succession MUST NOT run while R remains advertised
+
+#### Scenario: Resume after true host death
+
+- GIVEN room R is absent after the resume mDNS probe
+- WHEN a reconnecting in-game client becomes `resumed`
+- THEN grace starts at zero
+- AND succession MAY run only after a full foreground grace with R still absent
+
+### Requirement: Split-brain heal prefers original host or live ads
+
+On `resumed`, if this device is hosting or acting-hosting room R and browse shows R elsewhere (exclude self), the system MUST prefer the original host or other live ads: demote, reconnect to the same seat, and show a reconnect/heal banner (MUST NOT be silent-only). When two acting hosts are neither the original, the higher `turnSequence` index MUST demote toward the lower. After demotion, if TCP fails while live ads remain, the device MUST client-retry only and MUST NOT immediately re-run succession solely for that TCP failure.
+
+#### Scenario: Demote to original ads
+
+- GIVEN device B is acting-hosting R and ads resolve at A (exclude B)
+- WHEN B becomes `resumed`
+- THEN B demotes, reconnects to its prior seat, and shows a heal/reconnect banner
+
+#### Scenario: Dual acting-host tie-break
+
+- GIVEN devices B and C both act as host for R and neither is the original
+- WHEN heal runs
+- THEN the higher-`turnSequence` device demotes toward the lower-`turnSequence` peer
+
+#### Scenario: Post-demote TCP fail
+
+- GIVEN live ads remain after demotion
+- WHEN TCP to the preferred peer fails
+- THEN the demoted device MUST client-retry
+- AND MUST NOT immediately re-succeed solely for that failure
 
 ### Requirement: Reconnect banner while mDNS shows live host
 

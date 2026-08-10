@@ -50,4 +50,4 @@ Chain strategy: stacked-to-main
 
 - [x] 4.1 Cover MUST scenarios via unit/widget: shade coalesce; resume live host; resume host death; demote+banner; tie-break; post-demote TCP; deferred unlock succession; pause stops recovery
 - [x] 4.2 Manual E2E checklist: lock+FGS no false acting host; unlock+live R reconnect banner; dual host demote+banner
-- [ ] 4.3 Archive/merge deltas into main specs (`host-succession`, `lan-discovery`, `app-lifecycle-sync`) when change archives — keep as merge unit with PR3 or follow-up archive PR
+- [x] 4.3 Archive/merge deltas into main specs (`host-succession`, `lan-discovery`, `app-lifecycle-sync`) when change archives — keep as merge unit with PR3 or follow-up archive PR (merge done in Unit 4; archive deferred to verify PASS)

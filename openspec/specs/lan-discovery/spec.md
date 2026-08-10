@@ -81,7 +81,7 @@ The Home room list MUST mark rooms as resumable when the local resume store matc
 
 ### Requirement: mDNS indicates host liveness for in-game client recovery
 
-For in-game client recovery, presence of an advertisement for canonical `roomId` R MUST be treated as evidence the authoritative host (original or acting) is still serving R. Absence of R on LAN for at least `kHostLossGraceMs` while in-progress MAY trigger peer-local host succession per `host-succession`.
+For in-game client recovery, presence of an advertisement for canonical `roomId` R MUST be treated as evidence the authoritative host (original or acting) is still serving R. Absence of R on LAN for at least `kHostLossGraceMs` while in-progress MAY trigger peer-local host succession per `host-succession` **only under foreground / resume-relative grace** (grace RESET on resume; non-foreground absence MUST NOT alone complete succession).
 
 #### Scenario: Host alive — client blip must not trigger succession
 
@@ -89,6 +89,23 @@ For in-game client recovery, presence of an advertisement for canonical `roomId`
 - WHEN a client loses its socket but R remains advertised
 - THEN that client MUST NOT run peer-local host succession
 - AND MUST attempt in-game reconnect to R's endpoint
+
+#### Scenario: Background false absence must not complete succession
+
+- GIVEN a client is non-foreground under FGS
+- WHEN browse omits R for at least the host-loss grace
+- THEN succession MUST NOT complete solely from that absence
+
+### Requirement: Resume re-probes mDNS for in-game recovery
+
+On `resumed` during in-game client recovery, the system MUST re-probe mDNS for room R before choosing reconnect versus succession. Live ads MUST prefer reconnect over succession.
+
+#### Scenario: Resume re-probe finds R
+
+- GIVEN a reconnecting client becomes `resumed`
+- WHEN browse resolves R
+- THEN the client MUST reconnect
+- AND MUST NOT start succession while R is advertised
 
 ### Requirement: mDNS browse evicts lost services from cache
 
