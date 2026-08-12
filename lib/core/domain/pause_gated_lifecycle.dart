@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import '../constants/network_constants.dart';
 import '../models/discovered_room.dart';
 import 'host_succession_coordinator.dart';
 
@@ -8,6 +11,64 @@ enum PauseGatedClientResumePlan {
 
   /// Host still absent — restart recovery; succession only after full fg grace.
   restartRecoveryGrace,
+}
+
+/// Owns the pause coalesce [Timer] so brief shade/`inactive` does not cancel
+/// client recovery, while sustained non-foreground does.
+///
+/// Extracted from [GameScreen] for `fakeAsync` coverage of the Timer path.
+class PauseCoalesceGate {
+  PauseCoalesceGate({
+    required this.onSustainedNonForeground,
+    this.coalesceDuration = const Duration(
+      milliseconds: kLifecyclePauseCoalesceMs,
+    ),
+  });
+
+  /// Fired when coalesce elapses and the app is still non-foreground.
+  final void Function() onSustainedNonForeground;
+
+  /// Coalesce window (default [kLifecyclePauseCoalesceMs]).
+  final Duration coalesceDuration;
+
+  bool _isForeground = true;
+  Timer? _coalesceTimer;
+
+  /// Whether the UI is treated as foreground for recovery/succession gates.
+  bool get isForeground => _isForeground;
+
+  /// Whether a coalesce timer is armed (tests / diagnostics).
+  bool get hasPendingCoalesce => _coalesceTimer != null;
+
+  /// App entered non-foreground — start (or restart) the coalesce window.
+  void onPaused() {
+    _isForeground = false;
+    _coalesceTimer?.cancel();
+    _coalesceTimer = Timer(coalesceDuration, _onCoalesceElapsed);
+  }
+
+  /// App returned to foreground — cancel coalesce; do not fire sustained cancel.
+  void onResumed() {
+    _coalesceTimer?.cancel();
+    _coalesceTimer = null;
+    _isForeground = true;
+  }
+
+  void _onCoalesceElapsed() {
+    _coalesceTimer = null;
+    if (!shouldCancelRecoveryAfterPauseCoalesce(
+      stillNonForeground: !_isForeground,
+    )) {
+      return;
+    }
+    onSustainedNonForeground();
+  }
+
+  /// Cancel pending coalesce without changing foreground state.
+  void dispose() {
+    _coalesceTimer?.cancel();
+    _coalesceTimer = null;
+  }
 }
 
 /// Whether the recovery timer should be canceled after the pause coalesce window.

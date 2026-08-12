@@ -153,9 +153,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   TurnInfoPresentation? _activePresentation;
   Timer? _presentationTimer;
   bool _panelOpen = false;
-  bool _appInForeground = true;
-  /// Coalesce brief inactive/shade before canceling succession-capable recovery.
-  Timer? _pauseCoalesceTimer;
+  /// Pause coalesce + foreground flag for recovery/succession gates.
+  late final PauseCoalesceGate _pauseCoalesceGate = PauseCoalesceGate(
+    onSustainedNonForeground: _onSustainedNonForeground,
+  );
+  bool get _appInForeground => _pauseCoalesceGate.isForeground;
   /// True after sustained non-fg canceled the recovery timer (grace kept).
   bool _recoverySuspendedForNonForeground = false;
   bool _motionDegraded = false;
@@ -1124,8 +1126,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void dispose() {
     _uiTick?.cancel();
     _presentationTimer?.cancel();
-    _pauseCoalesceTimer?.cancel();
-    _pauseCoalesceTimer = null;
+    _pauseCoalesceGate.dispose();
     unawaited(_stopMotion(resetDetector: true));
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
     unawaited(_socketMessageSub?.cancel() ?? Future<void>.value());
@@ -1442,13 +1443,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   void _onAppPaused() {
-    _appInForeground = false;
+    _pauseCoalesceGate.onPaused();
     unawaited(_stopMotion(resetDetector: true));
-    _pauseCoalesceTimer?.cancel();
-    _pauseCoalesceTimer = Timer(
-      const Duration(milliseconds: kLifecyclePauseCoalesceMs),
-      _onSustainedNonForeground,
-    );
     if (!_isHost) {
       ref.read(clientSyncProvider.notifier).onPaused();
     }
@@ -1456,20 +1452,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   /// After coalesce, still non-fg → cancel recovery timer; keep grace clock.
   void _onSustainedNonForeground() {
-    if (!shouldCancelRecoveryAfterPauseCoalesce(
-      stillNonForeground: !_appInForeground,
-    )) {
-      return;
-    }
     _clientRecoveryTimer?.cancel();
     _clientRecoveryTimer = null;
     _recoverySuspendedForNonForeground = true;
   }
 
   void _onAppResumed() {
-    _pauseCoalesceTimer?.cancel();
-    _pauseCoalesceTimer = null;
-    _appInForeground = true;
+    _pauseCoalesceGate.onResumed();
     // Transient sensor glitches latch [_motionDegraded]; retry on resume so
     // pickup/tilt does not stay dead for the whole GameScreen lifetime.
     if (_motionDegraded) {
