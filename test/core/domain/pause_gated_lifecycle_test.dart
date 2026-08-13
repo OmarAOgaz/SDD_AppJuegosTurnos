@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:turnos_juegos/core/domain/host_heal_compare.dart';
 import 'package:turnos_juegos/core/domain/pause_gated_lifecycle.dart';
 import 'package:turnos_juegos/core/models/discovered_room.dart';
 
@@ -42,66 +43,275 @@ void main() {
     });
   });
 
-  group('shouldYieldHostingOnResume', () {
-    test('demote when acting host sees live ads and is not original', () {
-      expect(
-        shouldYieldHostingOnResume(
-          localPlayerId: 'p2',
-          originalHostPlayerId: 'p1',
-          turnSequence: const ['p1', 'p2', 'p3'],
-          hasPeerAd: true,
-          peerHostPlayerId: null,
-        ),
-        isTrue,
-      );
+  group('parseHostPlatformToken / parseHostCurrentRound', () {
+    test('platform tokens and missing → other', () {
+      expect(parseHostPlatformToken('android'), HostPlatformToken.android);
+      expect(parseHostPlatformToken('ios'), HostPlatformToken.ios);
+      expect(parseHostPlatformToken('other'), HostPlatformToken.other);
+      expect(parseHostPlatformToken(null), HostPlatformToken.other);
+      expect(parseHostPlatformToken(''), HostPlatformToken.other);
+      expect(parseHostPlatformToken('ANDROID'), HostPlatformToken.android);
     });
 
-    test('original host keeps authority when peer ads appear', () {
-      expect(
-        shouldYieldHostingOnResume(
-          localPlayerId: 'p1',
-          originalHostPlayerId: 'p1',
-          turnSequence: const ['p1', 'p2', 'p3'],
-          hasPeerAd: true,
-          peerHostPlayerId: null,
-        ),
-        isFalse,
-      );
+    test('currentRound missing/bad → 0', () {
+      expect(parseHostCurrentRound(null), 0);
+      expect(parseHostCurrentRound(''), 0);
+      expect(parseHostCurrentRound('x'), 0);
+      expect(parseHostCurrentRound('-1'), 0);
+      expect(parseHostCurrentRound('3'), 3);
+      expect(parseHostCurrentRound(2), 2);
     });
+  });
 
-    test('dual acting-host tie-break uses peer id when known', () {
-      expect(
-        shouldYieldHostingOnResume(
-          localPlayerId: 'p3',
-          originalHostPlayerId: 'p1',
-          turnSequence: const ['p1', 'p2', 'p3'],
-          hasPeerAd: true,
-          peerHostPlayerId: 'p2',
-        ),
-        isTrue,
-      );
-      expect(
-        shouldYieldHostingOnResume(
-          localPlayerId: 'p2',
-          originalHostPlayerId: 'p1',
-          turnSequence: const ['p1', 'p2', 'p3'],
-          hasPeerAd: true,
-          peerHostPlayerId: 'p3',
-        ),
-        isFalse,
-      );
-    });
-
+  group('shouldYieldDualHostHeal / shouldYieldHostingOnResume', () {
     test('no peer ad → do not yield', () {
       expect(
         shouldYieldHostingOnResume(
+          hasPeerAd: false,
           localPlayerId: 'p2',
           originalHostPlayerId: 'p1',
-          turnSequence: const ['p1', 'p2'],
-          hasPeerAd: false,
+          localPlatform: 'android',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.2:4242',
+          peerPlatform: 'ios',
+          peerCurrentRound: 9,
+          peerEndpoint: '10.0.0.3:4242',
         ),
         isFalse,
       );
+    });
+
+    test('original host keeps when peer ads appear', () {
+      expect(
+        shouldYieldHostingOnResume(
+          hasPeerAd: true,
+          localPlayerId: 'p1',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'ios',
+          localCurrentRound: 0,
+          localEndpoint: '10.0.0.1:1',
+          peerPlatform: 'android',
+          peerCurrentRound: 99,
+          peerEndpoint: '10.0.0.9:9999',
+        ),
+        isFalse,
+      );
+    });
+
+    test('Android keeps over non-Android (antisymmetric)', () {
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'android',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.2:4242',
+          peerPlatform: 'ios',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.3:4242',
+        ),
+        isFalse,
+      );
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'ios',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.3:4242',
+          peerPlatform: 'android',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.2:4242',
+        ),
+        isTrue,
+      );
+    });
+
+    test('higher currentRound wins (antisymmetric)', () {
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 3,
+          localEndpoint: '10.0.0.2:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.3:4242',
+        ),
+        isFalse,
+      );
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.3:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 3,
+          peerEndpoint: '10.0.0.2:4242',
+        ),
+        isTrue,
+      );
+    });
+
+    test('lexicographic hostIp:port — greater keeps', () {
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.9:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.2:4242',
+        ),
+        isFalse,
+      );
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.2:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.9:4242',
+        ),
+        isTrue,
+      );
+    });
+
+    test('full key tie — local keeps on both sides', () {
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 2,
+          localEndpoint: '10.0.0.5:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 2,
+          peerEndpoint: '10.0.0.5:4242',
+        ),
+        isFalse,
+      );
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 2,
+          localEndpoint: '10.0.0.5:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 2,
+          peerEndpoint: '10.0.0.5:4242',
+        ),
+        isFalse,
+      );
+    });
+
+    test('missing TXT platform/round defaults (non-Android, round 0)', () {
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'android',
+          localCurrentRound: 0,
+          localEndpoint: '10.0.0.2:4242',
+          peerPlatform: null,
+          peerCurrentRound: null,
+          peerEndpoint: '10.0.0.3:4242',
+        ),
+        isFalse,
+      );
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 0,
+          localEndpoint: '10.0.0.3:4242',
+          peerPlatform: null,
+          peerCurrentRound: null,
+          peerEndpoint: '10.0.0.2:4242',
+        ),
+        // Same platform class (other), same round 0 → lex: 10.0.0.3 > 10.0.0.2 → keep
+        isFalse,
+      );
+    });
+
+    test('turnSequence ignored — divergent seats do not demote by index', () {
+      // Same platform/round; local endpoint loses lex → yields by endpoint only.
+      expect(
+        shouldYieldHostingOnResume(
+          hasPeerAd: true,
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.1:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.9:4242',
+        ),
+        isTrue,
+      );
+      // Local would have higher turnSequence index historically, but keeps when
+      // endpoint is lexicographically greater.
+      expect(
+        shouldYieldHostingOnResume(
+          hasPeerAd: true,
+          localPlayerId: 'p3',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.9:4242',
+          peerPlatform: 'other',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.1:4242',
+        ),
+        isFalse,
+      );
+    });
+
+    test('ios vs other is platform-class tie (round/endpoint decide)', () {
+      expect(
+        shouldYieldDualHostHeal(
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'ios',
+          localCurrentRound: 2,
+          localEndpoint: '10.0.0.2:1',
+          peerPlatform: 'other',
+          peerCurrentRound: 1,
+          peerEndpoint: '10.0.0.9:9',
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('DiscoveredRoom platform/currentRound', () {
+    test('copyWith preserves and clears optional heal fields', () {
+      const room = DiscoveredRoom(
+        roomId: 'r1',
+        displayName: 'A',
+        hostIp: '1.1.1.1',
+        port: 9,
+        platform: 'android',
+        currentRound: 4,
+      );
+      expect(room.endpointKey, '1.1.1.1:9');
+      final kept = room.copyWith(displayName: 'B');
+      expect(kept.platform, 'android');
+      expect(kept.currentRound, 4);
+      final cleared = room.copyWith(clearPlatform: true, clearCurrentRound: true);
+      expect(cleared.platform, isNull);
+      expect(cleared.currentRound, isNull);
     });
   });
 

@@ -131,7 +131,7 @@ void main() {
       );
     });
 
-    test('dual-acting: higher turnSequence index yields to lower', () {
+    test('dual-neither: turnSequence ignored — local keeps', () {
       expect(
         HostSuccessionCoordinator.shouldYieldActingHost(
           localPlayerId: 'p3',
@@ -139,7 +139,7 @@ void main() {
           turnSequence: sequence,
           peerHostPlayerId: 'p2',
         ),
-        isTrue,
+        isFalse,
       );
       expect(
         HostSuccessionCoordinator.shouldYieldActingHost(
@@ -164,7 +164,7 @@ void main() {
       );
     });
 
-    test('keeps when seat missing from turnSequence', () {
+    test('dual-neither with null original — local keeps (resume helper owns heal)', () {
       expect(
         HostSuccessionCoordinator.shouldYieldActingHost(
           localPlayerId: 'p2',

@@ -2,7 +2,7 @@ import 'dart:async';
 
 import '../constants/network_constants.dart';
 import '../models/discovered_room.dart';
-import 'host_succession_coordinator.dart';
+import 'host_heal_compare.dart';
 
 /// Client resume plan after a sustained non-foreground period while reconnecting.
 enum PauseGatedClientResumePlan {
@@ -90,33 +90,33 @@ PauseGatedClientResumePlan planClientResumeAfterSustainedPause({
 
 /// Whether a hosting/acting GameScreen should yield on resume heal.
 ///
-/// When [peerHostPlayerId] is known, uses [HostSuccessionCoordinator.shouldYieldActingHost].
-/// When the peer id is missing from the ad, prefer live ads only if this device
-/// is not the original host (demote-to-original / live-ad preference).
+/// Delegates dual-neither-original compare to [shouldYieldDualHostHeal]
+/// (original → Android → round → lex endpoint → local keep).
+/// Does not use `turnSequence` or peer host player id.
 bool shouldYieldHostingOnResume({
+  required bool hasPeerAd,
   required String localPlayerId,
   required String? originalHostPlayerId,
-  required List<String> turnSequence,
-  required bool hasPeerAd,
-  String? peerHostPlayerId,
+  required String localPlatform,
+  required int localCurrentRound,
+  required String localEndpoint,
+  required String? peerPlatform,
+  required int? peerCurrentRound,
+  required String peerEndpoint,
 }) {
   if (!hasPeerAd) {
     return false;
   }
-  final peerId = peerHostPlayerId?.trim() ?? '';
-  if (peerId.isNotEmpty) {
-    return HostSuccessionCoordinator.shouldYieldActingHost(
-      localPlayerId: localPlayerId,
-      originalHostPlayerId: originalHostPlayerId,
-      turnSequence: turnSequence,
-      peerHostPlayerId: peerId,
-    );
-  }
-  final original = originalHostPlayerId ?? '';
-  if (original.isEmpty) {
-    return true;
-  }
-  return localPlayerId != original;
+  return shouldYieldDualHostHeal(
+    localPlayerId: localPlayerId,
+    originalHostPlayerId: originalHostPlayerId,
+    localPlatform: localPlatform,
+    localCurrentRound: localCurrentRound,
+    localEndpoint: localEndpoint,
+    peerPlatform: peerPlatform,
+    peerCurrentRound: peerCurrentRound,
+    peerEndpoint: peerEndpoint,
+  );
 }
 
 /// Whether succession should be suppressed after heal demotion.

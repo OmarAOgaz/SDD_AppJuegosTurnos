@@ -7,6 +7,8 @@ class DiscoveredRoom {
     required this.port,
     this.source = RoomDiscoverySource.mdns,
     this.isResumable = false,
+    this.platform,
+    this.currentRound,
   });
 
   final String roomId;
@@ -18,7 +20,16 @@ class DiscoveredRoom {
   /// True when local resume store matches this [roomId] (no TTL).
   final bool isResumable;
 
+  /// mDNS TXT `platform` (`android` | `ios` | `other`); null when absent.
+  final String? platform;
+
+  /// mDNS TXT `currentRound`; null when absent/unparseable at browse time.
+  final int? currentRound;
+
   String get wsUrl => 'ws://$hostIp:$port/ws';
+
+  /// `hostIp:port` endpoint key for dual-host heal compare.
+  String get endpointKey => '$hostIp:$port';
 
   DiscoveredRoom copyWith({
     String? roomId,
@@ -27,6 +38,10 @@ class DiscoveredRoom {
     int? port,
     RoomDiscoverySource? source,
     bool? isResumable,
+    String? platform,
+    int? currentRound,
+    bool clearPlatform = false,
+    bool clearCurrentRound = false,
   }) {
     return DiscoveredRoom(
       roomId: roomId ?? this.roomId,
@@ -35,6 +50,9 @@ class DiscoveredRoom {
       port: port ?? this.port,
       source: source ?? this.source,
       isResumable: isResumable ?? this.isResumable,
+      platform: clearPlatform ? null : (platform ?? this.platform),
+      currentRound:
+          clearCurrentRound ? null : (currentRound ?? this.currentRound),
     );
   }
 }

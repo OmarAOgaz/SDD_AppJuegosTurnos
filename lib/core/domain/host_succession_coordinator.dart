@@ -96,15 +96,21 @@ class HostSuccessionCoordinator {
 
   /// Whether this acting host should yield to a peer advertising the same room.
   ///
-  /// Rules: prefer [originalHostPlayerId] — if peer is original → yield; if
-  /// local is original → keep. Otherwise yield iff local's `turnSequence`
-  /// index is greater than peer's (lowest index wins). Missing seats keep.
+  /// Original-prefer only: if peer is original → yield; if local is original →
+  /// keep. Dual-neither-original MUST NOT use `turnSequence` — callers must use
+  /// `shouldYieldHostingOnResume` / `shouldYieldDualHostHeal` with platform,
+  /// round, and endpoint keys. When neither is original, returns false (local
+  /// keeps) so this helper never mutual-yields on seat index.
+  ///
+  /// [turnSequence] is retained for call-site compatibility but ignored.
   static bool shouldYieldActingHost({
     required String localPlayerId,
     required String? originalHostPlayerId,
     required List<String> turnSequence,
     required String peerHostPlayerId,
   }) {
+    // Retained for API compatibility; dual heal uses shouldYieldDualHostHeal.
+    assert(turnSequence.isEmpty || turnSequence.isNotEmpty);
     if (localPlayerId == peerHostPlayerId) {
       return false;
     }
@@ -117,12 +123,8 @@ class HostSuccessionCoordinator {
         return false;
       }
     }
-    final localIndex = turnSequence.indexOf(localPlayerId);
-    final peerIndex = turnSequence.indexOf(peerHostPlayerId);
-    if (localIndex < 0 || peerIndex < 0) {
-      return false;
-    }
-    return localIndex > peerIndex;
+    // Dual-neither: do not demote by turnSequence. Resume heal owns that path.
+    return false;
   }
 
   /// Whether this seat should reclaim host after reconnecting to an acting host.
