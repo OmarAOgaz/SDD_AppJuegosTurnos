@@ -4,7 +4,7 @@
 **Batch**: Unit 3 / PR3 — DONE (ready for verify)
 **Branch**: `feat/stable-dual-host-gamescreen`
 **Issue**: #106
-**PR**: (pending link after open)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/107
 
 ## Completed (cumulative)
 
