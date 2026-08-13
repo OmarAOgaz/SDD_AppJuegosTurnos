@@ -1,9 +1,10 @@
 # Apply progress: stable-dual-host-tiebreak
 
 **Mode**: Standard (strict_tdd: false)
-**Batch**: Unit 1 / PR1
+**Batch**: Unit 1 / PR1 — DONE
 **Branch**: `feat/stable-dual-host-compare`
 **Issue**: #102
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/103
 
 ## Completed (this batch)
 
