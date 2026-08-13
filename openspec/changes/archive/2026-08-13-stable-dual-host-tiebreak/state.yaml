@@ -1,0 +1,63 @@
+name: stable-dual-host-tiebreak
+created: 2026-08-13
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/exploration.md
+  propose:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/proposal.md
+  spec:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/specs/
+  design:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/design.md
+  tasks:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/tasks.md
+  apply:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/apply-progress.md
+    notes: Stacked PRs #103 → #105 → #107
+  verify:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/verify-report.md
+    verdict: PASS WITH WARNINGS
+  archive:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/archive-report.md
+
+archive:
+  status: complete
+  archived_at: 2026-08-13
+  location: openspec/changes/archive/2026-08-13-stable-dual-host-tiebreak/
+  main_specs:
+    - openspec/specs/host-succession/spec.md
+    - openspec/specs/lan-discovery/spec.md
+  main_specs_merged_at: 1c3b65c
+  implementation_base: c6b64ce
+  prs:
+    - 103
+    - 105
+    - 107
+  archive_issue: 108
+  archive_pr: 109
+  verify_warnings:
+    - Demote+banner GameScreen orchestration PARTIAL (unit coverage)
+    - No dedicated MdnsBrowser TXT map unit test
+
+next_recommended: null
+cycle_closed: true
+last_updated: 2026-08-13
