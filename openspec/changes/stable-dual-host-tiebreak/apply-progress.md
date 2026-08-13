@@ -4,7 +4,7 @@
 **Batch**: Unit 2 / PR2 — DONE (pending merge)
 **Branch**: `feat/stable-dual-host-mdns-txt`
 **Issue**: #104
-**PR**: (set after open)
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/105
 
 ## Completed (cumulative)
 
