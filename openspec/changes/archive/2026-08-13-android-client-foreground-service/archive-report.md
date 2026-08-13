@@ -7,7 +7,7 @@
 **Status**: done — SDD cycle closed  
 **Implementation**: stacked PRs #85 → #87 → #89 → #91 on `main` @ `9e1c68f` (verify base `12d301f`)  
 **Related issues**: #84 / #86 / #88 / #90 (Unit deliverables); archive issue #110  
-**Archive PR**: (pending)
+**Archive PR**: #111
 
 ## Problem solved
 
