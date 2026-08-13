@@ -1,0 +1,67 @@
+name: android-client-foreground-service
+created: 2026-08-08
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/exploration.md
+  propose:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/proposal.md
+  spec:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/specs/
+  design:
+    status: complete
+    completed_at: 2026-08-08
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/design.md
+  tasks:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/tasks.md
+  apply:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/apply-progress.md
+    notes: Stacked PRs #85 → #87 → #89 → #91
+  verify:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/verify-report.md
+    verdict: PASS WITH WARNINGS
+  archive:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-android-client-foreground-service/archive-report.md
+
+archive:
+  status: complete
+  archived_at: 2026-08-13
+  location: openspec/changes/archive/2026-08-13-android-client-foreground-service/
+  main_specs:
+    - openspec/specs/app-lifecycle-sync/spec.md
+    - openspec/specs/turn-timer/spec.md
+    - openspec/specs/host-succession/spec.md
+    - openspec/specs/lan-transport/spec.md
+  main_specs_merged_at: Unit 4 / PR #91
+  implementation_base: 9e1c68f
+  verify_base: 12d301f
+  prs:
+    - 85
+    - 87
+    - 89
+    - 91
+  archive_issue: 110
+  archive_pr: null
+  verify_warnings:
+    - Device E2E checklist unsigned (hardware UNTESTED)
+    - Background keep-alive scenarios PARTIAL (3/14)
+
+next_recommended: pause-gated-host-succession archive (separate)
+cycle_closed: true
+last_updated: 2026-08-13
