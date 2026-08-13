@@ -40,7 +40,7 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: GameScreen heal wiring
 
-- [ ] 3.1 Wire `_healHostingOnResume` in `lib/features/game/game_screen.dart`: local platform token, `room.turnState.currentRound`, `"${hostLanIp}:${port}"`; peer from discovered room fields / endpoint.
+- [x] 3.1 Wire `_healHostingOnResume` in `lib/features/game/game_screen.dart`: local platform token, `room.turnState.currentRound`, `"${hostLanIp}:${port}"`; peer from discovered room fields / endpoint.
 
 ## Phase 4: Unit tests
 
@@ -51,5 +51,5 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Main-spec merge
 
-- [ ] 5.1 Apply delta into `openspec/specs/host-succession/spec.md` (stable ordered key; no turnSequence dual path).
-- [ ] 5.2 Apply delta into `openspec/specs/lan-discovery/spec.md` (required TXT `platform` + `currentRound`).
+- [x] 5.1 Apply delta into `openspec/specs/host-succession/spec.md` (stable ordered key; no turnSequence dual path).
+- [x] 5.2 Apply delta into `openspec/specs/lan-discovery/spec.md` (required TXT `platform` + `currentRound`).
