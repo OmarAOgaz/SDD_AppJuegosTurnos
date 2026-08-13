@@ -57,7 +57,7 @@ archive:
     - 99
     - 101
   archive_issue: 112
-  archive_pr: pending
+  archive_pr: 113
   verify_warnings:
     - Device E2E checklist unsigned (hardware UNTESTED)
     - Dual-acting GameScreen heal PARTIAL at verify — superseded by stable-dual-host-tiebreak (PR #109)

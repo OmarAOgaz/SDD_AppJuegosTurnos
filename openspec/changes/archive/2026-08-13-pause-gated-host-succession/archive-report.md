@@ -7,7 +7,7 @@
 **Status**: done — SDD cycle closed  
 **Implementation**: stacked PRs #93 → #95 → #97 → #99 on `main` (+ #101 PauseCoalesceGate)  
 **Related issues**: Unit deliverables via apply chain; archive issue #112  
-**Archive PR**: (pending docs PR)
+**Archive PR**: #113
 
 ## Problem solved
 
