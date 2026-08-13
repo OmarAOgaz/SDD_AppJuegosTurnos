@@ -107,5 +107,36 @@ void main() {
 
       expect(rooms, isEmpty);
     });
+
+    test('preserves optional platform and currentRound when marking resumable',
+        () {
+      const mdnsRoom = DiscoveredRoom(
+        roomId: 'room-heal',
+        displayName: 'Heal',
+        hostIp: '192.168.1.10',
+        port: 9000,
+        platform: 'android',
+        currentRound: 2,
+      );
+
+      final rooms = merger.merge(
+        mdnsRooms: const [mdnsRoom],
+        manualEndpoints: const [],
+        resume: const GameResumeEntry(
+          roomId: 'room-heal',
+          playerId: 'p1',
+          deviceId: 'd1',
+          host: '192.168.1.99',
+          port: 1111,
+        ),
+      );
+
+      final resumable = rooms.singleWhere((r) => r.roomId == 'room-heal');
+      expect(resumable.isResumable, isTrue);
+      expect(resumable.platform, 'android');
+      expect(resumable.currentRound, 2);
+      expect(resumable.hostIp, '192.168.1.10');
+      expect(resumable.port, 9000);
+    });
   });
 }

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/constants/network_constants.dart';
+import 'package:turnos_juegos/core/domain/host_heal_compare.dart';
 import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
 import 'package:turnos_juegos/core/lifecycle/foreground_service_bridge.dart';
@@ -17,6 +18,8 @@ class _FakeMdnsAdvertiser extends MdnsAdvertiser {
   String? lastRoomId;
   String? lastDisplayName;
   int? lastPort;
+  String? lastPlatform;
+  int? lastCurrentRound;
   int startCount = 0;
   int stopCount = 0;
 
@@ -25,11 +28,15 @@ class _FakeMdnsAdvertiser extends MdnsAdvertiser {
     required String roomId,
     required String displayName,
     required int port,
+    required String platform,
+    required int currentRound,
   }) async {
     startCount++;
     lastRoomId = roomId;
     lastDisplayName = displayName;
     lastPort = port;
+    lastPlatform = platform;
+    lastCurrentRound = currentRound;
   }
 
   @override
@@ -1503,6 +1510,131 @@ void main() {
         server.broadcasts.any((e) => e.type == MessageTypes.gameState),
         isTrue,
       );
+    });
+  });
+
+  group('HostRoomController mDNS platform/currentRound TXT', () {
+    test('startRoom advertises platform token and lobby currentRound 0',
+        () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+
+      expect(mdns.startCount, 1);
+      expect(mdns.lastPlatform, advertiseHostPlatformToken());
+      expect(mdns.lastCurrentRound, 0);
+      expect(
+        mdns.lastPlatform,
+        anyOf('android', 'ios', 'other'),
+      );
+    });
+
+    test('startGame re-advertises when currentRound becomes 1', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      expect(mdns.lastCurrentRound, 0);
+      final startsBefore = mdns.startCount;
+
+      expect(await controller.startGame(), isTrue);
+      // Allow unawaited re-advertise to complete.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(mdns.startCount, greaterThan(startsBefore));
+      expect(mdns.lastCurrentRound, 1);
+      expect(mdns.lastPlatform, advertiseHostPlatformToken());
+      expect(controller.room!.turnState.currentRound, 1);
+    });
+
+    test('startNextRound re-advertises updated currentRound', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      expect(controller.setVariableTurnOrder(true), isTrue);
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      expect(await controller.startGame(), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(mdns.lastCurrentRound, 1);
+
+      final hostId = controller.room!.hostPlayerId;
+      final guestId =
+          controller.room!.turnSequence.firstWhere((id) => id != hostId);
+      expect(controller.passTurn(hostId), isTrue);
+      expect(controller.passTurn(guestId), isTrue);
+      expect(controller.room!.gamePhase, GameRoomPhase.betweenRounds);
+      await Future<void>.delayed(Duration.zero);
+      // VTO round-close does not bump currentRound yet.
+      expect(mdns.lastCurrentRound, 1);
+      final startsBefore = mdns.startCount;
+
+      expect(controller.startNextRound(), isTrue);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.room!.turnState.currentRound, 2);
+      expect(mdns.startCount, greaterThan(startsBefore));
+      expect(mdns.lastCurrentRound, 2);
+      expect(mdns.lastPlatform, advertiseHostPlatformToken());
+    });
+
+    test('startFromSnapshot advertises snapshot currentRound', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final seed = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+      );
+      await seed.startRoom(displayName: 'Sala', hostDeviceId: 'host-device');
+      seed.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      final seedRoom = seed.room!;
+      expect(TurnEngine.startGame(seedRoom, 1000), isTrue);
+      seedRoom.turnState.currentRound = 3;
+      final snapshot = seed.exportRoomSnapshot()!;
+      final nextHost = seedRoom.turnSequence[1];
+      await seed.stopRoom(broadcastDiscarded: false);
+
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startFromSnapshot(
+        snapshot: snapshot,
+        actingHostPlayerId: nextHost,
+      );
+
+      expect(mdns.startCount, 1);
+      expect(mdns.lastCurrentRound, 3);
+      expect(mdns.lastPlatform, advertiseHostPlatformToken());
     });
   });
 }

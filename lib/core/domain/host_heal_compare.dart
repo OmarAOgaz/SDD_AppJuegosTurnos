@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 /// Wire / [DiscoveredRoom] platform token for dual-host heal compare.
 enum HostPlatformToken {
   android,
@@ -27,6 +29,19 @@ String hostPlatformTokenToWire(HostPlatformToken token) {
     case HostPlatformToken.other:
       return 'other';
   }
+}
+
+/// Advertise-time platform token from the current runtime (or overrides for tests).
+String advertiseHostPlatformToken({bool? isAndroid, bool? isIOS}) {
+  final android = isAndroid ?? Platform.isAndroid;
+  if (android) {
+    return hostPlatformTokenToWire(HostPlatformToken.android);
+  }
+  final ios = isIOS ?? Platform.isIOS;
+  if (ios) {
+    return hostPlatformTokenToWire(HostPlatformToken.ios);
+  }
+  return hostPlatformTokenToWire(HostPlatformToken.other);
 }
 
 /// Parses TXT / advertise `currentRound`. Missing/unparseable/negative → `0`.
