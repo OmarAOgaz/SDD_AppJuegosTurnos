@@ -1,0 +1,71 @@
+name: pause-gated-host-succession
+created: 2026-08-09
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/exploration.md
+  propose:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/proposal.md
+  spec:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/specs/
+  design:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/design.md
+  tasks:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/tasks.md
+  apply:
+    status: complete
+    completed_at: 2026-08-09
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/apply-progress.md
+    notes: Stacked PRs #93 → #95 → #97 → #99; coalesce follow-up #101
+  verify:
+    status: complete
+    completed_at: 2026-08-10
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/verify-report.md
+    verdict: PASS WITH WARNINGS
+  archive:
+    status: complete
+    completed_at: 2026-08-13
+    artifact: openspec/changes/archive/2026-08-13-pause-gated-host-succession/archive-report.md
+
+archive:
+  status: complete
+  archived_at: 2026-08-13
+  location: openspec/changes/archive/2026-08-13-pause-gated-host-succession/
+  main_specs:
+    - openspec/specs/host-succession/spec.md
+    - openspec/specs/lan-discovery/spec.md
+    - openspec/specs/app-lifecycle-sync/spec.md
+  main_specs_merged_at: Unit 4 / PR #99
+  implementation_base: b06d64f
+  verify_base: c1beeb6
+  prs:
+    - 93
+    - 95
+    - 97
+    - 99
+    - 101
+  archive_issue: 112
+  archive_pr: 113
+  verify_warnings:
+    - Device E2E checklist unsigned (hardware UNTESTED)
+    - Dual-acting GameScreen heal PARTIAL at verify — superseded by stable-dual-host-tiebreak (PR #109)
+    - Shade coalesce resolved via PauseCoalesceGate / PR #101
+  notes: |
+    Archive-time sync confirmed only; did not re-apply turnSequence dual-neither
+    tie-break (superseded by stable-dual-host-tiebreak ordered key).
+
+next_recommended: none
+cycle_closed: true
+last_updated: 2026-08-13
