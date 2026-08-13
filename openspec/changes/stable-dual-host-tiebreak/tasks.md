@@ -33,10 +33,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Discovery TXT + advertise refresh
 
-- [ ] 2.1 Extend `MdnsAdvertiser.start` (`lib/core/network/discovery/mdns_advertiser.dart`) TXT with `platform` + `currentRound`.
-- [ ] 2.2 Map TXT attrs in `MdnsBrowser` (`lib/core/network/discovery/mdns_browser.dart`) onto `DiscoveredRoom.platform` / `currentRound`.
-- [ ] 2.3 In `lib/server/host_room_controller.dart`, pass advertise token + `room.turnState.currentRound` on `start` / `startFromSnapshot` / `_readvertiseMdns`; re-advertise when `currentRound` changes (`startNextRound` + round-close).
-- [ ] 2.4 Preserve new fields via `copyWith` in `lib/core/network/room_list_merger.dart`.
+- [x] 2.1 Extend `MdnsAdvertiser.start` (`lib/core/network/discovery/mdns_advertiser.dart`) TXT with `platform` + `currentRound`.
+- [x] 2.2 Map TXT attrs in `MdnsBrowser` (`lib/core/network/discovery/mdns_browser.dart`) onto `DiscoveredRoom.platform` / `currentRound`.
+- [x] 2.3 In `lib/server/host_room_controller.dart`, pass advertise token + `room.turnState.currentRound` on `start` / `startFromSnapshot` / `_readvertiseMdns`; re-advertise when `currentRound` changes (`startNextRound` + round-close).
+- [x] 2.4 Preserve new fields via `copyWith` in `lib/core/network/room_list_merger.dart`.
 
 ## Phase 3: GameScreen heal wiring
 
@@ -46,8 +46,8 @@ Chain strategy: stacked-to-main
 
 - [x] 4.1 Table-drive `test/core/domain/pause_gated_lifecycle_test.dart` (and/or new heal-compare test): Android>non-Android, higher round, lex endpoint, full-tie local-keep, missing TXT defaults, antisymmetry, turnSequence ignored.
 - [x] 4.2 Update `test/core/domain/host_succession_coordinator_test.dart`: drop/replace turnSequence dual cases.
-- [ ] 4.3 Extend `test/server/host_room_controller_test.dart`: fake advertiser captures `platform`/`currentRound`; round-change re-advertise.
-- [ ] 4.4 Extend `test/core/room_list_merger_test.dart`: preserve optional `platform`/`currentRound`.
+- [x] 4.3 Extend `test/server/host_room_controller_test.dart`: fake advertiser captures `platform`/`currentRound`; round-change re-advertise.
+- [x] 4.4 Extend `test/core/room_list_merger_test.dart`: preserve optional `platform`/`currentRound`.
 
 ## Phase 5: Main-spec merge
 

@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../core/constants/message_types.dart';
 import '../core/constants/network_constants.dart';
+import '../core/domain/host_heal_compare.dart';
 import '../core/domain/host_succession.dart';
 import '../core/domain/lobby_rules.dart';
 import '../core/domain/turn_engine.dart';
@@ -96,6 +97,9 @@ class HostRoomController extends ChangeNotifier {
   /// When false, this device must not act as authoritative host (post-reclaim).
   bool _hostingAuthorityActive = true;
 
+  /// Last mDNS TXT `currentRound` advertised (avoids no-op re-advertise churn).
+  int? _lastAdvertisedRound;
+
   /// Set when this acting host is demoted ([HOST_RECLAIM] or heal yield); UI consumes.
   HostDemotionResume? _pendingDemotionResume;
 
@@ -171,10 +175,11 @@ class HostRoomController extends ChangeNotifier {
 
     _hostLanIp = await findLanIPv4();
 
-    await _mdnsAdvertiser.start(
+    await _advertiseMdns(
       roomId: room.roomId,
       displayName: room.displayName,
       port: boundPort,
+      currentRound: room.turnState.currentRound,
     );
 
     _startHeartbeatWatchdog();
@@ -212,10 +217,11 @@ class HostRoomController extends ChangeNotifier {
     _hostLanIp = await findLanIPv4();
 
     // Same canonical roomId so peers / Home browse find the continuing game.
-    await _mdnsAdvertiser.start(
+    await _advertiseMdns(
       roomId: room.roomId,
       displayName: room.displayName,
       port: boundPort,
+      currentRound: room.turnState.currentRound,
     );
 
     _startHeartbeatWatchdog();
@@ -285,6 +291,7 @@ class HostRoomController extends ChangeNotifier {
     _room = null;
     _hostLanIp = null;
     _hostingAuthorityActive = false;
+    _lastAdvertisedRound = null;
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = null;
     _sessions.clear();
@@ -461,6 +468,7 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     _broadcastGameState(serverNow);
+    _readvertiseMdnsIfRoundChanged();
     await _foregroundServiceBridge.ensureActiveMatchSession();
     return true;
   }
@@ -483,6 +491,7 @@ class HostRoomController extends ChangeNotifier {
       _server.broadcast(_buildRoundCompleted(serverNow));
     }
     _broadcastGameState(serverNow);
+    _readvertiseMdnsIfRoundChanged();
     return true;
   }
 
@@ -496,6 +505,7 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     _broadcastGameState(serverNow);
+    _readvertiseMdnsIfRoundChanged();
     return true;
   }
 
@@ -979,17 +989,49 @@ class HostRoomController extends ChangeNotifier {
     );
   }
 
+  Future<void> _advertiseMdns({
+    required String roomId,
+    required String displayName,
+    required int port,
+    required int currentRound,
+  }) async {
+    final round = currentRound < 0 ? 0 : currentRound;
+    await _mdnsAdvertiser.start(
+      roomId: roomId,
+      displayName: displayName,
+      port: port,
+      platform: advertiseHostPlatformToken(),
+      currentRound: round,
+    );
+    _lastAdvertisedRound = round;
+  }
+
   Future<void> _readvertiseMdns() async {
     final room = _room;
     final boundPort = _server.port;
     if (room == null || boundPort == null) {
       return;
     }
-    await _mdnsAdvertiser.start(
+    await _advertiseMdns(
       roomId: room.roomId,
       displayName: room.displayName,
       port: boundPort,
+      currentRound: room.turnState.currentRound,
     );
+  }
+
+  /// Re-advertise TXT when [GameRoom.turnState.currentRound] changes.
+  void _readvertiseMdnsIfRoundChanged() {
+    final room = _room;
+    if (room == null) {
+      return;
+    }
+    final round =
+        room.turnState.currentRound < 0 ? 0 : room.turnState.currentRound;
+    if (_lastAdvertisedRound == round) {
+      return;
+    }
+    unawaited(_readvertiseMdns());
   }
 
   void _startHeartbeatWatchdog() {

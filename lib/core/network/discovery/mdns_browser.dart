@@ -101,12 +101,23 @@ class MdnsBrowser {
       return null;
     }
 
+    final platformRaw = attributes['platform'];
+    final platform =
+        (platformRaw == null || platformRaw.trim().isEmpty) ? null : platformRaw;
+    final roundRaw = attributes['currentRound'];
+    final parsedRound =
+        roundRaw == null ? null : int.tryParse(roundRaw.trim());
+    final currentRound =
+        (parsedRound == null || parsedRound < 0) ? null : parsedRound;
+
     return DiscoveredRoom(
       roomId: roomId,
       displayName: displayName,
       hostIp: hostIp,
       port: port,
       source: RoomDiscoverySource.mdns,
+      platform: platform,
+      currentRound: currentRound,
     );
   }
 

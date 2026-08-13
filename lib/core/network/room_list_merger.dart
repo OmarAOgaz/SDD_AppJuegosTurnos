@@ -41,6 +41,7 @@ class RoomListMerger {
     if (resume != null) {
       final existing = merged[resume.roomId];
       if (existing != null) {
+        // copyWith keeps optional heal fields (platform / currentRound).
         merged[resume.roomId] = existing.copyWith(isResumable: true);
       } else {
         final host = resume.host;
