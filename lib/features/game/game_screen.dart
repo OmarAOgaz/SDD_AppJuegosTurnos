@@ -1403,11 +1403,16 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     final yieldToPeer = shouldYieldHostingOnResume(
+      hasPeerAd: true,
       localPlayerId: room.hostPlayerId,
       originalHostPlayerId: room.originalHostPlayerId,
-      turnSequence: List<String>.from(room.turnSequence),
-      hasPeerAd: true,
-      peerHostPlayerId: null,
+      // Unit 3 wires advertise platform token + live local round.
+      localPlatform: 'other',
+      localCurrentRound: 0,
+      localEndpoint: '${controller.hostLanIp}:${controller.port}',
+      peerPlatform: peer.platform,
+      peerCurrentRound: peer.currentRound,
+      peerEndpoint: peer.endpointKey,
     );
     if (!yieldToPeer) {
       return;
