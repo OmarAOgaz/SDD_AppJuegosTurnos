@@ -6,7 +6,8 @@
 **Verify verdict**: PASS WITH WARNINGS (no CRITICAL) — archive-ready  
 **Status**: done — SDD cycle closed  
 **Implementation**: stacked PRs #103 → #105 → #107 on `main` @ `c6b64ce`  
-**Related issues**: #104 / #106 (Unit deliverables); archive issue #108
+**Related issues**: #104 / #106 (Unit deliverables); archive issue #108  
+**Archive PR**: #109
 
 ## Problem solved
 

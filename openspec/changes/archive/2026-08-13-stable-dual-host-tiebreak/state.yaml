@@ -53,6 +53,7 @@ archive:
     - 105
     - 107
   archive_issue: 108
+  archive_pr: 109
   verify_warnings:
     - Demote+banner GameScreen orchestration PARTIAL (unit coverage)
     - No dedicated MdnsBrowser TXT map unit test
