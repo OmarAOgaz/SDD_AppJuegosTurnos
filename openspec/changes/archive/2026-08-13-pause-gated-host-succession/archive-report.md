@@ -73,7 +73,7 @@ Filesystem `tasks.md`: **16/16** `[x]` (Phases 1–4 / Units 1–4). Engram obse
 | spec | #347 |
 | tasks | #348 |
 | verify-report | #353 |
-| archive-report | (this save) |
+| archive-report | #368 |
 
 ## SDD cycle
 
