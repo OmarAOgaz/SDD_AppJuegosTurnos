@@ -12,6 +12,7 @@ import '../../core/constants/message_types.dart';
 import '../../core/constants/network_constants.dart';
 import '../../core/domain/client_reconnect_orchestrator.dart';
 import '../../core/domain/game_session_banner_texts.dart';
+import '../../core/domain/host_heal_compare.dart';
 import '../../core/domain/host_succession_coordinator.dart';
 import '../../core/domain/pause_gated_lifecycle.dart';
 import '../../core/domain/room_discovery.dart';
@@ -1406,9 +1407,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       hasPeerAd: true,
       localPlayerId: room.hostPlayerId,
       originalHostPlayerId: room.originalHostPlayerId,
-      // Unit 3 wires advertise platform token + live local round.
-      localPlatform: 'other',
-      localCurrentRound: 0,
+      localPlatform: advertiseHostPlatformToken(),
+      localCurrentRound: room.turnState.currentRound,
       localEndpoint: '${controller.hostLanIp}:${controller.port}',
       peerPlatform: peer.platform,
       peerCurrentRound: peer.currentRound,
