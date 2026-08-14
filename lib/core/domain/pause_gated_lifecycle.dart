@@ -119,6 +119,102 @@ bool shouldYieldHostingOnResume({
   );
 }
 
+/// Ordered GameScreen side effects for dual-host demote + reconnect banner UX.
+///
+/// After [yieldHostingToPeer], room authority clears → post-frame
+/// `_resumeAsClientAfterHostLost` → socket reconnect →
+/// [GameSessionBannerTexts.localReconnectMessage].
+enum HostHealDemotionStep {
+  armSuppressSuccessionAfterDemote,
+  yieldHostingToPeer,
+  resumeAsClientWithLocalReconnectBanner,
+}
+
+/// Contract sequence for demote→banner (unit-tested; GameScreen MUST follow).
+const List<HostHealDemotionStep> kHostHealDemotionSteps = [
+  HostHealDemotionStep.armSuppressSuccessionAfterDemote,
+  HostHealDemotionStep.yieldHostingToPeer,
+  HostHealDemotionStep.resumeAsClientWithLocalReconnectBanner,
+];
+
+/// Outcome of host/acting-host resume dual-host heal planning.
+enum HostHealOnResumeKind {
+  /// Not eligible, no peer, or non-resumable phase.
+  noop,
+
+  /// Peer ad present but ordered compare keeps local host.
+  keepHosting,
+
+  /// Yield to peer: run [kHostHealDemotionSteps].
+  demoteToPeer,
+}
+
+/// Plan produced by [planHostHealOnResume] for GameScreen execution.
+class HostHealOnResumePlan {
+  const HostHealOnResumePlan._({
+    required this.kind,
+    this.peerHost,
+    this.peerPort,
+  });
+
+  const HostHealOnResumePlan.noop()
+      : this._(kind: HostHealOnResumeKind.noop);
+
+  const HostHealOnResumePlan.keepHosting()
+      : this._(kind: HostHealOnResumeKind.keepHosting);
+
+  const HostHealOnResumePlan.demoteToPeer({
+    required String peerHost,
+    required int peerPort,
+  }) : this._(
+          kind: HostHealOnResumeKind.demoteToPeer,
+          peerHost: peerHost,
+          peerPort: peerPort,
+        );
+
+  final HostHealOnResumeKind kind;
+  final String? peerHost;
+  final int? peerPort;
+
+  /// Demotion MUST surface the local reconnect banner (not silent-only).
+  bool get requiresLocalReconnectBanner =>
+      kind == HostHealOnResumeKind.demoteToPeer;
+}
+
+/// Plans host resume heal: eligibility → peer ad → ordered yield compare.
+HostHealOnResumePlan planHostHealOnResume({
+  required bool eligibleToHeal,
+  required bool resumablePhase,
+  required DiscoveredRoom? peer,
+  required String localPlayerId,
+  required String? originalHostPlayerId,
+  required String localPlatform,
+  required int localCurrentRound,
+  required String localEndpoint,
+}) {
+  if (!eligibleToHeal || !resumablePhase || peer == null) {
+    return const HostHealOnResumePlan.noop();
+  }
+  final yieldToPeer = shouldYieldHostingOnResume(
+    hasPeerAd: true,
+    localPlayerId: localPlayerId,
+    originalHostPlayerId: originalHostPlayerId,
+    localPlatform: localPlatform,
+    localCurrentRound: localCurrentRound,
+    localEndpoint: localEndpoint,
+    peerPlatform: peer.platform,
+    peerCurrentRound: peer.currentRound,
+    peerEndpoint: peer.endpointKey,
+  );
+  if (!yieldToPeer) {
+    return const HostHealOnResumePlan.keepHosting();
+  }
+  return HostHealOnResumePlan.demoteToPeer(
+    peerHost: peer.hostIp,
+    peerPort: peer.port,
+  );
+}
+
 /// Whether succession should be suppressed after heal demotion.
 ///
 /// While live ads remain, TCP failure MUST client-retry only.

@@ -4,7 +4,46 @@ import '../models/discovered_room.dart';
 String mdnsServiceKey({required String name, required String type}) =>
     '$name|$type';
 
-/// Whether [room] points at the same host listen address as [host]/[port].
+/// Maps mDNS TXT attributes (+ resolved host / service port) to [DiscoveredRoom].
+///
+/// Returns null when roomId is empty, [hostIp] is missing, or port is invalid.
+/// Missing/blank `platform` → null; missing/bad `currentRound` → null (heal
+/// compare treats those as `other` / `0` via parsers).
+DiscoveredRoom? mapMdnsTxtToDiscoveredRoom({
+  required Map<String, String> attributes,
+  required String? hostIp,
+  required int servicePort,
+  String? serviceName,
+}) {
+  final roomId = attributes['roomId'] ?? '';
+  final displayName = attributes['displayName'] ?? serviceName ?? '';
+  final portFromTxt = int.tryParse(attributes['port'] ?? '');
+  final port = portFromTxt ?? servicePort;
+  if (port <= 0 || hostIp == null || hostIp.isEmpty || roomId.isEmpty) {
+    return null;
+  }
+
+  final platformRaw = attributes['platform'];
+  final platform =
+      (platformRaw == null || platformRaw.trim().isEmpty) ? null : platformRaw;
+  final roundRaw = attributes['currentRound'];
+  final parsedRound =
+      roundRaw == null ? null : int.tryParse(roundRaw.trim());
+  final currentRound =
+      (parsedRound == null || parsedRound < 0) ? null : parsedRound;
+
+  return DiscoveredRoom(
+    roomId: roomId,
+    displayName: displayName,
+    hostIp: hostIp,
+    port: port,
+    source: RoomDiscoverySource.mdns,
+    platform: platform,
+    currentRound: currentRound,
+  );
+}
+
+/// Whether [room] points at the same host listen address as [host]:[port].
 bool isSameRoomEndpoint(
   DiscoveredRoom room, {
   required String host,

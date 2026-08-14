@@ -1376,50 +1376,45 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   /// Host/acting-host resume heal toward original/live peer ads.
   Future<void> _healHostingOnResume() async {
-    if (!mounted ||
-        !_isHost ||
-        _resumingAsClient ||
-        _intentionalHostExit ||
-        _suppressSuccessionAfterDemote) {
-      return;
-    }
     final controller = ref.read(hostRoomControllerProvider);
     final room = controller.room;
-    if (room == null || !_isResumablePhase(room.gamePhase)) {
-      return;
-    }
-
     final browser = ref.read(mdnsBrowserProvider);
-    if (!browser.isBrowsing) {
+    if (room != null && !browser.isBrowsing) {
       await browser.start();
     }
-    final peer = findLiveRoomAdvertisement(
-      roomId: room.roomId,
-      rooms: browser.currentRooms,
-      excludeHost: controller.hostLanIp,
-      excludePort: controller.port,
-    );
-    if (peer == null) {
-      return;
-    }
-
-    final yieldToPeer = shouldYieldHostingOnResume(
-      hasPeerAd: true,
-      localPlayerId: room.hostPlayerId,
-      originalHostPlayerId: room.originalHostPlayerId,
+    final peer = room == null
+        ? null
+        : findLiveRoomAdvertisement(
+            roomId: room.roomId,
+            rooms: browser.currentRooms,
+            excludeHost: controller.hostLanIp,
+            excludePort: controller.port,
+          );
+    final plan = planHostHealOnResume(
+      eligibleToHeal: mounted &&
+          _isHost &&
+          !_resumingAsClient &&
+          !_intentionalHostExit &&
+          !_suppressSuccessionAfterDemote,
+      resumablePhase: room != null && _isResumablePhase(room.gamePhase),
+      peer: peer,
+      localPlayerId: room?.hostPlayerId ?? '',
+      originalHostPlayerId: room?.originalHostPlayerId,
       localPlatform: advertiseHostPlatformToken(),
-      localCurrentRound: room.turnState.currentRound,
+      localCurrentRound: room?.turnState.currentRound ?? 0,
       localEndpoint: '${controller.hostLanIp}:${controller.port}',
-      peerPlatform: peer.platform,
-      peerCurrentRound: peer.currentRound,
-      peerEndpoint: peer.endpointKey,
     );
-    if (!yieldToPeer) {
+    if (plan.kind != HostHealOnResumeKind.demoteToPeer) {
       return;
     }
-
+    // Must follow [kHostHealDemotionSteps]: suppress → yield → client resume banner.
+    assert(kHostHealDemotionSteps.first ==
+        HostHealDemotionStep.armSuppressSuccessionAfterDemote);
     _suppressSuccessionAfterDemote = true;
-    await controller.yieldHostingToPeer(host: peer.hostIp, port: peer.port);
+    await controller.yieldHostingToPeer(
+      host: plan.peerHost!,
+      port: plan.peerPort!,
+    );
     // Room cleared → [_buildHost] post-frame resumes as client + reconnect banner.
   }
 

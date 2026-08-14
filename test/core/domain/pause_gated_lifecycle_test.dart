@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:turnos_juegos/core/domain/game_session_banner_texts.dart';
 import 'package:turnos_juegos/core/domain/host_heal_compare.dart';
 import 'package:turnos_juegos/core/domain/pause_gated_lifecycle.dart';
 import 'package:turnos_juegos/core/models/discovered_room.dart';
@@ -344,6 +345,134 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('planHostHealOnResume demote→banner orchestration', () {
+    const peerAndroid = DiscoveredRoom(
+      roomId: 'room-1',
+      displayName: 'Sala',
+      hostIp: '10.0.0.9',
+      port: 5555,
+      platform: 'android',
+      currentRound: 2,
+    );
+
+    test('ineligible / no peer / non-resumable → noop', () {
+      expect(
+        planHostHealOnResume(
+          eligibleToHeal: false,
+          resumablePhase: true,
+          peer: peerAndroid,
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.2:4242',
+        ).kind,
+        HostHealOnResumeKind.noop,
+      );
+      expect(
+        planHostHealOnResume(
+          eligibleToHeal: true,
+          resumablePhase: false,
+          peer: peerAndroid,
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.2:4242',
+        ).kind,
+        HostHealOnResumeKind.noop,
+      );
+      expect(
+        planHostHealOnResume(
+          eligibleToHeal: true,
+          resumablePhase: true,
+          peer: null,
+          localPlayerId: 'p2',
+          originalHostPlayerId: 'p1',
+          localPlatform: 'other',
+          localCurrentRound: 1,
+          localEndpoint: '10.0.0.2:4242',
+        ).kind,
+        HostHealOnResumeKind.noop,
+      );
+    });
+
+    test('local original keeps hosting', () {
+      final plan = planHostHealOnResume(
+        eligibleToHeal: true,
+        resumablePhase: true,
+        peer: peerAndroid,
+        localPlayerId: 'p1',
+        originalHostPlayerId: 'p1',
+        localPlatform: 'other',
+        localCurrentRound: 0,
+        localEndpoint: '10.0.0.1:1',
+      );
+      expect(plan.kind, HostHealOnResumeKind.keepHosting);
+      expect(plan.requiresLocalReconnectBanner, isFalse);
+    });
+
+    test('non-Android yields to Android peer → demote plan + banner contract',
+        () {
+      final plan = planHostHealOnResume(
+        eligibleToHeal: true,
+        resumablePhase: true,
+        peer: peerAndroid,
+        localPlayerId: 'p2',
+        originalHostPlayerId: 'p1',
+        localPlatform: 'other',
+        localCurrentRound: 5,
+        localEndpoint: '10.0.0.2:4242',
+      );
+      expect(plan.kind, HostHealOnResumeKind.demoteToPeer);
+      expect(plan.peerHost, '10.0.0.9');
+      expect(plan.peerPort, 5555);
+      expect(plan.requiresLocalReconnectBanner, isTrue);
+
+      // GameScreen MUST run demotion side effects in this order.
+      expect(
+        kHostHealDemotionSteps,
+        [
+          HostHealDemotionStep.armSuppressSuccessionAfterDemote,
+          HostHealDemotionStep.yieldHostingToPeer,
+          HostHealDemotionStep.resumeAsClientWithLocalReconnectBanner,
+        ],
+      );
+
+      // Reconnect banner copy after demote → resume-as-client (not silent).
+      final banner = GameSessionBannerTexts.resolve(
+        showLocalReconnect: plan.requiresLocalReconnectBanner,
+        seatedPlayers: const [],
+      );
+      expect(
+        banner.reconnectMessage,
+        GameSessionBannerTexts.localReconnectMessage,
+      );
+    });
+
+    test('equal dual-neither keeps local (no mutual demote)', () {
+      const peer = DiscoveredRoom(
+        roomId: 'room-1',
+        displayName: 'Sala',
+        hostIp: '10.0.0.5',
+        port: 4242,
+        platform: 'other',
+        currentRound: 1,
+      );
+      final plan = planHostHealOnResume(
+        eligibleToHeal: true,
+        resumablePhase: true,
+        peer: peer,
+        localPlayerId: 'p2',
+        originalHostPlayerId: 'p1',
+        localPlatform: 'other',
+        localCurrentRound: 1,
+        localEndpoint: '10.0.0.5:4242',
+      );
+      expect(plan.kind, HostHealOnResumeKind.keepHosting);
     });
   });
 }
