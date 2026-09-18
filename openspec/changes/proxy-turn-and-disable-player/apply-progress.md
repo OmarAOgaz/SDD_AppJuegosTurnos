@@ -7,7 +7,7 @@
 **PR 1**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/117
 **PR 2**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/119
 **PR 3**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/121
-**PR 4**: pending
+**PR 4**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/123
 
 ## Completed Tasks
 
@@ -85,9 +85,9 @@ None.
 - Mode: stacked PR slice
 - Current work unit: Unit 4 / PR 4
 - Boundary: host-control banner + long-press skip toggle + tests; Units 1–3 not reopened
-- Review budget: 356 / 400 (code + tests + tasks; apply-progress merge extra)
+- Review budget: 390 / 400
 - Issue: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/122
-- PR URL: pending
+- PR URL: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/123
 
 ## Status
 
