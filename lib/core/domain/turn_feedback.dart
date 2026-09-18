@@ -35,7 +35,10 @@ enum GestureIntent { pass, showActiveToast, none }
 
 /// Pure mapping of `(identity, gamePhase, TurnPhase, activeColorId)` to the
 /// ambient screen state. Only meaningful during `inGame`; every other phase
-/// (and every non-active device) stays literal black — no tint.
+/// (and every non-acting device) stays literal black — no tint.
+///
+/// [isMyDeviceActive] is device-acting (own seat or host acting-as). Warning /
+/// overtime [activeColorId] is the acted-as seat while the host is acting-as.
 TurnFeedbackVisual resolveTurnFeedback({
   required bool isMyDeviceActive,
   required GameRoomPhase gamePhase,
@@ -103,16 +106,16 @@ class TurnStartCueKey {
   int get hashCode => Object.hash(activePlayerId, turnStartedAtMs);
 
   @override
-  String toString() =>
-      'TurnStartCueKey($activePlayerId @ $turnStartedAtMs)';
+  String toString() => 'TurnStartCueKey($activePlayerId @ $turnStartedAtMs)';
 }
 
 /// Whether this device should fire the ephemeral turn-start cue.
 ///
-/// Fires on the rising edge of [isMyDeviceActive] when [current] is present
-/// and differs from [lastFired] (same turn identity on resync is skipped).
+/// Fires when this device is acting ([isMyDeviceActive]) and [current] is
+/// present and differs from [lastFired]. Own→proxied activation has no
+/// inactive gap, so this is a key change rather than a rising edge. Same
+/// turn identity on resync is skipped.
 bool shouldFireTurnStartCue({
-  required bool wasActive,
   required bool isMyDeviceActive,
   required TurnStartCueKey? lastFired,
   required TurnStartCueKey? current,
@@ -123,7 +126,7 @@ bool shouldFireTurnStartCue({
   if (lastFired == current) {
     return false;
   }
-  return !wasActive;
+  return true;
 }
 
 /// Color for the invalid-tap X mark.

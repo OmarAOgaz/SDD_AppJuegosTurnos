@@ -10,6 +10,7 @@ import '../../core/audio/sound_preview_service.dart';
 import '../../core/catalogs/color_catalog.dart';
 import '../../core/constants/message_types.dart';
 import '../../core/constants/network_constants.dart';
+import '../../core/domain/acting_identity.dart';
 import '../../core/domain/client_reconnect_orchestrator.dart';
 import '../../core/domain/game_session_banner_texts.dart';
 import '../../core/domain/host_heal_compare.dart';
@@ -139,26 +140,32 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   int _motionSessionGen = 0;
   bool _successionInFlight = false;
   bool _reclaimInFlight = false;
+
   /// Suppresses false succession while reconnecting after HOST_MIGRATED.
   bool _hostMigrationInFlight = false;
+
   /// After heal demotion: client-retry only while peer ads remain live.
   bool _suppressSuccessionAfterDemote = false;
   Completer<Map<String, dynamic>>? _reclaimSnapshotCompleter;
   bool _resumingAsClient = false;
   bool _intentionalHostExit = false;
   bool _wakelockOn = false;
+
   /// Client-only: tracks desired active-match FGS (mirrors [_wakelockOn]).
   bool _activeMatchFgsOn = false;
+
   /// Cached for dispose — Riverpod `ref` is unsafe after unmount.
   ForegroundServiceBridge? _fgsBridge;
   TurnInfoPresentation? _activePresentation;
   Timer? _presentationTimer;
   bool _panelOpen = false;
+
   /// Pause coalesce + foreground flag for recovery/succession gates.
   late final PauseCoalesceGate _pauseCoalesceGate = PauseCoalesceGate(
     onSustainedNonForeground: _onSustainedNonForeground,
   );
   bool get _appInForeground => _pauseCoalesceGate.isForeground;
+
   /// True after sustained non-fg canceled the recovery timer (grace kept).
   bool _recoverySuspendedForNonForeground = false;
   bool _motionDegraded = false;
@@ -351,8 +358,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   void _startClientRecoveryOrchestration() {
     final client = ref.read(gameSocketClientProvider);
-    _clientDisconnectStartedAt =
-        client?.disconnectStartedAt ?? _clientDisconnectStartedAt ?? DateTime.now();
+    _clientDisconnectStartedAt = client?.disconnectStartedAt ??
+        _clientDisconnectStartedAt ??
+        DateTime.now();
     _clientRecoveryTimer?.cancel();
     unawaited(_orchestrateClientRecovery());
     _clientRecoveryTimer = Timer.periodic(
@@ -1152,13 +1160,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     super.dispose();
   }
 
-  /// Edge-detects local activation: clears ephemeral turn-info on rising edge
-  /// and schedules a one-shot color/sound cue when [shouldFireTurnStartCue].
+  /// Edge-detects activation: clears ephemeral turn-info and schedules a
+  /// one-shot color/sound cue when [shouldFireTurnStartCue].
   ///
   /// Safe to call from build: side effects (presentation clear, cue mount, sound)
-  /// run in a single post-frame callback. [wasActive]/[lastFired] update
+  /// run in a single post-frame callback. Acting flag / [lastFired] update
   /// synchronously to prevent duplicate fires on the next rebuild. Clear runs
-  /// on every local non-active→active rising edge even when the cue is deduped.
+  /// on rising edge and on acting key-change (own→proxied has no inactive gap).
   void _syncTurnStartCue({
     required GameRoomPhase gamePhase,
     required bool isMyDeviceActive,
@@ -1173,7 +1181,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     final rising = !_wasMyDeviceActive && isMyDeviceActive;
     final shouldFire = shouldFireTurnStartCue(
-      wasActive: _wasMyDeviceActive,
       isMyDeviceActive: isMyDeviceActive,
       lastFired: _lastFiredCue,
       current: currentKey,
@@ -1181,7 +1188,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     _wasMyDeviceActive = isMyDeviceActive;
 
     final fireCue = shouldFire && currentKey != null;
-    if (!rising && !fireCue) {
+    final activation = rising || fireCue;
+    if (!activation) {
       return;
     }
 
@@ -1195,7 +1203,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       if (!mounted) {
         return;
       }
-      if (rising) {
+      if (activation) {
         _clearPresentation(notify: true);
         _touchFxKey.currentState?.clearInvalidXMarks();
       }
@@ -1285,8 +1293,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         peerKey != _dismissedPeerBannerKey;
     final effectiveTexts = GameSessionBannerTexts(
       reconnectMessage: texts.reconnectMessage,
-      disconnectedPeers:
-          showPeerBanner ? texts.disconnectedPeers : const [],
+      disconnectedPeers: showPeerBanner ? texts.disconnectedPeers : const [],
     );
 
     if (effectiveTexts.isEmpty) {
@@ -1721,6 +1728,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       room.turnState.activePlayerId,
     );
     final hostPlayer = room.playersById[room.hostPlayerId];
+    final identity = resolveActingIdentity(
+      localPlayerId: room.hostPlayerId,
+      hostPlayerId: room.hostPlayerId,
+      localPlayer: hostPlayer,
+      activePlayer: active,
+    );
     final activeId = room.turnState.activePlayerId;
     final startedAt = room.turnState.turnStartedAtMs;
     final onBlackBackground = room.gamePhase == GameRoomPhase.inGame;
@@ -1766,43 +1779,43 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       body: _wrapWithSessionBanners(
         texts: sessionBanners,
         body: _gameBody(
-        context,
-        gamePhase: room.gamePhase,
-        phase: room.turnState.phase,
-        remaining: remaining,
-        currentRound: room.turnState.currentRound,
-        activeName: active?.displayName ?? '—',
-        activeColorId: active?.colorId,
-        isMyDeviceActive: room.turnState.activePlayerId == room.hostPlayerId,
-        canHostPassForDisconnectedActive: active != null && !active.connected,
-        localColorId: hostPlayer?.colorId,
-        localSoundId: hostPlayer?.soundId,
-        currentCueKey: (activeId != null && startedAt != null)
-            ? TurnStartCueKey(
-                activePlayerId: activeId,
-                turnStartedAtMs: startedAt,
-              )
-            : null,
-        exitActionLabel: 'Terminar partida',
-        onPass: () {
-          final passed = controller.passTurn(room.hostPlayerId);
-          if (!passed && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('No se pudo pasar el turno'),
-              ),
-            );
-          }
-        },
-        onExit: exitAsHost,
-        betweenRoundsBody: room.gamePhase == GameRoomPhase.betweenRounds
-            ? _buildHostBetweenRoundsBody(
-                context,
-                controller: controller,
-                room: room,
-                serverNowMs: serverNow,
-              )
-            : null,
+          context,
+          gamePhase: room.gamePhase,
+          phase: room.turnState.phase,
+          remaining: remaining,
+          currentRound: room.turnState.currentRound,
+          activeName: active?.displayName ?? '—',
+          activeColorId: active?.colorId,
+          isMyDeviceActive: identity.isDeviceActing,
+          canHostPassForDisconnectedActive: identity.isActingAs,
+          localColorId: identity.colorId,
+          localSoundId: identity.soundId,
+          currentCueKey: (activeId != null && startedAt != null)
+              ? TurnStartCueKey(
+                  activePlayerId: activeId,
+                  turnStartedAtMs: startedAt,
+                )
+              : null,
+          exitActionLabel: 'Terminar partida',
+          onPass: () {
+            final passed = controller.passTurn(room.hostPlayerId);
+            if (!passed && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('No se pudo pasar el turno'),
+                ),
+              );
+            }
+          },
+          onExit: exitAsHost,
+          betweenRoundsBody: room.gamePhase == GameRoomPhase.betweenRounds
+              ? _buildHostBetweenRoundsBody(
+                  context,
+                  controller: controller,
+                  room: room,
+                  serverNowMs: serverNow,
+                )
+              : null,
         ),
       ),
     );
@@ -1947,13 +1960,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final active = _playerById(state, activeId);
     final remaining = _remainingSeconds(sync, state);
     final phase = _interpolatedPhase(sync, state);
-    final canPass = gamePhase == GameRoomPhase.inGame &&
-        localPlayerId != null &&
-        localPlayerId == activeId;
     _syncInGameChrome(gamePhase, turnPhase: phase);
     final onBlackBackground = gamePhase == GameRoomPhase.inGame;
-    final isLocalReconnecting =
-        client?.state == SocketClientState.reconnecting;
+    final isLocalReconnecting = client?.state == SocketClientState.reconnecting;
     final sessionBanners = _isResumablePhase(gamePhase)
         ? GameSessionBannerTexts.resolve(
             showLocalReconnect: isLocalReconnecting,
@@ -1976,6 +1985,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
     final currentRound = state?['currentRound'];
     final localPlayer = _playerById(state, localPlayerId);
+    final identity = resolveActingIdentity(
+      localPlayerId: localPlayerId,
+      hostPlayerId: state?['hostPlayerId'] as String?,
+      localPlayer: localPlayer,
+      activePlayer: active,
+    );
     final startedAt = state?['turnStartedAt'];
     final turnStartedAtMs = startedAt is int ? startedAt : null;
     return Scaffold(
@@ -1987,36 +2002,36 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       body: _wrapWithSessionBanners(
         texts: sessionBanners,
         body: _gameBody(
-        context,
-        gamePhase: gamePhase,
-        phase: phase,
-        remaining: remaining,
-        currentRound: currentRound is int ? currentRound : null,
-        activeName: active?.displayName ?? '—',
-        activeColorId: active?.colorId,
-        isMyDeviceActive: canPass,
-        localColorId: localPlayer?.colorId,
-        localSoundId: localPlayer?.soundId,
-        currentCueKey: (activeId != null && turnStartedAtMs != null)
-            ? TurnStartCueKey(
-                activePlayerId: activeId,
-                turnStartedAtMs: turnStartedAtMs,
-              )
-            : null,
-        exitActionLabel: 'Salir partida',
-        onPass: () {
-          client?.sendPassTurn(playerId: localPlayerId!);
-        },
-        onExit: exitAsClient,
-        betweenRoundsBody: gamePhase == GameRoomPhase.betweenRounds &&
-                state != null
-            ? _buildClientBetweenRoundsBody(
-                context,
-                sync: sync,
-                state: state,
-                localPlayerId: localPlayerId,
-              )
-            : null,
+          context,
+          gamePhase: gamePhase,
+          phase: phase,
+          remaining: remaining,
+          currentRound: currentRound is int ? currentRound : null,
+          activeName: active?.displayName ?? '—',
+          activeColorId: active?.colorId,
+          isMyDeviceActive: identity.isDeviceActing,
+          localColorId: identity.colorId,
+          localSoundId: identity.soundId,
+          currentCueKey: (activeId != null && turnStartedAtMs != null)
+              ? TurnStartCueKey(
+                  activePlayerId: activeId,
+                  turnStartedAtMs: turnStartedAtMs,
+                )
+              : null,
+          exitActionLabel: 'Salir partida',
+          onPass: () {
+            client?.sendPassTurn(playerId: localPlayerId!);
+          },
+          onExit: exitAsClient,
+          betweenRoundsBody:
+              gamePhase == GameRoomPhase.betweenRounds && state != null
+                  ? _buildClientBetweenRoundsBody(
+                      context,
+                      sync: sync,
+                      state: state,
+                      localPlayerId: localPlayerId,
+                    )
+                  : null,
         ),
       ),
     );
@@ -2051,7 +2066,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final durationPreview = TurnEngine.nextRoundDurationPreview(room);
     final increment = state['roundIncrementSeconds'] as int? ??
         room.config.roundIncrementSeconds;
-    final currentRound = state['currentRound'] as int? ?? room.turnState.currentRound;
+    final currentRound =
+        state['currentRound'] as int? ?? room.turnState.currentRound;
 
     return Padding(
       key: betweenRoundsBodyKey,

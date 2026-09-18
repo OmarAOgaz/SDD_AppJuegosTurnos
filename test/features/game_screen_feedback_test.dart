@@ -349,6 +349,7 @@ Map<String, dynamic> _clientGameState({
     'roomId': 'room-1',
     'gamePhase': GameRoomPhase.inGame.wireValue,
     'serverNow': _serverNow,
+    'hostPlayerId': _hostId,
     'activePlayerId': activePlayerId,
     'turnStartedAt': turnStartedAt,
     'currentRound': 1,
@@ -412,8 +413,7 @@ Map<String, dynamic> _clientBetweenRoundsGameState({
     },
     'slots': [_hostId, _clientId],
     'turnSequence': sequence,
-    'playersById':
-        players.map((id, player) => MapEntry(id, player.toJson())),
+    'playersById': players.map((id, player) => MapEntry(id, player.toJson())),
   };
 }
 
@@ -758,6 +758,51 @@ void main() {
     });
 
     testWidgets(
+        'host: acting-as disconnected active flashes and fixes acted-as color',
+        (tester) async {
+      for (final entry in {
+        10: TurnFeedbackKind.flashing,
+        -5: TurnFeedbackKind.fixed,
+      }.entries) {
+        final room = _buildHostRoom(
+          activePlayerId: _clientId,
+          remainingSeconds: entry.key,
+        );
+        room.playersById[_clientId]!.connected = false;
+        final controller = _FakeHostRoomController(room);
+        await _mount(tester, _wrapHost(controller));
+
+        final visual = _blinkLayer(tester).visual;
+        expect(visual.kind, entry.value, reason: 'remaining=${entry.key}');
+        expect(visual.colorId, _clientColorId,
+            reason: 'remaining=${entry.key}');
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host: reconnect of active seat clears acting-as warning color',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 10,
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      expect(_blinkLayer(tester).visual.kind, TurnFeedbackKind.flashing);
+      expect(_blinkLayer(tester).visual.colorId, _clientColorId);
+
+      room.playersById[_clientId]!.connected = true;
+      controller.notifyListeners();
+      await tester.pump();
+
+      expect(_blinkLayer(tester).visual, TurnFeedbackVisual.black);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
         'client: exceeded renders a solid ColoredBox in the active player color',
         (tester) async {
       final client = _clientAs(_clientId);
@@ -823,6 +868,7 @@ void main() {
       room.playersById[_clientId]!.connected = false;
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
 
       await tester.tap(_gestureLayer);
       await tester.pump();
@@ -1243,8 +1289,7 @@ void main() {
 
       // Non-active client in warning: whose-turn cartel still appears.
       final client = _clientAs(_hostId);
-      final sync =
-          _fixedSync(activePlayerId: _clientId, remainingSeconds: 10);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 10);
       await _mount(tester, _wrapClient(client: client, syncState: sync));
       await tester.pump();
       expect(_motion.hasListener, isTrue);
@@ -1313,6 +1358,9 @@ void main() {
 
       expect(controller.passTurnCalls, isEmpty);
       expect(_activeTurnToast, findsOneWidget);
+      expect(find.text('Es tu turno!!'), findsNothing);
+      final root = _whoseTurnSpanTree(tester);
+      expect(root.toPlainText(), 'Turno de "$_clientName"');
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -1345,8 +1393,7 @@ void main() {
         ..currentRound = 1
         ..baseTurnDurationSeconds = 60
         ..currentRoundDurationSeconds = 60
-        ..turnStartedAtMs =
-            DateTime.now().millisecondsSinceEpoch - 30 * 1000;
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch - 30 * 1000;
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
 
@@ -1704,8 +1751,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'host: same-key rebuild/resync does not re-fire flash or sound',
+    testWidgets('host: same-key rebuild/resync does not re-fire flash or sound',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
@@ -1724,8 +1770,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'host: new turn key after inactivity re-fires cue and sound',
+    testWidgets('host: new turn key after inactivity re-fires cue and sound',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
@@ -1756,8 +1801,7 @@ void main() {
         'client: activation fires cue with local seat sound; ambient stays black',
         (tester) async {
       final client = _clientAs(_clientId);
-      final sync =
-          _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
+      final sync = _fixedSync(activePlayerId: _clientId, remainingSeconds: 30);
       await _mount(tester, _wrapClient(client: client, syncState: sync));
       await tester.pump();
 
@@ -1784,6 +1828,55 @@ void main() {
 
       expect(find.byType(TurnStartCue), findsNothing);
       expect(_sounds.previewedIds, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host: acting-as fires cue and acted-as sound, not host sound',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(
+        tester.widget<TurnStartCue>(find.byType(TurnStartCue)).color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+      expect(_sounds.previewedIds, ['sound_2']);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host: own to proxied with no inactive gap fires acted-as cue',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      expect(_sounds.previewedIds, ['sound_1']);
+      await _drainTurnStartCue(tester);
+
+      room.playersById[_clientId]!.connected = false;
+      room.turnState
+        ..activePlayerId = _clientId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(
+        tester.widget<TurnStartCue>(find.byType(TurnStartCue)).color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+      expect(_sounds.previewedIds, ['sound_1', 'sound_2']);
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -1822,8 +1915,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'activation clears toast and invalid X when cue fires',
+    testWidgets('activation clears toast and invalid X when cue fires',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
@@ -1860,8 +1952,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'cue-dedupe activation still clears toast and invalid X',
+    testWidgets('cue-dedupe activation still clears toast and invalid X',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
@@ -1908,8 +1999,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'open info panel stays open across activation clear',
+    testWidgets('open info panel stays open across activation clear',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
@@ -1933,8 +2023,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'motion-dispatched toast clears on rising edge',
+    testWidgets('motion-dispatched toast clears on rising edge',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _clientId, remainingSeconds: 30);
@@ -1982,8 +2071,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'host pass-for-disconnected-active shows host-seat-color ripple',
+    testWidgets('host pass-for-disconnected-active shows acted-as-color ripple',
         (tester) async {
       final room = _buildHostRoom(
         activePlayerId: _clientId,
@@ -1992,6 +2080,7 @@ void main() {
       room.playersById[_clientId]!.connected = false;
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
 
       const tapAt = Offset(55, 90);
       await _tapGestureAt(tester, tapAt);
@@ -2001,7 +2090,7 @@ void main() {
       expect(fx, hasLength(1));
       expect(fx.single.kind, TouchFxKind.ripple);
       expect(fx.single.offset, tapAt);
-      expect(fx.single.color, ColorCatalog.byId(_hostColorId)!.color);
+      expect(fx.single.color, ColorCatalog.byId(_clientColorId)!.color);
       expect(_activeTurnToast, findsNothing);
 
       await tester.pumpWidget(const SizedBox());
@@ -2175,8 +2264,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'variable-only: inGame host does not show between-rounds body',
+    testWidgets('variable-only: inGame host does not show between-rounds body',
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
@@ -2192,8 +2280,7 @@ void main() {
   });
 
   group('Between-rounds client UI + sync (PR3)', () {
-    testWidgets(
-        'client shows list, elapsed, increment; no mutate affordances',
+    testWidgets('client shows list, elapsed, increment; no mutate affordances',
         (tester) async {
       final sync = _fixedBetweenRoundsSync(
         currentRound: 1,
@@ -2222,8 +2309,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'peers with shared snapshot match elapsed from ClientSyncState',
+    testWidgets('peers with shared snapshot match elapsed from ClientSyncState',
         (tester) async {
       final payload = _clientBetweenRoundsGameState(elapsedBreakSeconds: 20);
       final peerA = ClientSyncState(
@@ -2251,8 +2337,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'acting host mid-break can complete reorder (succession smoke)',
+    testWidgets('acting host mid-break can complete reorder (succession smoke)',
         (tester) async {
       // Acting host = active HostRoomController path (no separate succession
       // UI branch). Mid-break host must get controls and complete a reorder.
