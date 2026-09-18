@@ -42,7 +42,8 @@ void main() {
       });
     }
 
-    test('inGame, active device, normal phase stays literal black (no tint)', () {
+    test('inGame, active device, normal phase stays literal black (no tint)',
+        () {
       final visual = resolveTurnFeedback(
         isMyDeviceActive: true,
         gamePhase: GameRoomPhase.inGame,
@@ -75,7 +76,8 @@ void main() {
       expect(visual.colorId, 'color_3');
     });
 
-    test('non-active device never flashes or fixes even at warning/exceeded', () {
+    test('non-active device never flashes or fixes even at warning/exceeded',
+        () {
       for (final turnPhase in [TurnPhase.warning, TurnPhase.exceeded]) {
         final visual = resolveTurnFeedback(
           isMyDeviceActive: false,
@@ -174,10 +176,9 @@ void main() {
       turnStartedAtMs: 2000,
     );
 
-    test('fires on rising edge with current key and no prior fire', () {
+    test('fires when acting with current key and no prior fire', () {
       expect(
         shouldFireTurnStartCue(
-          wasActive: false,
           isMyDeviceActive: true,
           lastFired: null,
           current: keyA,
@@ -186,10 +187,9 @@ void main() {
       );
     });
 
-    test('does not fire when device is not active', () {
+    test('does not fire when device is not acting', () {
       expect(
         shouldFireTurnStartCue(
-          wasActive: false,
           isMyDeviceActive: false,
           lastFired: null,
           current: keyA,
@@ -201,7 +201,6 @@ void main() {
     test('does not fire when current key is null', () {
       expect(
         shouldFireTurnStartCue(
-          wasActive: false,
           isMyDeviceActive: true,
           lastFired: null,
           current: null,
@@ -210,10 +209,9 @@ void main() {
       );
     });
 
-    test('same-key dedupe skips re-fire while already active (resync)', () {
+    test('same-key dedupe skips re-fire while already acting (resync)', () {
       expect(
         shouldFireTurnStartCue(
-          wasActive: true,
           isMyDeviceActive: true,
           lastFired: keyA,
           current: keyA,
@@ -222,39 +220,15 @@ void main() {
       );
     });
 
-    test('same-key dedupe skips rising edge after already cued', () {
+    test('already acting with new key fires (own to proxied, no inactive gap)',
+        () {
       expect(
         shouldFireTurnStartCue(
-          wasActive: false,
-          isMyDeviceActive: true,
-          lastFired: keyA,
-          current: keyA,
-        ),
-        isFalse,
-      );
-    });
-
-    test('new key re-fires on rising edge after inactivity', () {
-      expect(
-        shouldFireTurnStartCue(
-          wasActive: false,
           isMyDeviceActive: true,
           lastFired: keyA,
           current: keyB,
         ),
         isTrue,
-      );
-    });
-
-    test('already active with new key does not fire without rising edge', () {
-      expect(
-        shouldFireTurnStartCue(
-          wasActive: true,
-          isMyDeviceActive: true,
-          lastFired: keyA,
-          current: keyB,
-        ),
-        isFalse,
       );
     });
   });
