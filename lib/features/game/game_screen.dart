@@ -52,6 +52,10 @@ const inGameGestureLayerKey = Key('inGameGestureLayer');
 @visibleForTesting
 const inGameInfoPanelKey = Key('inGameInfoPanel');
 
+/// Host skip toggle for a disconnected controlled seat in the info panel.
+@visibleForTesting
+Key inGameSkipToggleKey(String playerId) => Key('inGameSkipToggle-$playerId');
+
 /// Long-press duration that opens the in-game info panel (spec: 500ms).
 @visibleForTesting
 const inGameInfoPanelLongPress = Duration(milliseconds: 500);
@@ -1294,6 +1298,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final effectiveTexts = GameSessionBannerTexts(
       reconnectMessage: texts.reconnectMessage,
       disconnectedPeers: showPeerBanner ? texts.disconnectedPeers : const [],
+      controlledPeers: texts.controlledPeers,
     );
 
     if (effectiveTexts.isEmpty) {
@@ -1742,6 +1747,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             showLocalReconnect: false,
             seatedPlayers: _seatedPlayersFromRoom(room),
             localPlayerId: room.hostPlayerId,
+            includeHostControlBanner: true,
           )
         : const GameSessionBannerTexts();
 
@@ -1797,6 +1803,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 )
               : null,
           exitActionLabel: 'Terminar partida',
+          skipTogglePlayers: [
+            for (final player in _seatedPlayersFromRoom(room))
+              if (!player.connected && player.playerId != room.hostPlayerId)
+                player,
+          ],
+          onSetPlayerDisabled: (playerId, disabled) {
+            return controller.setPlayerDisabled(
+              senderPlayerId: room.hostPlayerId,
+              playerId: playerId,
+              disabled: disabled,
+            );
+          },
           onPass: () {
             final passed = controller.passTurn(room.hostPlayerId);
             if (!passed && context.mounted) {
@@ -2137,6 +2155,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required VoidCallback onPass,
     required Future<void> Function() onExit,
     Widget? betweenRoundsBody,
+    List<Player> skipTogglePlayers = const [],
+    bool Function(String playerId, bool disabled)? onSetPlayerDisabled,
   }) {
     final color = ColorCatalog.byId(activeColorId ?? '')?.color ?? Colors.grey;
     final localSeatColor = ColorCatalog.byId(localColorId ?? '')?.color;
@@ -2335,6 +2355,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             statusText: statusText,
             exitActionLabel: exitActionLabel,
             onExit: onExit,
+            skipTogglePlayers: skipTogglePlayers,
+            onSetPlayerDisabled: onSetPlayerDisabled,
           ),
       ],
     );
@@ -2403,6 +2425,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required String statusText,
     required String exitActionLabel,
     required Future<void> Function() onExit,
+    List<Player> skipTogglePlayers = const [],
+    bool Function(String playerId, bool disabled)? onSetPlayerDisabled,
   }) {
     return Positioned.fill(
       child: Material(
@@ -2483,6 +2507,40 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           statusText,
                           style: const TextStyle(color: Colors.white70),
                         ),
+                        if (skipTogglePlayers.isNotEmpty &&
+                            onSetPlayerDisabled != null) ...[
+                          const SizedBox(height: 16),
+                          for (final player in skipTogglePlayers)
+                            SwitchListTile(
+                              key: inGameSkipToggleKey(player.playerId),
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(
+                                player.displayName,
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              subtitle: const Text(
+                                'Omitir turno',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                              value: player.disabled,
+                              onChanged: (value) {
+                                final ok = onSetPlayerDisabled(
+                                  player.playerId,
+                                  value,
+                                );
+                                if (!ok && context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'No se pudo omitir el turno',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                        ],
                         const SizedBox(height: 20),
                         FilledButton(
                           onPressed: () {

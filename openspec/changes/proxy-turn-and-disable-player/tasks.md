@@ -48,7 +48,7 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Banner + long-press toggle
 
-- [ ] 4.1 Add host-only `controlledPeers` copy in `lib/core/domain/game_session_banner_texts.dart`; peer “sin conexión” list unchanged.
-- [ ] 4.2 Render host-control row in `lib/features/game/widgets/game_session_banners.dart` (seat-colored names); peers MUST NOT show it.
-- [ ] 4.3 Host long-press panel skip toggle in `game_screen.dart`; hide when `connected`.
-- [ ] 4.4 Tests in `test/core/domain/game_session_banner_texts_test.dart`, `test/features/game_session_banners_test.dart`, remaining `game_screen_feedback_test.dart` (toggle hide on reconnect).
+- [x] 4.1 Add host-only `controlledPeers` copy in `lib/core/domain/game_session_banner_texts.dart`; peer “sin conexión” list unchanged.
+- [x] 4.2 Render host-control row in `lib/features/game/widgets/game_session_banners.dart` (seat-colored names); peers MUST NOT show it.
+- [x] 4.3 Host long-press panel skip toggle in `game_screen.dart`; hide when `connected`.
+- [x] 4.4 Tests in `test/core/domain/game_session_banner_texts_test.dart`, `test/features/game_session_banners_test.dart`, remaining `game_screen_feedback_test.dart` (toggle hide on reconnect).

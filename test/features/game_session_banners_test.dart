@@ -146,5 +146,63 @@ void main() {
 
     expect(find.byKey(gameSessionReconnectBannerKey), findsNothing);
     expect(find.byKey(gameSessionPeerDisconnectBannerKey), findsNothing);
+    expect(find.byKey(gameSessionHostControlBannerKey), findsNothing);
+  });
+
+  testWidgets('host-control row colors names; peers omit the row',
+      (tester) async {
+    const colorId = 'color_3';
+    final seatColor = ColorCatalog.byId(colorId)!.color;
+    final luis = _player(id: 'p2', name: 'Luis', colorId: colorId);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GameSessionBanners(
+            texts: GameSessionBannerTexts(
+              disconnectedPeers: [luis],
+              controlledPeers: [luis],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(gameSessionPeerDisconnectBannerKey), findsOneWidget);
+    expect(find.byKey(gameSessionHostControlBannerKey), findsOneWidget);
+    expect(find.textContaining('controlando su turno'), findsOneWidget);
+
+    final hostText =
+        tester.widget<Text>(find.byKey(gameSessionHostControlTextKey));
+    TextSpan? findSpan(InlineSpan span, String label) {
+      if (span is TextSpan) {
+        if (span.text == label) {
+          return span;
+        }
+        for (final child in span.children ?? const <InlineSpan>[]) {
+          final match = findSpan(child, label);
+          if (match != null) {
+            return match;
+          }
+        }
+      }
+      return null;
+    }
+
+    final luisSpan = findSpan(hostText.textSpan!, 'Luis');
+    expect(luisSpan, isNotNull);
+    expect(luisSpan!.style?.color, seatColor);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GameSessionBanners(
+            texts: GameSessionBannerTexts(disconnectedPeers: [luis]),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(gameSessionPeerDisconnectBannerKey), findsOneWidget);
+    expect(find.byKey(gameSessionHostControlBannerKey), findsNothing);
   });
 }
