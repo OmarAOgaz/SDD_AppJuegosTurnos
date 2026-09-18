@@ -495,6 +495,52 @@ class HostRoomController extends ChangeNotifier {
     return true;
   }
 
+  /// Host-only skip flag for a disconnected seat. Result is one `GAME_STATE`.
+  bool setPlayerDisabled({
+    required String senderPlayerId,
+    required String playerId,
+    required bool disabled,
+  }) {
+    final room = _room;
+    if (room == null || !_hostingAuthorityActive) {
+      return false;
+    }
+    if (senderPlayerId != room.hostPlayerId) {
+      return false;
+    }
+    if (room.gamePhase != GameRoomPhase.inGame &&
+        room.gamePhase != GameRoomPhase.betweenRounds) {
+      return false;
+    }
+
+    final target = room.playersById[playerId];
+    if (target == null || target.connected) {
+      return false;
+    }
+    if (disabled && TurnEngine.wouldLeaveZeroEligible(room, playerId)) {
+      return false;
+    }
+    if (target.disabled == disabled) {
+      return true;
+    }
+
+    target.disabled = disabled;
+
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    if (disabled &&
+        room.gamePhase == GameRoomPhase.inGame &&
+        room.turnState.activePlayerId == playerId) {
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: room.hostPlayerId,
+        serverNowMs: serverNow,
+      );
+    }
+    _broadcastGameState(serverNow);
+    _readvertiseMdnsIfRoundChanged();
+    return true;
+  }
+
   bool startNextRound() {
     final room = _room;
     if (room == null) {
@@ -657,14 +703,16 @@ class HostRoomController extends ChangeNotifier {
         }
         if (playerId != null) {
           final player = room.playersById[playerId];
-          if (player != null && !player.connected) {
+          if (player != null) {
+            final wasDisconnected = !player.connected;
+            final wasDisabled = player.disabled;
             player.connected = true;
-            if (room.gamePhase == GameRoomPhase.inGame ||
-                room.gamePhase == GameRoomPhase.betweenRounds) {
+            player.disabled = false;
+            if ((wasDisconnected || wasDisabled) &&
+                (room.gamePhase == GameRoomPhase.inGame ||
+                    room.gamePhase == GameRoomPhase.betweenRounds)) {
               _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
             }
-          } else if (player != null) {
-            player.connected = true;
           }
         }
         send(
@@ -689,6 +737,8 @@ class HostRoomController extends ChangeNotifier {
         _handleUpdatePlayer(session, envelope);
       case MessageTypes.passTurn:
         _handlePassTurn(session, envelope);
+      case MessageTypes.setPlayerDisabled:
+        _handleSetPlayerDisabled(session, envelope);
       case MessageTypes.hostReclaim:
         unawaited(_handleHostReclaim(session, envelope, send));
       default:
@@ -794,6 +844,20 @@ class HostRoomController extends ChangeNotifier {
       return;
     }
     passTurn(senderId);
+  }
+
+  void _handleSetPlayerDisabled(HostSession session, WsEnvelope envelope) {
+    final senderId = session.playerId;
+    final playerId = envelope.payload['playerId'];
+    final disabled = envelope.payload['disabled'];
+    if (senderId == null || playerId is! String || disabled is! bool) {
+      return;
+    }
+    setPlayerDisabled(
+      senderPlayerId: senderId,
+      playerId: playerId,
+      disabled: disabled,
+    );
   }
 
   /// Original host reclaim: validate identity, hand snapshot + HOST_MIGRATED,
@@ -1106,6 +1170,11 @@ class HostRoomController extends ChangeNotifier {
   @visibleForTesting
   bool debugIsSessionDisconnected(String sessionId) {
     return _sessions[sessionId]?.disconnected ?? false;
+  }
+
+  @visibleForTesting
+  set debugHostingAuthorityActive(bool value) {
+    _hostingAuthorityActive = value;
   }
 
   @override
