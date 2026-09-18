@@ -3,6 +3,7 @@ import 'package:turnos_juegos/core/domain/lobby_rules.dart';
 import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
+import 'package:turnos_juegos/core/models/player.dart';
 import 'package:turnos_juegos/core/models/room_config.dart';
 
 GameRoom _roomWithTwoPlayers({bool variableTurnOrder = false}) {
@@ -27,6 +28,19 @@ GameRoom _roomWithTwoPlayers({bool variableTurnOrder = false}) {
     displayName: 'Ana',
     preferredColorIds: const ['color_2', 'color_3', 'color_4'],
     preferredSoundIds: const ['sound_2', 'sound_3', 'sound_4'],
+  );
+  return room;
+}
+
+GameRoom _roomWithThreePlayers({bool variableTurnOrder = false}) {
+  final room = _roomWithTwoPlayers(variableTurnOrder: variableTurnOrder);
+  LobbyRules.tryJoin(
+    room: room,
+    playerId: 'p3',
+    deviceId: 'device-3',
+    displayName: 'Luis',
+    preferredColorIds: const ['color_3', 'color_4', 'color_5'],
+    preferredSoundIds: const ['sound_3', 'sound_4', 'sound_5'],
   );
   return room;
 }
@@ -427,6 +441,145 @@ void main() {
       expect(restored.turnState.matchEndedAtMs, start + 9000);
       expect(restored.playersById['host-1']!.turnCount, 1);
       expect(restored.playersById['host-1']!.totalTurnMs, 5000);
+    });
+  });
+
+  group('TurnEngine disabled skip', () {
+    test('pass skips the next disabled seat', () {
+      final room = _roomWithThreePlayers();
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      room.playersById['p2']!.disabled = true;
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 1000,
+        ),
+        isTrue,
+      );
+      expect(room.turnState.activePlayerId, 'p3');
+      expect(room.turnState.turnStartedAtMs, start + 1000);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+    });
+
+    test('startGame skips a disabled first occupant', () {
+      final room = _roomWithThreePlayers();
+      room.playersById['host-1']!.disabled = true;
+
+      expect(TurnEngine.startGame(room, 1000000), isTrue);
+      expect(room.turnState.activePlayerId, 'p2');
+    });
+
+    test('next round start skips a disabled first occupant', () {
+      final room = _roomWithThreePlayers(variableTurnOrder: true);
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p3',
+        serverNowMs: start + 3000,
+      );
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
+      room.playersById['host-1']!.disabled = true;
+
+      expect(TurnEngine.tryStartNextRound(room, start + 4000), isTrue);
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(room.turnState.currentRound, 2);
+    });
+
+    test('fixed-order round close skips a disabled first occupant', () {
+      final room = _roomWithThreePlayers();
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      room.playersById['host-1']!.disabled = true;
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2000,
+      );
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'p3',
+          serverNowMs: start + 3000,
+        ),
+        isTrue,
+      );
+      expect(room.gamePhase, GameRoomPhase.inGame);
+      expect(room.turnState.currentRound, 2);
+      expect(room.turnState.activePlayerId, 'p2');
+    });
+
+    test('mid-turn disable uses tryPassTurn stats then next eligible', () {
+      final room = _roomWithThreePlayers();
+      const start = 1000000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1000,
+      );
+      final active = room.playersById['p2']!;
+      active
+        ..connected = false
+        ..disabled = true;
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 4000,
+        ),
+        isTrue,
+      );
+      expect(active.turnCount, 1);
+      expect(active.totalTurnMs, 3000);
+      expect(room.turnState.activePlayerId, 'p3');
+    });
+
+    test('last eligible disable would leave zero eligible seats', () {
+      final room = _roomWithThreePlayers();
+      room.playersById['p2']!.disabled = true;
+      room.playersById['p3']!.disabled = true;
+
+      expect(TurnEngine.eligiblePlayerIds(room), ['host-1']);
+      expect(TurnEngine.wouldLeaveZeroEligible(room, 'host-1'), isTrue);
+      expect(TurnEngine.wouldLeaveZeroEligible(room, 'p2'), isFalse);
+    });
+
+    test('missing JSON disabled defaults to false', () {
+      final player = Player.fromJson(const {
+        'playerId': 'p1',
+        'displayName': 'Ana',
+        'colorId': 'color_1',
+        'soundId': 'sound_1',
+        'deviceId': 'device-1',
+      });
+      expect(player.disabled, isFalse);
+
+      final room = _roomWithTwoPlayers();
+      room.playersById['p2']!.disabled = true;
+      final payload = room.toGameStatePayload(serverNow: 1);
+      final players = payload['playersById'] as Map;
+      expect((players['p2'] as Map)['disabled'], isTrue);
+      expect((players['host-1'] as Map)['disabled'], isFalse);
     });
   });
 }
