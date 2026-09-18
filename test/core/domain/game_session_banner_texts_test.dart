@@ -80,6 +80,40 @@ void main() {
       );
       expect(texts.reconnectMessage, isNotNull);
       expect(texts.disconnectedPeers, isEmpty);
+      expect(texts.controlledPeers, isEmpty);
+    });
+
+    test('host-only controlledPeers leaves peer disconnect list unchanged', () {
+      final luis = _player(id: 'p2', name: 'Luis', connected: false);
+      final texts = GameSessionBannerTexts.resolve(
+        showLocalReconnect: false,
+        seatedPlayers: [
+          _player(id: 'p1', name: 'Host', connected: true),
+          luis,
+        ],
+        localPlayerId: 'p1',
+        includeHostControlBanner: true,
+      );
+      expect(texts.disconnectedPeers, [luis]);
+      expect(texts.controlledPeers, [luis]);
+      expect(
+        GameSessionBannerTexts.joinPlayerLabels(texts.controlledPeers) +
+            GameSessionBannerTexts.hostControlSuffix,
+        'Luis — controlando su turno',
+      );
+    });
+
+    test('peers do not receive host-control copy', () {
+      final texts = GameSessionBannerTexts.resolve(
+        showLocalReconnect: false,
+        seatedPlayers: [
+          _player(id: 'p1', name: 'Host', connected: true),
+          _player(id: 'p2', name: 'Luis', connected: false),
+        ],
+        localPlayerId: 'p2',
+      );
+      expect(texts.disconnectedPeers, hasLength(1));
+      expect(texts.controlledPeers, isEmpty);
     });
   });
 

@@ -2,11 +2,12 @@
 
 **Change**: proxy-turn-and-disable-player
 **Mode**: Standard
-**Batch**: Work Unit 3 / PR 3 (tasks 3.1–3.4); merged with Units 1+2
+**Batch**: Work Unit 4 / PR 4 (tasks 4.1–4.4); merged with Units 1+2+3
 **Chain**: stacked-to-main
 **PR 1**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/117
 **PR 2**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/119
 **PR 3**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/121
+**PR 4**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/123
 
 ## Completed Tasks
 
@@ -22,6 +23,10 @@
 - [x] 3.2 Update `lib/core/domain/turn_feedback.dart`: cue when acting + `TurnStartCueKey` ≠ lastFired; warning/overtime use acted-as `colorId`; keep WhoseTurn (`turn_info_presentation.dart`).
 - [x] 3.3 Wire `lib/features/game/game_screen.dart` cue/warning/overtime/ripple/sound to identity; pass sender stays `hostPlayerId`.
 - [x] 3.4 Tests in `test/core/domain/turn_feedback_test.dart` and `test/features/game_screen_feedback_test.dart`: acted-as cue/sound/ripple (flip host-color), motion never passes.
+- [x] 4.1 Add host-only `controlledPeers` copy in `lib/core/domain/game_session_banner_texts.dart`; peer “sin conexión” list unchanged.
+- [x] 4.2 Render host-control row in `lib/features/game/widgets/game_session_banners.dart` (seat-colored names); peers MUST NOT show it.
+- [x] 4.3 Host long-press panel skip toggle in `game_screen.dart`; hide when `connected`. Toggle calls `setPlayerDisabled` / `SET_PLAYER_DISABLED`. Last-eligible reject does not claim success.
+- [x] 4.4 Tests in `test/core/domain/game_session_banner_texts_test.dart`, `test/features/game_session_banners_test.dart`, remaining `game_screen_feedback_test.dart` (toggle hide on reconnect).
 
 ## Files Changed
 
@@ -52,9 +57,20 @@
 | `test/features/game_screen_feedback_test.dart` | Modified | Acted-as cue/sound/ripple (flipped host-color); motion never passes. |
 | `openspec/changes/proxy-turn-and-disable-player/tasks.md` | Modified | 3.1–3.4 `[x]`. |
 
+### Unit 4
+| File | Action | What Was Done |
+|------|--------|---------------|
+| `lib/core/domain/game_session_banner_texts.dart` | Modified | Host-only `controlledPeers`; suffix ` — controlando su turno`; peer list unchanged. |
+| `lib/features/game/widgets/game_session_banners.dart` | Modified | Host-control row with seat-colored names; peers omit the row. |
+| `lib/features/game/game_screen.dart` | Modified | Host resolve includes control banner; long-press skip toggle; hide when connected; last-eligible snackbar. |
+| `test/core/domain/game_session_banner_texts_test.dart` | Modified | Host `controlledPeers` + peer path empty. |
+| `test/features/game_session_banners_test.dart` | Modified | Host row color + peers omit row. |
+| `test/features/game_screen_feedback_test.dart` | Modified | Toggle hide on reconnect; client has no toggle; last-eligible does not claim success. |
+| `openspec/changes/proxy-turn-and-disable-player/tasks.md` | Modified | 4.1–4.4 `[x]`. |
+
 ## Deviations from Design
 
-None — implementation matches design. `resolveActingIdentity(local, host, localPlayer, activePlayer)` feeds GameScreen. Cue is acting + key change. WhoseTurn is unchanged (`turn_info_presentation.dart`). Motion still never calls pass. `PASS_TURN` sender stays `hostPlayerId`.
+None — implementation matches design. Host-control copy is name join + ` — controlando su turno`. Peer “sin conexión” banner stays. Skip toggle is host-only for disconnected controlled seats and hides on reconnect. Last-eligible reject stays in the controller; UI shows `No se pudo omitir el turno` and does not flip the switch.
 
 ## Issues Found
 
@@ -62,17 +78,17 @@ None.
 
 ## Remaining Tasks
 
-- [ ] 4.1–4.4 Host-control banner + long-press toggle
+None.
 
 ## Workload / PR Boundary
 
 - Mode: stacked PR slice
-- Current work unit: Unit 3 / PR 3
-- Boundary: acting identity + cue/ripple/sound wiring + tests; no host-control banner / long-press toggle
-- Review budget: 599 / 400 (tests + GameScreen indent of `_gameBody`; no Phase 4)
-- PR URL: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/121
-- Issue: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/120
+- Current work unit: Unit 4 / PR 4
+- Boundary: host-control banner + long-press skip toggle + tests; Units 1–3 not reopened
+- Review budget: 390 / 400
+- Issue: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/122
+- PR URL: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/123
 
 ## Status
 
-12/16 tasks complete. Ready for next apply batch (Unit 4).
+16/16 tasks complete. Ready for verify.
