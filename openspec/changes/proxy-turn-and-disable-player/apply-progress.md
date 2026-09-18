@@ -4,7 +4,7 @@
 **Mode**: Standard
 **Batch**: Work Unit 1 / PR 1 (tasks 1.1–1.4)
 **Chain**: stacked-to-main
-**PR**: pending
+**PR**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/117
 
 ## Completed Tasks
 
