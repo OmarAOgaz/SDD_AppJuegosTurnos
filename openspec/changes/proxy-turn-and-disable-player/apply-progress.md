@@ -5,7 +5,7 @@
 **Batch**: Work Unit 2 / PR 2 (tasks 2.1–2.4); merged with Unit 1
 **Chain**: stacked-to-main
 **PR 1**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/117
-**PR 2**: pending
+**PR 2**: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/119
 
 ## Completed Tasks
 
@@ -54,7 +54,8 @@ None.
 - Mode: stacked PR slice
 - Current work unit: Unit 2 / PR 2
 - Boundary: `SET_PLAYER_DISABLED` + heartbeat clear + controller tests; no acting identity / GameScreen FX
-- Review budget: implementation-only (message type, controller, tests). Target parent `feat/proxy-turn-disabled-engine` so the GitHub diff is Unit 2 only.
+- Review budget: 397 / 400
+- PR URL: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/119
 - Issue: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/118
 
 ## Status
