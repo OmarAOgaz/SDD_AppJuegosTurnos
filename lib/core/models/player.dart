@@ -8,6 +8,7 @@ class Player {
     required this.deviceId,
     this.slotNumber = 0,
     this.connected = true,
+    this.disabled = false,
     this.exceededTurnCount = 0,
     this.totalExceededMs = 0,
     this.turnCount = 0,
@@ -21,6 +22,9 @@ class Player {
   final String deviceId;
   int slotNumber;
   bool connected;
+
+  /// Host skip flag. Missing JSON defaults to false for mixed LAN clients.
+  bool disabled;
   int exceededTurnCount;
   int totalExceededMs;
   int turnCount;
@@ -32,6 +36,7 @@ class Player {
     String? soundId,
     int? slotNumber,
     bool? connected,
+    bool? disabled,
     int? exceededTurnCount,
     int? totalExceededMs,
     int? turnCount,
@@ -45,6 +50,7 @@ class Player {
       deviceId: deviceId,
       slotNumber: slotNumber ?? this.slotNumber,
       connected: connected ?? this.connected,
+      disabled: disabled ?? this.disabled,
       exceededTurnCount: exceededTurnCount ?? this.exceededTurnCount,
       totalExceededMs: totalExceededMs ?? this.totalExceededMs,
       turnCount: turnCount ?? this.turnCount,
@@ -61,6 +67,7 @@ class Player {
       'deviceId': deviceId,
       'slotNumber': slotNumber,
       'connected': connected,
+      'disabled': disabled,
       'exceededTurnCount': exceededTurnCount,
       'totalExceededMs': totalExceededMs,
       'turnCount': turnCount,
@@ -77,6 +84,7 @@ class Player {
       deviceId: json['deviceId'] as String? ?? '',
       slotNumber: json['slotNumber'] as int? ?? 0,
       connected: json['connected'] as bool? ?? true,
+      disabled: json['disabled'] as bool? ?? false,
       exceededTurnCount: json['exceededTurnCount'] as int? ?? 0,
       totalExceededMs: json['totalExceededMs'] as int? ?? 0,
       turnCount: json['turnCount'] as int? ?? 0,

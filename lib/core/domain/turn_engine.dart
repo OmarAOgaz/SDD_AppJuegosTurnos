@@ -13,6 +13,10 @@ class TurnEngine {
     if (!LobbyRules.canStartGame(room)) {
       return false;
     }
+    final firstId = _firstEligiblePlayerId(room);
+    if (firstId == null) {
+      return false;
+    }
     room.gamePhase = GameRoomPhase.inGame;
     room.turnState
       ..currentRound = 1
@@ -22,10 +26,6 @@ class TurnEngine {
       ..matchStartedAtMs = serverNowMs
       ..totalBetweenRoundsMs = 0;
 
-    final firstId = room.turnSequence.isNotEmpty ? room.turnSequence.first : null;
-    if (firstId == null) {
-      return false;
-    }
     _activatePlayer(room, firstId, serverNowMs);
     refreshPhase(room, serverNowMs);
     return true;
@@ -121,7 +121,8 @@ class TurnEngine {
     if (room.gamePhase != GameRoomPhase.betweenRounds) {
       return false;
     }
-    if (room.turnSequence.isEmpty) {
+    final firstId = _firstEligiblePlayerId(room);
+    if (firstId == null) {
       return false;
     }
 
@@ -131,7 +132,7 @@ class TurnEngine {
     _applyNextRoundDuration(room);
     room.gamePhase = GameRoomPhase.inGame;
     room.turnState.betweenRoundsEnteredAtMs = null;
-    _activatePlayer(room, room.turnSequence.first, serverNowMs);
+    _activatePlayer(room, firstId, serverNowMs);
     refreshPhase(room, serverNowMs);
     return true;
   }
@@ -201,7 +202,15 @@ class TurnEngine {
 
     room.turnState.currentRound += 1;
     _applyNextRoundDuration(room);
-    _activatePlayer(room, room.turnSequence.first, serverNowMs);
+    final firstId = _firstEligiblePlayerId(room);
+    if (firstId == null) {
+      room.turnState
+        ..activePlayerId = null
+        ..turnStartedAtMs = null
+        ..phase = TurnPhase.normal;
+      return true;
+    }
+    _activatePlayer(room, firstId, serverNowMs);
     refreshPhase(room, serverNowMs);
     return true;
   }
@@ -239,6 +248,33 @@ class TurnEngine {
     room.turnState.currentRoundDurationSeconds = nextRoundDurationSeconds(room);
   }
 
+  /// Occupied [GameRoom.turnSequence] seats with [Player.disabled] false.
+  static List<String> eligiblePlayerIds(GameRoom room) {
+    return [
+      for (final id in room.turnSequence)
+        if (_isEligible(room, id)) id,
+    ];
+  }
+
+  /// True when disabling [playerId] would leave no eligible seats.
+  static bool wouldLeaveZeroEligible(GameRoom room, String playerId) {
+    return eligiblePlayerIds(room).where((id) => id != playerId).isEmpty;
+  }
+
+  static bool _isEligible(GameRoom room, String playerId) {
+    final player = room.playersById[playerId];
+    return player != null && !player.disabled;
+  }
+
+  static String? _firstEligiblePlayerId(GameRoom room) {
+    for (final id in room.turnSequence) {
+      if (_isEligible(room, id)) {
+        return id;
+      }
+    }
+    return null;
+  }
+
   static String? _nextPlayerInSequence(GameRoom room, String activePlayerId) {
     if (room.turnSequence.isEmpty) {
       return null;
@@ -247,9 +283,12 @@ class TurnEngine {
     if (index < 0) {
       return null;
     }
-    if (index >= room.turnSequence.length - 1) {
-      return null;
+    for (var i = index + 1; i < room.turnSequence.length; i++) {
+      final id = room.turnSequence[i];
+      if (_isEligible(room, id)) {
+        return id;
+      }
     }
-    return room.turnSequence[index + 1];
+    return null;
   }
 }
