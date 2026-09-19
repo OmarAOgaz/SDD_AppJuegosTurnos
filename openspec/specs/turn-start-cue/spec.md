@@ -8,7 +8,7 @@ Local one-shot color and sound when this device becomes the active turn seat, wi
 
 ### Requirement: Ephemeral color flash on activation
 
-When this device transitions from non-active to active during `IN_GAME`, the system MUST show a full-screen flash in the local seat color for 1800ms. After the cue ends, ambient active+normal MUST remain literal black.
+When this device activates during `IN_GAME`, the system MUST show a 1800ms full-screen flash in the acting identity color: acted-as `colorId` while the host is acting-as that active disconnected seat; otherwise local seat color. Activation MUST include a host acted-as seat change with no non-active gap. After the cue ends, ambient active+normal MUST remain literal black. While the host is acting-as, warning flash and exceeded hold MUST use that acted-as `colorId`. Acted-as activation MUST apply the same pass-block and toast-clear rules as local-seat activation.
 
 #### Scenario: Mid-round pass activation
 
@@ -28,6 +28,13 @@ When this device transitions from non-active to active during `IN_GAME`, the sys
 - GIVEN a new round starts and this device becomes active
 - WHEN activation is observed on this device
 - THEN the same 1800ms local-color cue MUST fire
+
+#### Scenario: Acted-as seat change is activation
+
+- GIVEN the host is already locally active and the next active seat is a disconnected seat the host controls
+- WHEN `activePlayerId` changes to that acted-as seat with no non-active gap
+- THEN the 1800ms cue MUST fire in the acted-as `colorId`
+- AND pass-block and toast-clear MUST apply as on activation
 
 ### Requirement: Local seat sound on turn start
 
@@ -126,3 +133,14 @@ When this device transitions from non-active to active during `IN_GAME`, the sys
 - GIVEN an ephemeral turn-info toast is visible and this device remains non-active
 - WHEN `activePlayerId` changes to another player
 - THEN the toast MUST remain visible with its dispatch-time snapshot until timeout
+
+### Requirement: Acting-as cue uses acted-as sound
+
+When the host is acting-as, the turn-start cue MUST play the acted-as seat `soundId` instead of the host local `soundId`. Duck, silent/ringer, and lobby short-SFX policy MUST still apply.
+
+#### Scenario: Acting-as plays acted-as sound
+
+- GIVEN the host is acting-as disconnected seat A with `soundId` SA, and the host local `soundId` is SH
+- WHEN the turn-start cue fires for that activation
+- THEN SA plays once on the host
+- AND SH MUST NOT play from this cue

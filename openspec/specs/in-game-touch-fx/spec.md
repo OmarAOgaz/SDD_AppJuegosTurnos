@@ -8,7 +8,7 @@ Pointer feedback at the tap point for valid pass and invalid tap during in-game 
 
 ### Requirement: Pass ripple in local seat color
 
-On a valid pass tap, the system MUST show a water-ripple effect at the tap point in this device's local player/seat color.
+On a valid pass tap, the system MUST show a water-ripple at the tap point in this device's local seat color, except host pass-for-disconnected-active, which MUST use the acted-as seat `colorId`.
 
 #### Scenario: Active player pass ripple
 
@@ -20,7 +20,7 @@ On a valid pass tap, the system MUST show a water-ripple effect at the tap point
 
 - GIVEN the host may pass for a disconnected active player
 - WHEN the host completes that valid pass tap at point P
-- THEN a ripple appears at P on the host in the host's local seat color
+- THEN a ripple appears at P on the host in the acted-as seat color
 
 ### Requirement: Invalid tap shows X and turn-info toast
 

@@ -144,6 +144,7 @@ class _FakeHostRoomController extends HostRoomController {
   final List<List<String>> reorderBetweenRoundsCalls = [];
   final List<int> setRoundIncrementCalls = [];
   int startNextRoundCalls = 0;
+  final List<(String playerId, bool disabled)> setPlayerDisabledCalls = [];
 
   @override
   GameRoom? get room => _fakeRoom;
@@ -191,6 +192,29 @@ class _FakeHostRoomController extends HostRoomController {
       RoomConfig.maxRoundIncrementSeconds,
     );
     current.config.roundIncrementSeconds = clamped;
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool setPlayerDisabled({
+    required String senderPlayerId,
+    required String playerId,
+    required bool disabled,
+  }) {
+    setPlayerDisabledCalls.add((playerId, disabled));
+    final current = _fakeRoom;
+    if (current == null) {
+      return false;
+    }
+    final target = current.playersById[playerId];
+    if (target == null || target.connected) {
+      return false;
+    }
+    if (disabled && TurnEngine.wouldLeaveZeroEligible(current, playerId)) {
+      return false;
+    }
+    target.disabled = disabled;
     notifyListeners();
     return true;
   }
@@ -1881,6 +1905,89 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets(
+        'host: tap during acted-as cue does not pass or show ripple',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      await _drainTurnStartCue(tester);
+
+      room.playersById[_clientId]!.connected = false;
+      room.turnState
+        ..activePlayerId = _clientId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(
+        tester.widget<TurnStartCue>(find.byType(TurnStartCue)).color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+
+      const tapAt = Offset(40, 60);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_touchFxState(tester).debugEffects, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host: own-to-proxied activation clears toast and invalid X',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      await _drainTurnStartCue(tester);
+
+      // Own-turn tap would pass; motion toast + overlay X are the leftover UI.
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+      expect(_activeTurnToast, findsOneWidget);
+
+      const markAt = Offset(33, 66);
+      _touchFxState(tester).enqueueInvalidX(markAt, Colors.red);
+      await tester.pump();
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isNotEmpty,
+      );
+
+      room.playersById[_clientId]!.connected = false;
+      room.turnState
+        ..activePlayerId = _clientId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_activeTurnToast, findsNothing);
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isEmpty,
+      );
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(
+        tester.widget<TurnStartCue>(find.byType(TurnStartCue)).color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('host: tap during cue does not pass or show ripple',
         (tester) async {
       final controller = _FakeHostRoomController(
@@ -2359,6 +2466,100 @@ void main() {
         [_clientId, _hostId],
       );
       expect(room.turnSequence, [_clientId, _hostId]);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Host skip toggle (PR4)', () {
+    testWidgets('host skip toggle hides when the seat reconnects',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsOneWidget);
+
+      await tester.tap(find.byKey(inGameSkipToggleKey(_clientId)));
+      await tester.pump();
+      expect(controller.setPlayerDisabledCalls, [(_clientId, true)]);
+      expect(room.playersById[_clientId]!.disabled, isTrue);
+
+      room.playersById[_clientId]!.connected = true;
+      room.playersById[_clientId]!.disabled = false;
+      controller.notifyListeners();
+      await tester.pump();
+
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host skip toggle hides when a non-active skipped seat reconnects',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _hostId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!
+        ..connected = false
+        ..disabled = true;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsOneWidget);
+
+      room.playersById[_clientId]!
+        ..connected = true
+        ..disabled = false;
+      controller.notifyListeners();
+      await tester.pump();
+
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('client panel never shows the host skip toggle', (tester) async {
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(activePlayerId: _hostId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+
+      await _longPressOpenPanel(tester);
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsNothing);
+      expect(find.text('Omitir turno'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('last-eligible skip does not claim success', (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_hostId]!.disabled = true;
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      await tester.tap(find.byKey(inGameSkipToggleKey(_clientId)));
+      await tester.pumpAndSettle();
+
+      expect(controller.setPlayerDisabledCalls, [(_clientId, true)]);
+      expect(room.playersById[_clientId]!.disabled, isFalse);
+      expect(find.text('No se pudo omitir el turno'), findsOneWidget);
+      final toggle = tester.widget<SwitchListTile>(
+        find.byKey(inGameSkipToggleKey(_clientId)),
+      );
+      expect(toggle.value, isFalse);
 
       await tester.pumpWidget(const SizedBox());
     });

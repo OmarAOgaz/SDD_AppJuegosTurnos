@@ -12,7 +12,7 @@ const gameSessionReconnectBannerKey = Key('gameSessionReconnectBanner');
 @visibleForTesting
 const gameSessionPeerDisconnectBannerKey = Key('gameSessionPeerDisconnectBanner');
 
-/// Dismiss control on the peer-disconnect banner.
+/// Finder for the peer-disconnect banner rich text in widget tests.
 @visibleForTesting
 const gameSessionPeerDisconnectTextKey = Key('gameSessionPeerDisconnectText');
 
@@ -20,7 +20,15 @@ const gameSessionPeerDisconnectTextKey = Key('gameSessionPeerDisconnectText');
 @visibleForTesting
 const gameSessionPeerDismissButtonKey = Key('gameSessionPeerDismissButton');
 
-/// In-game status strip for local reconnect and peer disconnect notices.
+/// Finder for the host-only control banner row in widget tests.
+@visibleForTesting
+const gameSessionHostControlBannerKey = Key('gameSessionHostControlBanner');
+
+/// Finder for the host-control banner rich text in widget tests.
+@visibleForTesting
+const gameSessionHostControlTextKey = Key('gameSessionHostControlText');
+
+/// In-game status strip for reconnect, peer disconnect, and host-control notices.
 class GameSessionBanners extends StatelessWidget {
   const GameSessionBanners({
     super.key,
@@ -65,6 +73,16 @@ class GameSessionBanners extends StatelessWidget {
                 key: gameSessionPeerDisconnectBannerKey,
                 peers: texts.disconnectedPeers,
                 onDismiss: onDismissPeerBanner,
+              ),
+            if (texts.controlledPeers.isNotEmpty)
+              _BannerRow(
+                key: gameSessionHostControlBannerKey,
+                icon: Icon(
+                  Icons.sports_esports_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                message: _HostControlRichText(peers: texts.controlledPeers),
               ),
           ],
         ),
@@ -185,6 +203,58 @@ class _PeerDisconnectRichText extends StatelessWidget {
       );
     }
     spans.add(TextSpan(text: ' sin conexión', style: baseStyle));
+    return spans;
+  }
+}
+
+class _HostControlRichText extends StatelessWidget {
+  const _HostControlRichText({required this.peers});
+
+  final List<Player> peers;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final baseStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return Text.rich(
+      TextSpan(
+        style: baseStyle,
+        children: _buildSpans(baseStyle),
+      ),
+      key: gameSessionHostControlTextKey,
+    );
+  }
+
+  List<InlineSpan> _buildSpans(TextStyle? baseStyle) {
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < peers.length; i++) {
+      if (i > 0) {
+        if (i == peers.length - 1) {
+          spans.add(TextSpan(text: ' y ', style: baseStyle));
+        } else {
+          spans.add(TextSpan(text: ', ', style: baseStyle));
+        }
+      }
+      final player = peers[i];
+      final seatColor = ColorCatalog.byId(player.colorId)?.color;
+      spans.add(
+        TextSpan(
+          text: GameSessionBannerTexts.playerLabel(player),
+          style: baseStyle?.copyWith(
+            color: seatColor ?? baseStyle.color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+    spans.add(
+      TextSpan(
+        text: GameSessionBannerTexts.hostControlSuffix,
+        style: baseStyle,
+      ),
+    );
     return spans;
   }
 }
