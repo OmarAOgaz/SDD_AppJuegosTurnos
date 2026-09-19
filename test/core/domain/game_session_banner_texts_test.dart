@@ -98,8 +98,17 @@ void main() {
       expect(texts.controlledPeers, [luis]);
       expect(
         GameSessionBannerTexts.joinPlayerLabels(texts.controlledPeers) +
-            GameSessionBannerTexts.hostControlSuffix,
-        'Luis — controlando su turno',
+            GameSessionBannerTexts.hostControlSuffix(
+              peerCount: texts.controlledPeers.length,
+            ),
+        'Luis - desconectado controlando su turno',
+      );
+    });
+
+    test('host-control suffix is plural for multiple controlled seats', () {
+      expect(
+        GameSessionBannerTexts.hostControlSuffix(peerCount: 2),
+        ' - desconectados controlando su turno',
       );
     });
 

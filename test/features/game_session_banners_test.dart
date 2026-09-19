@@ -170,7 +170,10 @@ void main() {
 
     expect(find.byKey(gameSessionPeerDisconnectBannerKey), findsOneWidget);
     expect(find.byKey(gameSessionHostControlBannerKey), findsOneWidget);
-    expect(find.textContaining('controlando su turno'), findsOneWidget);
+    expect(
+      find.textContaining('desconectado controlando su turno'),
+      findsOneWidget,
+    );
 
     final hostText =
         tester.widget<Text>(find.byKey(gameSessionHostControlTextKey));
