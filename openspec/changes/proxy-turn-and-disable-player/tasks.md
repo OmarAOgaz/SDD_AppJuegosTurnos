@@ -34,10 +34,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: SET_PLAYER_DISABLED + reconnect clear
 
-- [ ] 2.1 Add `SET_PLAYER_DISABLED` `{ playerId, disabled }` in `lib/core/constants/message_types.dart`.
-- [ ] 2.2 Implement `HostRoomController.setPlayerDisabled`: reject non-host, stale host, connected target, missing seat, last-eligible; result `GAME_STATE`.
-- [ ] 2.3 Heartbeat rebind: `connected=true`, `disabled=false`, keep active clock if that seat; one `GAME_STATE`. Implicit proxy = `hostPlayerId`; do not change `electActingHost`.
-- [ ] 2.4 Tests in `test/server/host_room_controller_test.dart`: illegal skip unchanged, reconnect restore+clear, `PASS_TURN` sender `hostPlayerId`, succession unchanged.
+- [x] 2.1 Add `SET_PLAYER_DISABLED` `{ playerId, disabled }` in `lib/core/constants/message_types.dart`.
+- [x] 2.2 Implement `HostRoomController.setPlayerDisabled`: reject non-host, stale host, connected target, missing seat, last-eligible; result `GAME_STATE`.
+- [x] 2.3 Heartbeat rebind: `connected=true`, `disabled=false`, keep active clock if that seat; one `GAME_STATE`. Implicit proxy = `hostPlayerId`; do not change `electActingHost`.
+- [x] 2.4 Tests in `test/server/host_room_controller_test.dart`: illegal skip unchanged, reconnect restore+clear, `PASS_TURN` sender `hostPlayerId`, succession unchanged.
 
 ## Phase 3: Acting identity + cue/ripple
 

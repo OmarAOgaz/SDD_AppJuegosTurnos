@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/constants/network_constants.dart';
 import 'package:turnos_juegos/core/domain/host_heal_compare.dart';
+import 'package:turnos_juegos/core/domain/host_succession.dart';
 import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
 import 'package:turnos_juegos/core/lifecycle/foreground_service_bridge.dart';
@@ -1510,6 +1511,284 @@ void main() {
         server.broadcasts.any((e) => e.type == MessageTypes.gameState),
         isTrue,
       );
+    });
+  });
+
+  group('HostRoomController setPlayerDisabled', () {
+    test('illegal skip leaves flags unchanged', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final hostId = room.hostPlayerId;
+      final guestId = room.turnSequence.firstWhere((id) => id != hostId);
+      final guest = room.playersById[guestId]!;
+      guest.connected = false;
+      server.broadcasts.clear();
+
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: guestId,
+          playerId: guestId,
+          disabled: true,
+        ),
+        isFalse,
+        reason: 'non-host sender is rejected',
+      );
+      expect(guest.disabled, isFalse);
+
+      guest.connected = true;
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: hostId,
+          playerId: guestId,
+          disabled: true,
+        ),
+        isFalse,
+        reason: 'connected target is rejected',
+      );
+      expect(guest.disabled, isFalse);
+
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: hostId,
+          playerId: 'missing-seat',
+          disabled: true,
+        ),
+        isFalse,
+        reason: 'missing seat is rejected',
+      );
+
+      guest.connected = false;
+      room.playersById[hostId]!.disabled = true;
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: hostId,
+          playerId: guestId,
+          disabled: true,
+        ),
+        isFalse,
+        reason: 'last eligible skip is rejected',
+      );
+      expect(guest.disabled, isFalse);
+      expect(server.broadcasts, isEmpty);
+
+      room.playersById[hostId]!.disabled = false;
+      controller.debugHostingAuthorityActive = false;
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: hostId,
+          playerId: guestId,
+          disabled: true,
+        ),
+        isFalse,
+        reason: 'stale host is rejected',
+      );
+      expect(guest.disabled, isFalse);
+      expect(controller.hasHostingAuthority, isFalse);
+    });
+
+    test('host disables disconnected seat and broadcasts GAME_STATE', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final hostId = room.hostPlayerId;
+      final guestId = room.turnSequence.firstWhere((id) => id != hostId);
+      final guest = room.playersById[guestId]!;
+      guest.connected = false;
+      server.broadcasts.clear();
+
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: hostId,
+          playerId: guestId,
+          disabled: true,
+        ),
+        isTrue,
+      );
+      expect(guest.disabled, isTrue);
+      expect(server.broadcasts, hasLength(1));
+      expect(server.broadcasts.single.type, MessageTypes.gameState);
+      final players =
+          server.broadcasts.single.payload['playersById'] as Map<String, dynamic>;
+      expect(players[guestId]['disabled'], isTrue);
+    });
+
+    test('mid-turn disable records pass stats then one GAME_STATE', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final hostId = room.hostPlayerId;
+      final guestId = room.turnSequence.firstWhere((id) => id != hostId);
+      while (room.turnState.activePlayerId != guestId) {
+        expect(controller.passTurn(hostId), isTrue);
+      }
+      final guest = room.playersById[guestId]!;
+      guest.connected = false;
+      final turnsBefore = guest.turnCount;
+      server.broadcasts.clear();
+
+      expect(
+        controller.setPlayerDisabled(
+          senderPlayerId: hostId,
+          playerId: guestId,
+          disabled: true,
+        ),
+        isTrue,
+      );
+      expect(guest.disabled, isTrue);
+      expect(guest.turnCount, turnsBefore + 1);
+      expect(room.turnState.activePlayerId, isNot(guestId));
+      expect(
+        server.broadcasts.where((e) => e.type == MessageTypes.gameState),
+        hasLength(1),
+      );
+    });
+
+    test('heartbeat reconnect restores seat, clears disable, keeps clock',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final hostId = room.hostPlayerId;
+      final guestId = room.turnSequence.firstWhere((id) => id != hostId);
+      while (room.turnState.activePlayerId != guestId) {
+        expect(controller.passTurn(hostId), isTrue);
+      }
+      final guest = room.playersById[guestId]!;
+      guest
+        ..connected = false
+        ..disabled = true;
+      final startedAt = room.turnState.turnStartedAtMs;
+      expect(startedAt, isNotNull);
+      server.broadcasts.clear();
+
+      controller.debugRegisterSession('client-session-2');
+      final acks = <WsEnvelope>[];
+      controller.debugDispatchMessageWithSend(
+        'client-session-2',
+        WsEnvelope(
+          type: MessageTypes.heartbeat,
+          payload: {
+            'deviceId': 'device-a',
+            'clientNow': DateTime.now().millisecondsSinceEpoch,
+          },
+        ),
+        acks.add,
+      );
+
+      expect(guest.connected, isTrue);
+      expect(guest.disabled, isFalse);
+      expect(room.turnState.activePlayerId, guestId);
+      expect(room.turnState.turnStartedAtMs, startedAt);
+      expect(acks.last.type, MessageTypes.heartbeatAck);
+      expect(
+        server.broadcasts.where((e) => e.type == MessageTypes.gameState),
+        hasLength(1),
+      );
+    });
+
+    test('PASS_TURN sender stays hostPlayerId for disconnected active',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final hostId = room.hostPlayerId;
+      final guestId = room.turnSequence.firstWhere((id) => id != hostId);
+      while (room.turnState.activePlayerId != guestId) {
+        expect(controller.passTurn(hostId), isTrue);
+      }
+      room.playersById[guestId]!.connected = false;
+
+      expect(
+        controller.passTurn(hostId),
+        isTrue,
+        reason: 'host pass sender is hostPlayerId, not the acted-as seat',
+      );
+      expect(room.turnState.activePlayerId, isNot(guestId));
+    });
+
+    test('succession election is unchanged when a seat is disabled', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      controller.debugDispatchMessage(
+        'client-2',
+        _joinEnvelope(deviceId: 'device-b', displayName: 'B'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final seq = room.turnSequence;
+      expect(seq, hasLength(3));
+      final middle = room.playersById[seq[1]]!;
+      middle
+        ..connected = false
+        ..disabled = true;
+
+      expect(
+        HostSuccession.electActingHost(room),
+        seq[2],
+        reason: 'election still walks the next connected seat',
+      );
+    });
+
+    test('SET_PLAYER_DISABLED from a peer session is ignored', () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final guestId = room.turnSequence.firstWhere(
+        (id) => id != room.hostPlayerId,
+      );
+      room.playersById[guestId]!.connected = false;
+      server.broadcasts.clear();
+
+      controller.debugDispatchMessage(
+        'client-session-1',
+        WsEnvelope(
+          type: MessageTypes.setPlayerDisabled,
+          payload: {'playerId': guestId, 'disabled': true},
+        ),
+      );
+
+      expect(room.playersById[guestId]!.disabled, isFalse);
+      expect(server.broadcasts, isEmpty);
     });
   });
 
