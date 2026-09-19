@@ -41,10 +41,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Acting identity + cue/ripple
 
-- [ ] 3.1 Create `lib/core/domain/acting_identity.dart` + `test/core/domain/acting_identity_test.dart` (own / acting-as / client / reconnect clears acting-as).
-- [ ] 3.2 Update `lib/core/domain/turn_feedback.dart`: cue when acting + `TurnStartCueKey` ≠ lastFired; warning/overtime use acted-as `colorId`; keep WhoseTurn (`turn_info_presentation.dart`).
-- [ ] 3.3 Wire `lib/features/game/game_screen.dart` cue/warning/overtime/ripple/sound to identity; pass sender stays `hostPlayerId`.
-- [ ] 3.4 Tests in `test/core/domain/turn_feedback_test.dart` and `test/features/game_screen_feedback_test.dart`: acted-as cue/sound/ripple (flip host-color), motion never passes.
+- [x] 3.1 Create `lib/core/domain/acting_identity.dart` + `test/core/domain/acting_identity_test.dart` (own / acting-as / client / reconnect clears acting-as).
+- [x] 3.2 Update `lib/core/domain/turn_feedback.dart`: cue when acting + `TurnStartCueKey` ≠ lastFired; warning/overtime use acted-as `colorId`; keep WhoseTurn (`turn_info_presentation.dart`).
+- [x] 3.3 Wire `lib/features/game/game_screen.dart` cue/warning/overtime/ripple/sound to identity; pass sender stays `hostPlayerId`.
+- [x] 3.4 Tests in `test/core/domain/turn_feedback_test.dart` and `test/features/game_screen_feedback_test.dart`: acted-as cue/sound/ripple (flip host-color), motion never passes.
 
 ## Phase 4: Banner + long-press toggle
 
