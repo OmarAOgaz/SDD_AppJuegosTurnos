@@ -11,7 +11,10 @@ class GameSessionBannerTexts {
   static const String localReconnectMessage = 'Reconectando con el host…';
 
   /// Host-only control-banner suffix (hardcoded Spanish).
-  static const String hostControlSuffix = ' — controlando su turno';
+  static String hostControlSuffix({required int peerCount}) {
+    final adjective = peerCount == 1 ? 'desconectado' : 'desconectados';
+    return ' - $adjective controlando su turno';
+  }
 
   final String? reconnectMessage;
 

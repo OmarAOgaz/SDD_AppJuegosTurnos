@@ -251,7 +251,7 @@ class _HostControlRichText extends StatelessWidget {
     }
     spans.add(
       TextSpan(
-        text: GameSessionBannerTexts.hostControlSuffix,
+        text: GameSessionBannerTexts.hostControlSuffix(peerCount: peers.length),
         style: baseStyle,
       ),
     );
