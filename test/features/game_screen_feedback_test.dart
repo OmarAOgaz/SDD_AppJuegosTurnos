@@ -1905,6 +1905,89 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets(
+        'host: tap during acted-as cue does not pass or show ripple',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      await _drainTurnStartCue(tester);
+
+      room.playersById[_clientId]!.connected = false;
+      room.turnState
+        ..activePlayerId = _clientId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(
+        tester.widget<TurnStartCue>(find.byType(TurnStartCue)).color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+
+      const tapAt = Offset(40, 60);
+      await _tapGestureAt(tester, tapAt);
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_touchFxState(tester).debugEffects, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host: own-to-proxied activation clears toast and invalid X',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+      await _drainTurnStartCue(tester);
+
+      // Own-turn tap would pass; motion toast + overlay X are the leftover UI.
+      final start = await emitArmingRest(_motion, tester);
+      await emitTiltPickup(_motion, tester, start);
+      await tester.pump();
+      expect(_activeTurnToast, findsOneWidget);
+
+      const markAt = Offset(33, 66);
+      _touchFxState(tester).enqueueInvalidX(markAt, Colors.red);
+      await tester.pump();
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isNotEmpty,
+      );
+
+      room.playersById[_clientId]!.connected = false;
+      room.turnState
+        ..activePlayerId = _clientId
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch;
+      controller.notifyListeners();
+      await tester.pump();
+      await tester.pump();
+
+      expect(_activeTurnToast, findsNothing);
+      expect(
+        _touchFxState(tester).debugEffects.where(
+              (e) => e.kind == TouchFxKind.invalidX,
+            ),
+        isEmpty,
+      );
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(
+        tester.widget<TurnStartCue>(find.byType(TurnStartCue)).color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('host: tap during cue does not pass or show ripple',
         (tester) async {
       final controller = _FakeHostRoomController(
@@ -2409,6 +2492,33 @@ void main() {
 
       room.playersById[_clientId]!.connected = true;
       room.playersById[_clientId]!.disabled = false;
+      controller.notifyListeners();
+      await tester.pump();
+
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'host skip toggle hides when a non-active skipped seat reconnects',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _hostId,
+        remainingSeconds: 30,
+      );
+      room.playersById[_clientId]!
+        ..connected = false
+        ..disabled = true;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      expect(find.byKey(inGameSkipToggleKey(_clientId)), findsOneWidget);
+
+      room.playersById[_clientId]!
+        ..connected = true
+        ..disabled = false;
       controller.notifyListeners();
       await tester.pump();
 

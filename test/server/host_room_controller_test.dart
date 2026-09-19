@@ -1711,6 +1711,52 @@ void main() {
       );
     });
 
+    test('heartbeat reconnect of non-active skipped seat clears disable',
+        () async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      final room = controller.room!;
+      expect(await controller.startGame(), isTrue);
+      final hostId = room.hostPlayerId;
+      final guestId = room.turnSequence.firstWhere((id) => id != hostId);
+      expect(room.turnState.activePlayerId, hostId);
+      final guest = room.playersById[guestId]!;
+      guest
+        ..connected = false
+        ..disabled = true;
+      final startedAt = room.turnState.turnStartedAtMs;
+      server.broadcasts.clear();
+
+      controller.debugRegisterSession('client-session-2');
+      final acks = <WsEnvelope>[];
+      controller.debugDispatchMessageWithSend(
+        'client-session-2',
+        WsEnvelope(
+          type: MessageTypes.heartbeat,
+          payload: {
+            'deviceId': 'device-a',
+            'clientNow': DateTime.now().millisecondsSinceEpoch,
+          },
+        ),
+        acks.add,
+      );
+
+      expect(guest.connected, isTrue);
+      expect(guest.disabled, isFalse);
+      expect(room.turnState.activePlayerId, hostId);
+      expect(room.turnState.turnStartedAtMs, startedAt);
+      expect(acks.last.type, MessageTypes.heartbeatAck);
+      expect(
+        server.broadcasts.where((e) => e.type == MessageTypes.gameState),
+        hasLength(1),
+      );
+    });
+
     test('PASS_TURN sender stays hostPlayerId for disconnected active',
         () async {
       final fixture = await _lobbySyncFixture();
