@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:turnos_juegos/app/app.dart';
 import 'package:turnos_juegos/core/models/discovered_room.dart';
 import 'package:turnos_juegos/core/network/discovery/mdns_browser.dart';
-import 'package:turnos_juegos/core/network/manual_endpoint_store.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 
 class _FakeMdnsBrowser extends MdnsBrowser {
@@ -20,23 +19,26 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'manual_lan_endpoints': ['stale'],
+    });
   });
 
   testWidgets('TurnosApp renders home', (tester) async {
-    final store = await ManualEndpointStore.create();
-
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           mdnsBrowserProvider.overrideWith((ref) => _FakeMdnsBrowser()),
-          manualEndpointStoreProvider.overrideWith((ref) async => store),
         ],
         child: const TurnosApp(),
       ),
     );
     await tester.pump();
+    await tester.pump();
     expect(find.text('Turnos Juegos de mesa'), findsOneWidget);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.containsKey('manual_lan_endpoints'), isFalse);
 
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(materialApp.themeMode, ThemeMode.dark);

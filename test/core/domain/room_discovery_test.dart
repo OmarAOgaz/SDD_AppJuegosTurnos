@@ -189,6 +189,49 @@ void main() {
       expect(room!.displayName, 'Game_room-1');
     });
 
+    test('parses hostColorId when present', () {
+      final room = mapMdnsTxtToDiscoveredRoom(
+        attributes: {
+          'roomId': 'room-1',
+          'displayName': 'Sala',
+          'hostColorId': 'color_3',
+        },
+        hostIp: '10.0.0.5',
+        servicePort: 4242,
+      );
+      expect(room, isNotNull);
+      expect(room!.hostColorId, 'color_3');
+    });
+
+    test('blank hostColorId becomes null and room stays listed', () {
+      final room = mapMdnsTxtToDiscoveredRoom(
+        attributes: {
+          'roomId': 'room-1',
+          'displayName': 'Sala',
+          'hostColorId': '   ',
+        },
+        hostIp: '10.0.0.5',
+        servicePort: 4242,
+      );
+      expect(room, isNotNull);
+      expect(room!.hostColorId, isNull);
+      expect(room.roomId, 'room-1');
+    });
+
+    test('omitted hostColorId stays listed', () {
+      final room = mapMdnsTxtToDiscoveredRoom(
+        attributes: {
+          'roomId': 'room-1',
+          'displayName': 'Sala',
+        },
+        hostIp: '10.0.0.5',
+        servicePort: 4242,
+      );
+      expect(room, isNotNull);
+      expect(room!.hostColorId, isNull);
+      expect(room.roomId, 'room-1');
+    });
+
     test('returns null when roomId/host/port invalid', () {
       expect(
         mapMdnsTxtToDiscoveredRoom(

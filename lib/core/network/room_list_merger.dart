@@ -1,9 +1,8 @@
 import '../constants/network_constants.dart';
 import '../models/discovered_room.dart';
 import 'game_resume_store.dart';
-import 'manual_endpoint_store.dart';
 
-/// Merges mDNS and manual discovery sources with `roomId` deduplication.
+/// Merges mDNS discovery with `roomId` deduplication.
 ///
 /// When [resume] is set, matching rooms are marked [DiscoveredRoom.isResumable]
 /// (no TTL). If browse has not resolved the room yet but the store has a
@@ -13,7 +12,6 @@ class RoomListMerger {
 
   List<DiscoveredRoom> merge({
     required List<DiscoveredRoom> mdnsRooms,
-    required List<ManualEndpoint> manualEndpoints,
     GameResumeEntry? resume,
   }) {
     final merged = <String, DiscoveredRoom>{};
@@ -24,24 +22,10 @@ class RoomListMerger {
       }
     }
 
-    for (final endpoint in manualEndpoints) {
-      final manualKey = 'manual:${endpoint.key}';
-      merged.putIfAbsent(
-        manualKey,
-        () => DiscoveredRoom(
-          roomId: manualKey,
-          displayName: endpoint.label ?? endpoint.key,
-          hostIp: endpoint.host,
-          port: endpoint.port,
-          source: RoomDiscoverySource.manual,
-        ),
-      );
-    }
-
     if (resume != null) {
       final existing = merged[resume.roomId];
       if (existing != null) {
-        // copyWith keeps optional heal fields (platform / currentRound).
+        // copyWith keeps optional heal fields (platform / currentRound / hostColorId).
         merged[resume.roomId] = existing.copyWith(isResumable: true);
       } else {
         final host = resume.host;

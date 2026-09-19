@@ -9,7 +9,6 @@ import '../network/device_id_store.dart';
 import '../network/discovery/mdns_browser.dart';
 import '../network/game_resume_store.dart';
 import '../network/game_socket_client.dart';
-import '../network/manual_endpoint_store.dart';
 import '../network/room_list_merger.dart';
 import '../../server/host_room_controller.dart';
 
@@ -22,10 +21,6 @@ final hostRoomControllerProvider =
 final foregroundServiceBridgeProvider =
     Provider<ForegroundServiceBridge>((ref) {
   return ForegroundServiceBridge();
-});
-
-final manualEndpointStoreProvider = FutureProvider<ManualEndpointStore>((ref) {
-  return ManualEndpointStore.create();
 });
 
 final gameResumeStoreProvider = FutureProvider<GameResumeStore>((ref) {

@@ -33,14 +33,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Discovery model (PR 2)
 
-- [ ] 2.1 Add `String? hostColorId` and `copyWith(clearHostColorId)` in `lib/core/models/discovered_room.dart`; drop `RoomDiscoverySource.manual`.
-- [ ] 2.2 Parse TXT `hostColorId` leniently in `lib/core/domain/room_discovery.dart` (trim → `null` if blank); still list omitted ids.
-- [ ] 2.3 Add optional `hostColorId` to `start()` in `lib/core/network/discovery/mdns_advertiser.dart`.
-- [ ] 2.4 In `lib/server/host_room_controller.dart`, advertise acting-host color; re-advertise from `updateLocalPlayer`, `_handleUpdatePlayer`, and `applyAuthoritativeSnapshot`.
-- [ ] 2.5 Drop `manualEndpoints` in `lib/core/network/room_list_merger.dart`; keep dedup + resumable-first.
-- [ ] 2.6 Delete `lib/core/network/manual_endpoint_store.dart`; remove `manualEndpointStoreProvider` from `lib/core/providers/network_providers.dart`.
-- [ ] 2.7 One-shot `SharedPreferences.remove('manual_lan_endpoints')` at startup in `lib/app/app.dart` (D5; ignore if absent; do not read the list).
-- [ ] 2.8 Tests with this unit: parse present/blank/absent in `test/core/domain/room_discovery_test.dart`; no-manual merger in `test/core/room_list_merger_test.dart`; advertise + re-advertise in `test/server/host_room_controller_test.dart`.
+- [x] 2.1 Add `String? hostColorId` and `copyWith(clearHostColorId)` in `lib/core/models/discovered_room.dart`; drop `RoomDiscoverySource.manual`.
+- [x] 2.2 Parse TXT `hostColorId` leniently in `lib/core/domain/room_discovery.dart` (trim → `null` if blank); still list omitted ids.
+- [x] 2.3 Add optional `hostColorId` to `start()` in `lib/core/network/discovery/mdns_advertiser.dart`.
+- [x] 2.4 In `lib/server/host_room_controller.dart`, advertise acting-host color; re-advertise from `updateLocalPlayer`, `_handleUpdatePlayer`, and `applyAuthoritativeSnapshot`.
+- [x] 2.5 Drop `manualEndpoints` in `lib/core/network/room_list_merger.dart`; keep dedup + resumable-first.
+- [x] 2.6 Delete `lib/core/network/manual_endpoint_store.dart`; remove `manualEndpointStoreProvider` from `lib/core/providers/network_providers.dart`.
+- [x] 2.7 One-shot `SharedPreferences.remove('manual_lan_endpoints')` at startup in `lib/app/app.dart` (D5; ignore if absent; do not read the list).
+- [x] 2.8 Tests with this unit: parse present/blank/absent in `test/core/domain/room_discovery_test.dart`; no-manual merger in `test/core/room_list_merger_test.dart`; advertise + re-advertise in `test/server/host_room_controller_test.dart`.
 
 ## Phase 3: Home UI (PR 3)
 

@@ -100,6 +100,9 @@ class HostRoomController extends ChangeNotifier {
   /// Last mDNS TXT `currentRound` advertised (avoids no-op re-advertise churn).
   int? _lastAdvertisedRound;
 
+  /// Last mDNS TXT `hostColorId` advertised (avoids no-op re-advertise churn).
+  String? _lastAdvertisedHostColorId;
+
   /// Set when this acting host is demoted ([HOST_RECLAIM] or heal yield); UI consumes.
   HostDemotionResume? _pendingDemotionResume;
 
@@ -265,6 +268,7 @@ class HostRoomController extends ChangeNotifier {
     room.playersById[room.hostPlayerId]?.connected = true;
     _room = room;
     _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+    _readvertiseMdnsIfHostColorChanged();
     return true;
   }
 
@@ -292,6 +296,7 @@ class HostRoomController extends ChangeNotifier {
     _hostLanIp = null;
     _hostingAuthorityActive = false;
     _lastAdvertisedRound = null;
+    _lastAdvertisedHostColorId = null;
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = null;
     _sessions.clear();
@@ -409,6 +414,7 @@ class HostRoomController extends ChangeNotifier {
     );
     if (changed) {
       _broadcastLobbyState();
+      _readvertiseMdnsIfHostColorChanged();
     }
     return changed;
   }
@@ -834,6 +840,7 @@ class HostRoomController extends ChangeNotifier {
     );
     if (changed) {
       _broadcastLobbyState();
+      _readvertiseMdnsIfHostColorChanged();
     }
   }
 
@@ -1060,14 +1067,17 @@ class HostRoomController extends ChangeNotifier {
     required int currentRound,
   }) async {
     final round = currentRound < 0 ? 0 : currentRound;
+    final hostColorId = _actingHostColorId();
     await _mdnsAdvertiser.start(
       roomId: roomId,
       displayName: displayName,
       port: port,
       platform: advertiseHostPlatformToken(),
       currentRound: round,
+      hostColorId: hostColorId,
     );
     _lastAdvertisedRound = round;
+    _lastAdvertisedHostColorId = hostColorId;
   }
 
   Future<void> _readvertiseMdns() async {
@@ -1082,6 +1092,29 @@ class HostRoomController extends ChangeNotifier {
       port: boundPort,
       currentRound: room.turnState.currentRound,
     );
+  }
+
+  String? _actingHostColorId() {
+    final room = _room;
+    if (room == null) {
+      return null;
+    }
+    final colorId = room.playersById[room.hostPlayerId]?.colorId.trim();
+    if (colorId == null || colorId.isEmpty) {
+      return null;
+    }
+    return colorId;
+  }
+
+  /// Re-advertise TXT when the acting host's catalog color changes.
+  void _readvertiseMdnsIfHostColorChanged() {
+    if (_room == null) {
+      return;
+    }
+    if (_lastAdvertisedHostColorId == _actingHostColorId()) {
+      return;
+    }
+    unawaited(_readvertiseMdns());
   }
 
   /// Re-advertise TXT when [GameRoom.turnState.currentRound] changes.

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/game/ended_screen.dart';
 import '../features/game/game_screen.dart';
@@ -11,6 +14,18 @@ import '../features/player_profile/personalize_screen.dart';
 import '../features/spike/spike_session_screen.dart';
 
 import '../core/providers/network_providers.dart';
+
+const _manualLanEndpointsPrefsKey = 'manual_lan_endpoints';
+
+/// Best-effort purge of the removed manual-join prefs key. Ignores absence.
+Future<void> purgeManualLanEndpoints() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_manualLanEndpointsPrefsKey);
+  } catch (_) {
+    // Plugin/prefs unavailable (tests without binding) — ignore.
+  }
+}
 
 class TurnosApp extends ConsumerWidget {
   const TurnosApp({super.key});
@@ -76,6 +91,7 @@ class TurnosApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    unawaited(purgeManualLanEndpoints());
     ref.watch(deviceIdProvider);
     ref.watch(gameSocketClientProvider);
     return MaterialApp.router(

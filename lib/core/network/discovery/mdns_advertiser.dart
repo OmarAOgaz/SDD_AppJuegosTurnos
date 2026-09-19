@@ -16,6 +16,7 @@ class MdnsAdvertiser {
     required int port,
     required String platform,
     required int currentRound,
+    String? hostColorId,
   }) async {
     if (!kEnableMdns) {
       return;
@@ -24,6 +25,7 @@ class MdnsAdvertiser {
     await stop();
 
     final round = currentRound < 0 ? 0 : currentRound;
+    final trimmedHostColorId = hostColorId?.trim();
     final service = BonsoirService(
       name: '${displayName}_${roomId.substring(0, 8)}',
       type: kMdnsServiceType,
@@ -34,6 +36,8 @@ class MdnsAdvertiser {
         'port': port.toString(),
         'platform': platform,
         'currentRound': round.toString(),
+        if (trimmedHostColorId != null && trimmedHostColorId.isNotEmpty)
+          'hostColorId': trimmedHostColorId,
       },
     );
 
