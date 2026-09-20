@@ -50,8 +50,8 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Lobby back (PR 4)
 
-- [ ] 4.1 Host `Scaffold` in `lib/features/lobby/lobby_screen.dart`: `PopScope(canPop: false)` → `_discardAndGoHome()` (`discardRoom()` then `context.go('/')`); `Cerrar sala` shares it. Do not restyle `LobbyPlayerRow`.
-- [ ] 4.2 In `test/features/lobby/lobby_screen_test.dart`, host back calls `discardRoom()` and returns Home.
+- [x] 4.1 Host `Scaffold` in `lib/features/lobby/lobby_screen.dart`: `PopScope(canPop: false)` → `_discardAndGoHome()` (`discardRoom()` then `context.go('/')`); `Cerrar sala` shares it. Do not restyle `LobbyPlayerRow`.
+- [x] 4.2 In `test/features/lobby/lobby_screen_test.dart`, host back calls `discardRoom()` and returns Home.
 
 ## Phase 5: Cleanup (PR 5)
 

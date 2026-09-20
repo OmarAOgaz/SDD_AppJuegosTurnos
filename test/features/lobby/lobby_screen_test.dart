@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:turnos_juegos/core/domain/lobby_rules.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/local_player_profile.dart';
@@ -38,8 +39,15 @@ GameRoom _room() {
 class _FakeHost extends HostRoomController {
   _FakeHost(this._room);
   final GameRoom _room;
+  int discardCalls = 0;
+
   @override
   GameRoom? get room => _room;
+
+  @override
+  Future<void> discardRoom() async {
+    discardCalls++;
+  }
 
   @override
   bool reorderSeats(List<String> orderedPlayerIds) {
@@ -189,5 +197,41 @@ void main() {
       tester.getTopLeft(find.byKey(const ValueKey(_g))).dy,
       lessThan(tester.getTopLeft(find.byKey(const ValueKey(_h))).dy),
     );
+  });
+
+  testWidgets('host back calls discardRoom and returns Home', (tester) async {
+    final host = _FakeHost(_room());
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, __) => const Scaffold(body: Text('Home')),
+        ),
+        GoRoute(
+          path: '/lobby',
+          builder: (_, __) => const LobbyScreen(role: 'host'),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          hostRoomControllerProvider.overrideWith((ref) => host),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    router.push('/lobby?role=host');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cerrar sala'), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    expect(host.discardCalls, 1);
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Cerrar sala'), findsNothing);
   });
 }
