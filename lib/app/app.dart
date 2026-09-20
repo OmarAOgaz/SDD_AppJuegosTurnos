@@ -80,10 +80,14 @@ class TurnosApp extends ConsumerWidget {
     ref.watch(gameSocketClientProvider);
     return MaterialApp.router(
       title: 'Turnos Juegos de mesa',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
         useMaterial3: true,
       ),
+      themeMode: ThemeMode.dark,
       routerConfig: _router,
     );
   }

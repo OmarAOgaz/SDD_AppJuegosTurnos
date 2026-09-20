@@ -38,6 +38,23 @@ void main() {
     await tester.pump();
     expect(find.text('Turnos Juegos de mesa'), findsOneWidget);
 
+    final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(materialApp.themeMode, ThemeMode.dark);
+    expect(materialApp.theme, isNull);
+    expect(materialApp.darkTheme, isNotNull);
+    expect(materialApp.darkTheme!.brightness, Brightness.dark);
+    expect(materialApp.darkTheme!.colorScheme.brightness, Brightness.dark);
+    expect(materialApp.darkTheme!.useMaterial3, isTrue);
+
+    final homeContext = tester.element(find.text('Turnos Juegos de mesa'));
+    expect(Theme.of(homeContext).brightness, Brightness.dark);
+    expect(Theme.of(homeContext).colorScheme.brightness, Brightness.dark);
+
+    expect(find.byType(Switch), findsNothing);
+    expect(find.byType(SwitchListTile), findsNothing);
+    expect(find.textContaining('theme', findRichText: true), findsNothing);
+    expect(find.textContaining('Tema', findRichText: true), findsNothing);
+
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
