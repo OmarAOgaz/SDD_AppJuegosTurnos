@@ -159,24 +159,42 @@ void main() {
   });
 
   testWidgets('color_2 fill vs unknown Naranja still tappable', (tester) async {
+    const blueFill = Color(0xFF1E88E5);
+    final expectedOnBlue =
+        ThemeData.estimateBrightnessForColor(blueFill) == Brightness.dark
+            ? Colors.white
+            : Colors.black;
     await _pumpHome(
       tester,
       _app(
         browser: _FakeMdns([
           _r('blue', 'Azul host', 'color_2'),
           _r('mystery', 'Mystery', 'not-a-color'),
+          _r('gone', 'Sin color', null),
         ]),
       ),
     );
     expect(
       tester.widget<Card>(find.byKey(const ValueKey('room-blue'))).color,
-      const Color(0xFF1E88E5),
+      blueFill,
     );
+    final blueTitle = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey('room-blue')),
+        matching: find.text('Azul host'),
+      ),
+    );
+    expect(blueTitle.style?.color, expectedOnBlue);
     expect(
       tester.widget<Card>(find.byKey(const ValueKey('room-mystery'))).color,
       const Color(0xFFFB8C00),
     );
-    await tester.tap(find.byKey(const ValueKey('room-mystery')));
+    expect(
+      tester.widget<Card>(find.byKey(const ValueKey('room-gone'))).color,
+      const Color(0xFFFB8C00),
+    );
+    expect(find.text('Sin color'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('room-gone')));
     await tester.pumpAndSettle();
     expect(find.text('seated-lobby-client'), findsOneWidget);
   });
