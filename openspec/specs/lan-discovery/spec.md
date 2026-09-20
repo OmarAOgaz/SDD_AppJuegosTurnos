@@ -14,37 +14,38 @@ The system MUST identify each LAN room by a canonical `roomId` (UUID v4). The vi
 
 ### Requirement: mDNS advertisement and browse
 
-When hosting a room and mDNS is enabled, the system MUST advertise service type `_turnos._tcp` with TXT records `roomId`, `displayName`, `port`, `platform`, and `currentRound`. `platform` MUST be one of `android`, `ios`, `other`. `currentRound` MUST advertise the host’s in-progress round as a non-negative integer string (use `0` when not in-progress or unknown at advertise time). Clients on the Home screen MUST browse for `_turnos._tcp` and populate the room list from resolved services. Browse MUST expose `platform` and `currentRound` on discovered rooms so `host-succession` resume heal can compare peers. When TXT omits `platform`, consumers MUST treat the peer as non-Android; when TXT omits or cannot parse `currentRound`, consumers MUST treat it as `0`. Publishing `hostPlayerId` in TXT is out of scope for this change.
+When hosting and mDNS is enabled, the system MUST advertise `_turnos._tcp` with TXT `roomId`, `displayName`, `port`, `platform`, and `currentRound`. `platform` MUST be `android`, `ios`, or `other`. `currentRound` MUST be a non-negative integer string (`0` if not in-progress or unknown). Home clients MUST browse `_turnos._tcp` and populate the room list. Browse MUST expose `platform` and `currentRound` for `host-succession` heal compare. Missing `platform` MUST be treated as non-Android; missing or unparseable `currentRound` MUST be `0`. Publishing `hostPlayerId` in TXT remains out of scope.
 
 #### Scenario: Client discovers a host on the same LAN
 
-- GIVEN a host has started advertising a room
-- WHEN a client opens Home with mDNS enabled on the same Wi‑Fi
-- THEN the room appears in the list showing `displayName` and a connectable endpoint
+- GIVEN a host is advertising
+- WHEN a client opens Home with mDNS on the same Wi-Fi
+- THEN the room appears with `displayName` and a connectable endpoint
 
 #### Scenario: mDNS disabled by feature flag
 
 - GIVEN `kEnableMdns` is false
 - WHEN a client opens Home
-- THEN no mDNS browse runs and only manually saved endpoints are listed
+- THEN no mDNS browse runs and the room list is empty
 
 #### Scenario: Host advertises platform and currentRound
 
-- GIVEN a device is hosting room R in-progress on Android at round 2
-- WHEN mDNS advertise (or re-advertise) runs
-- THEN TXT includes `platform=android` and `currentRound=2` plus `roomId`, `displayName`, and `port`
+- GIVEN Android host of room R at round 2
+- WHEN advertise runs
+- THEN TXT has `platform=android`, `currentRound=2`, `roomId`, `displayName`, and `port`
 
 #### Scenario: Browse exposes attrs for heal
 
-- GIVEN a peer advertises R with TXT `platform` and `currentRound`
-- WHEN browse resolves the service
-- THEN the discovered room exposes those fields for dual-host heal compare
+- GIVEN a peer advertises R with `platform` and `currentRound`
+- WHEN browse resolves
+- THEN those fields are exposed for heal compare
 
 #### Scenario: Missing platform and currentRound defaults
 
-- GIVEN an older peer advertises R without `platform` or `currentRound` TXT
+- GIVEN a peer omits `platform` and `currentRound`
 - WHEN browse maps the service
-- THEN consumers treat platform as non-Android and `currentRound` as `0`
+- THEN mapping stores null `platform` and null `currentRound`
+- AND heal/compare parsers treat those as non-Android (`other`) and `0`
 
 ### Requirement: Address resolution before connect
 
@@ -55,16 +56,6 @@ The system MUST resolve Bonsoir `hostAddresses` to an IP before opening a WebSoc
 - GIVEN a discovered service exposes one or more `hostAddresses`
 - WHEN the user selects that room
 - THEN the client attempts connection using a resolved IPv4 address and advertised `port`
-
-### Requirement: Manual IP fallback
-
-The system MUST allow users to store and connect to a manual `host:port` endpoint (Settings). Manual entries MUST coexist with mDNS-discovered rooms in the room list model.
-
-#### Scenario: AP isolation blocks mDNS
-
-- GIVEN mDNS browse returns no matching room
-- WHEN the user enters a valid host IP and port manually
-- THEN the client MAY connect without mDNS discovery
 
 ### Requirement: Platform local-network permission
 
@@ -142,3 +133,25 @@ The in-game mDNS browser MUST remove cached room entries when Bonsoir reports `S
 - WHEN a reconnecting client discovers R at B's endpoint via mDNS
 - THEN the client reconnects to B
 - AND MUST NOT run a local fork on that device
+
+### Requirement: Acting host advertises hostColorId
+
+Acting-host advertise MUST include TXT `hostColorId`. The host MUST re-advertise when that color changes, including after succession. Browse MUST still list rooms that omit or have unknown `hostColorId`.
+
+#### Scenario: Advertise host color
+
+- GIVEN acting-host color `color_3`
+- WHEN advertise runs
+- THEN TXT includes `hostColorId=color_3`
+
+#### Scenario: Re-advertise on color change
+
+- GIVEN acting-host color changes to `color_7`
+- WHEN that change applies
+- THEN the host re-advertises `hostColorId=color_7`
+
+#### Scenario: Missing hostColorId still listed
+
+- GIVEN a peer omits `hostColorId`
+- WHEN browse resolves
+- THEN the room remains listed

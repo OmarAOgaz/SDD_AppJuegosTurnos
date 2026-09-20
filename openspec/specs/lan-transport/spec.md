@@ -24,11 +24,11 @@ All WebSocket payloads MUST be JSON objects with a `type` string field and a `pa
 
 ### Requirement: Connection handshake exposes roomId
 
-On successful WebSocket connect, the host MUST send an initial handshake message that includes the room's `roomId`. Clients connecting via manual IP MUST obtain `roomId` from this handshake, not from user input.
+On successful WebSocket connect, the host MUST send an initial handshake that includes the room's `roomId`.
 
-#### Scenario: Manual IP connect
+#### Scenario: Handshake supplies roomId
 
-- GIVEN a client connects to `ws://{ip}:{port}/ws` without prior mDNS data
+- GIVEN a client connects to `ws://{ip}:{port}/ws`
 - WHEN the socket opens
 - THEN the client receives a handshake containing the host room's `roomId`
 
