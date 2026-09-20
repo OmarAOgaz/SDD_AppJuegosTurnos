@@ -7,8 +7,9 @@ import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/providers/profile_providers.dart';
+import 'widgets/room_card.dart';
 
-/// Home screen — mDNS + manual room list, host and join actions.
+/// Home — create a match and join discovered Partidas.
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -18,7 +19,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _statusMessage;
-  bool _stoppingHost = false;
   bool _resuming = false;
   List<DiscoveredRoom> _mdnsRooms = [];
   GameResumeEntry? _resumeEntry;
@@ -57,12 +57,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _createHostRoom() async {
-    setState(() => _statusMessage = 'Starting host…');
     try {
       final deviceId = await ref.read(deviceIdProvider.future);
       final profile = await ref.read(localPlayerProfileProvider.future);
       final controller = ref.read(hostRoomControllerProvider);
-      final room = await controller.startRoom(
+      await controller.startRoom(
         hostDeviceId: deviceId,
         profile: profile,
         displayName: profile.defaultDisplayName,
@@ -70,11 +69,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!mounted) {
         return;
       }
-      final ip = controller.hostLanIp ?? '?';
-      setState(
-        () => _statusMessage =
-            'Hosting "${room.displayName}" at $ip:${controller.port}',
-      );
       context.push('/lobby?role=host');
     } catch (error) {
       if (!mounted) {
@@ -82,62 +76,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       setState(() => _statusMessage = 'Failed to start host: $error');
     }
-  }
-
-  Future<void> _addManualEndpoint() async {
-    final hostController = TextEditingController();
-    final portController = TextEditingController(text: '8080');
-    final labelController = TextEditingController();
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Manual IP'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: hostController,
-              decoration: const InputDecoration(labelText: 'Host IP'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: portController,
-              decoration: const InputDecoration(labelText: 'Port'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: labelController,
-              decoration: const InputDecoration(labelText: 'Label (optional)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) {
-      return;
-    }
-
-    final port = int.tryParse(portController.text.trim());
-    final host = hostController.text.trim();
-    if (host.isEmpty || port == null) {
-      setState(() => _statusMessage = 'Invalid host or port');
-      return;
-    }
-
-    // Manual join is removed from the discovery model; Home UI drop is PR 3.
-    setState(() => _statusMessage = 'Manual IP join is no longer available');
   }
 
   Future<void> _connectToRoom(DiscoveredRoom room) async {
@@ -266,10 +204,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       });
     });
 
-    final controller = ref.watch(hostRoomControllerProvider);
-    final room = controller.room;
     final mergedRooms = _mergedRooms;
-    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -289,90 +224,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SizedBox(height: 12),
           FilledButton(
             onPressed: _createHostRoom,
-            child: const Text('Create host room'),
+            child: const Text('Crear partida'),
           ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _addManualEndpoint,
-            child: const Text('Add manual IP'),
-          ),
-          if (room != null) ...[
-            const SizedBox(height: 16),
-            Text('Your room: ${room.displayName}'),
-            Text('LAN: ${controller.hostLanIp ?? "?"}:${controller.port ?? "—"}'),
-            Text('Phase: ${room.gamePhase.wireValue}'),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: _stoppingHost
-                  ? null
-                  : () => context.push('/lobby?role=host'),
-              child: const Text('Open lobby (host)'),
-            ),
-            TextButton(
-              onPressed: _stoppingHost
-                  ? null
-                  : () async {
-                      setState(() {
-                        _stoppingHost = true;
-                        _statusMessage = 'Stopping host…';
-                      });
-                      // stopRoom clears `_room` before awaiting teardown, so
-                      // refresh UI immediately once that sync work runs.
-                      final stopFuture = controller.stopRoom();
-                      if (mounted) {
-                        setState(() {});
-                      }
-                      try {
-                        await stopFuture;
-                      } finally {
-                        if (mounted) {
-                          setState(() {
-                            _stoppingHost = false;
-                            _statusMessage = 'Host stopped';
-                          });
-                        }
-                      }
-                    },
-              child: Text(_stoppingHost ? 'Stopping…' : 'Stop host'),
-            ),
-          ],
           const SizedBox(height: 24),
           Text(
-            'Rooms on LAN',
+            'Partidas',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
-          if (mergedRooms.isEmpty)
-            const Text('No rooms found. Try manual IP or create a host.')
-          else
-            ...mergedRooms.map(
-              (entry) => ListTile(
-                key: ValueKey('room-${entry.roomId}'),
-                tileColor: entry.isResumable
-                    ? scheme.primaryContainer.withValues(alpha: 0.45)
-                    : null,
-                shape: entry.isResumable
-                    ? RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(color: scheme.primary),
-                      )
-                    : null,
-                title: Text(entry.displayName),
-                subtitle: Text(
-                  entry.isResumable
-                      ? '${entry.hostIp}:${entry.port} · reanudable'
-                      : '${entry.hostIp}:${entry.port} · ${entry.source.name}',
-                ),
-                trailing: entry.isResumable
-                    ? Chip(
-                        label: const Text('Reanudar'),
-                        visualDensity: VisualDensity.compact,
-                        backgroundColor: scheme.primaryContainer,
-                      )
-                    : const Icon(Icons.chevron_right),
-                onTap: _resuming ? null : () => _connectToRoom(entry),
-              ),
+          ...mergedRooms.map(
+            (entry) => RoomCard(
+              room: entry,
+              onTap: _resuming ? null : () => _connectToRoom(entry),
             ),
+          ),
         ],
       ),
     );

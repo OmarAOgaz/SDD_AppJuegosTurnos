@@ -44,9 +44,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Home UI (PR 3)
 
-- [ ] 3.1 Create `lib/features/home/widgets/room_card.dart` (`RoomCard`, `resolveHostCardColor` → `color_5` `#FB8C00` on null/unknown; `ValueKey('room-<roomId>')`, `Reanudar`, `onTap`, `estimateBrightnessForColor`).
-- [ ] 3.2 Rebuild `lib/features/home/home_screen.dart` to `Crear partida` + `Partidas` only; drop Open lobby, Stop host, Add manual IP, LAN debug; keep `_connectToRoom` / `_resumeToRoom`.
-- [ ] 3.3 Create `test/features/home/home_screen_test.dart`: create seats host; empty `Partidas` without IP control; resumable first; `color_2` vs unknown Naranja still tappable.
+- [x] 3.1 Create `lib/features/home/widgets/room_card.dart` (`RoomCard`, `resolveHostCardColor` → `color_5` `#FB8C00` on null/unknown; `ValueKey('room-<roomId>')`, `Reanudar`, `onTap`, `estimateBrightnessForColor`).
+- [x] 3.2 Rebuild `lib/features/home/home_screen.dart` to `Crear partida` + `Partidas` only; drop Open lobby, Stop host, Add manual IP, LAN debug; keep `_connectToRoom` / `_resumeToRoom`.
+- [x] 3.3 Create `test/features/home/home_screen_test.dart`: create seats host; empty `Partidas` without IP control; resumable first; `color_2` vs unknown Naranja still tappable.
 
 ## Phase 4: Lobby back (PR 4)
 
