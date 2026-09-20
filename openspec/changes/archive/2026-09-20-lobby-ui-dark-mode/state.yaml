@@ -1,0 +1,110 @@
+name: lobby-ui-dark-mode
+created: 2026-09-19
+persistence: hybrid
+engram_project: ssd_app_juegos_turnos
+execution_mode: interactive
+delivery_strategy: auto-chain
+chain_strategy: stacked-to-main
+
+phases:
+  explore:
+    status: complete
+    completed_at: 2026-09-19
+    artifact: openspec/changes/lobby-ui-dark-mode/exploration.md
+    engram_topic: sdd/lobby-ui-dark-mode/explore
+  propose:
+    status: complete
+    completed_at: 2026-09-19
+    artifact: openspec/changes/lobby-ui-dark-mode/proposal.md
+    engram_topic: sdd/lobby-ui-dark-mode/proposal
+  spec:
+    status: complete
+    completed_at: 2026-09-19
+    artifact: openspec/changes/lobby-ui-dark-mode/specs/
+    engram_topic: sdd/lobby-ui-dark-mode/spec
+    domains:
+      - home-discovery
+      - app-theme
+      - lan-discovery
+      - lan-transport
+      - lobby
+  design:
+    status: complete
+    completed_at: 2026-09-19
+    artifact: openspec/changes/lobby-ui-dark-mode/design.md
+    engram_topic: sdd/lobby-ui-dark-mode/design
+    decisions: 5
+  tasks:
+    status: complete
+    completed_at: 2026-09-19
+    artifact: openspec/changes/lobby-ui-dark-mode/tasks.md
+    engram_topic: sdd/lobby-ui-dark-mode/tasks
+    phases: 8
+    tasks_total: 25
+    review_forecast:
+      estimated_changed_lines: 700-1000
+      budget_risk: High
+      chained_prs_recommended: true
+      chain_strategy: stacked-to-main
+      decision_needed_before_apply: false
+    next_apply:
+      slice: none
+      tasks: []
+  apply:
+    status: complete
+    updated_at: 2026-09-20
+    engram_topic: sdd/lobby-ui-dark-mode/apply-progress
+    slice: PR9-warning-fixes
+    next_slice: none
+    tasks_completed: ["1.1", "1.2", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "3.1", "3.2", "3.3", "4.1", "4.2", "5.1", "6.1", "6.2", "6.3", "7.1", "7.2", "7.3", "7.4", "8.1", "8.2"]
+    pr1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/127
+    issue1: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/126
+    pr2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/129
+    issue2: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/128
+    pr3: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/131
+    issue3: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/130
+    pr4: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/133
+    issue4: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/132
+    pr5: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/135
+    issue5: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/134
+    pr6: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/137
+    issue6: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/136
+    pr7: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/139
+    pr8: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/141
+    pr9: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/pull/143
+    issue9: https://github.com/OmarAOgaz/SDD_AppJuegosTurnos/issues/142
+    pr9_changed_lines: 57
+    pr6_changed_lines: 228
+  verify:
+    status: complete
+    needs_revision: false
+    updated_at: 2026-09-20
+    engram_topic: sdd/lobby-ui-dark-mode/verify-report
+    artifact: openspec/changes/lobby-ui-dark-mode/verify-report.md
+    verdict: PASS
+    archive_ready: true
+    compliance: 18/18
+    tasks: 25/25
+    tests: 446 passed
+    analyze: exit 0 (0 errors, 0 warnings, 17 info)
+    test_command: powershell -NoProfile -File scripts/flutter-test.ps1
+    warnings_closed:
+      - unused_import in test/core/network/game_socket_client_reconnect_test.dart
+      - PROGRAMFILES(X86) via scripts/flutter-test.ps1 wrapper
+    branch: feat/lobby-ui-verify-warning-fixes
+    pr_tip: 143
+  archive:
+    status: complete
+    completed_at: 2026-09-20
+    artifact: openspec/changes/archive/2026-09-20-lobby-ui-dark-mode/archive-report.md
+    engram_topic: sdd/lobby-ui-dark-mode/archive-report
+    path: openspec/changes/archive/2026-09-20-lobby-ui-dark-mode/
+
+recommendation: Approach 3 — Home discovery redesign + forced dark theme + mDNS hostColorId TXT; keep resumable-first sort; remove manual-IP UX.
+open_questions: []
+risks:
+  - removing_manual_ip_conflicts_with_lan-discovery_fallback
+  - mixed_version_peers_omit_hostColorId
+  - stale_card_color_without_re-advertise_on_host_color_or_succession
+  - contrast_on_yellow_cyan_dark_cards
+next: none
