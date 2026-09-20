@@ -53,7 +53,7 @@ rules:
     tdd: false
     test_command: ""
   verify:
-    test_command: ""
+    test_command: "powershell -NoProfile -File scripts/flutter-test.ps1"
     build_command: ""
     coverage_threshold: 0
   archive:

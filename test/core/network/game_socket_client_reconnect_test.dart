@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/lifecycle/app_lifecycle_sync.dart';
-import 'package:turnos_juegos/core/network/game_resume_store.dart';
 import 'package:turnos_juegos/core/network/game_socket_client.dart';
 
 class _FakeConnection implements GameSocketConnection {
