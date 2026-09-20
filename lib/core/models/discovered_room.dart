@@ -1,4 +1,4 @@
-/// A room discovered via mDNS, manual entry, or resume-store cache.
+/// A room discovered via mDNS or resume-store cache.
 class DiscoveredRoom {
   const DiscoveredRoom({
     required this.roomId,
@@ -9,6 +9,7 @@ class DiscoveredRoom {
     this.isResumable = false,
     this.platform,
     this.currentRound,
+    this.hostColorId,
   });
 
   final String roomId;
@@ -26,6 +27,9 @@ class DiscoveredRoom {
   /// mDNS TXT `currentRound`; null when absent/unparseable at browse time.
   final int? currentRound;
 
+  /// mDNS TXT `hostColorId`; null when omitted or blank.
+  final String? hostColorId;
+
   String get wsUrl => 'ws://$hostIp:$port/ws';
 
   /// `hostIp:port` endpoint key for dual-host heal compare.
@@ -40,8 +44,10 @@ class DiscoveredRoom {
     bool? isResumable,
     String? platform,
     int? currentRound,
+    String? hostColorId,
     bool clearPlatform = false,
     bool clearCurrentRound = false,
+    bool clearHostColorId = false,
   }) {
     return DiscoveredRoom(
       roomId: roomId ?? this.roomId,
@@ -53,8 +59,10 @@ class DiscoveredRoom {
       platform: clearPlatform ? null : (platform ?? this.platform),
       currentRound:
           clearCurrentRound ? null : (currentRound ?? this.currentRound),
+      hostColorId:
+          clearHostColorId ? null : (hostColorId ?? this.hostColorId),
     );
   }
 }
 
-enum RoomDiscoverySource { mdns, manual, cached }
+enum RoomDiscoverySource { mdns, cached }

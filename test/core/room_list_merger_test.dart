@@ -2,14 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:turnos_juegos/core/models/discovered_room.dart';
 import 'package:turnos_juegos/core/network/game_resume_store.dart';
-import 'package:turnos_juegos/core/network/manual_endpoint_store.dart';
 import 'package:turnos_juegos/core/network/room_list_merger.dart';
 
 void main() {
   group('RoomListMerger', () {
     const merger = RoomListMerger();
 
-    test('deduplicates by roomId and includes manual endpoints', () {
+    test('deduplicates by roomId without a manual join path', () {
       const mdnsRoom = DiscoveredRoom(
         roomId: 'room-a',
         displayName: 'Sala A',
@@ -25,14 +24,15 @@ void main() {
 
       final rooms = merger.merge(
         mdnsRooms: [mdnsRoom, duplicate],
-        manualEndpoints: const [
-          ManualEndpoint(host: '192.168.1.20', port: 8080, label: 'Manual'),
-        ],
       );
 
-      expect(rooms.length, 2);
-      expect(rooms.any((r) => r.roomId == 'room-a'), isTrue);
-      expect(rooms.any((r) => r.source == RoomDiscoverySource.manual), isTrue);
+      expect(rooms.length, 1);
+      expect(rooms.single.roomId, 'room-a');
+      expect(rooms.single.hostIp, '192.168.1.11');
+      expect(
+        rooms.any((r) => r.source == RoomDiscoverySource.cached),
+        isFalse,
+      );
     });
 
     test('marks listed room matching resume store as resumable (no TTL)', () {
@@ -51,7 +51,6 @@ void main() {
 
       final rooms = merger.merge(
         mdnsRooms: [mdnsRoom, other],
-        manualEndpoints: const [],
         resume: const GameResumeEntry(
           roomId: 'room-resume',
           playerId: 'p1',
@@ -76,7 +75,6 @@ void main() {
     test('injects cached endpoint when resume room not yet discovered', () {
       final rooms = merger.merge(
         mdnsRooms: const [],
-        manualEndpoints: const [],
         resume: const GameResumeEntry(
           roomId: 'room-cached',
           playerId: 'p1',
@@ -97,7 +95,6 @@ void main() {
     test('does not inject cache when resume has no endpoint', () {
       final rooms = merger.merge(
         mdnsRooms: const [],
-        manualEndpoints: const [],
         resume: const GameResumeEntry(
           roomId: 'room-no-endpoint',
           playerId: 'p1',
@@ -117,11 +114,11 @@ void main() {
         port: 9000,
         platform: 'android',
         currentRound: 2,
+        hostColorId: 'color_2',
       );
 
       final rooms = merger.merge(
         mdnsRooms: const [mdnsRoom],
-        manualEndpoints: const [],
         resume: const GameResumeEntry(
           roomId: 'room-heal',
           playerId: 'p1',
@@ -135,6 +132,7 @@ void main() {
       expect(resumable.isResumable, isTrue);
       expect(resumable.platform, 'android');
       expect(resumable.currentRound, 2);
+      expect(resumable.hostColorId, 'color_2');
       expect(resumable.hostIp, '192.168.1.10');
       expect(resumable.port, 9000);
     });

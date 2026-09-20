@@ -31,6 +31,9 @@ DiscoveredRoom? mapMdnsTxtToDiscoveredRoom({
       roundRaw == null ? null : int.tryParse(roundRaw.trim());
   final currentRound =
       (parsedRound == null || parsedRound < 0) ? null : parsedRound;
+  final colorRaw = attributes['hostColorId'];
+  final hostColorId =
+      (colorRaw == null || colorRaw.trim().isEmpty) ? null : colorRaw.trim();
 
   return DiscoveredRoom(
     roomId: roomId,
@@ -40,6 +43,7 @@ DiscoveredRoom? mapMdnsTxtToDiscoveredRoom({
     source: RoomDiscoverySource.mdns,
     platform: platform,
     currentRound: currentRound,
+    hostColorId: hostColorId,
   );
 }
 

@@ -21,6 +21,7 @@ class _FakeMdnsAdvertiser extends MdnsAdvertiser {
   int? lastPort;
   String? lastPlatform;
   int? lastCurrentRound;
+  String? lastHostColorId;
   int startCount = 0;
   int stopCount = 0;
 
@@ -31,6 +32,7 @@ class _FakeMdnsAdvertiser extends MdnsAdvertiser {
     required int port,
     required String platform,
     required int currentRound,
+    String? hostColorId,
   }) async {
     startCount++;
     lastRoomId = roomId;
@@ -38,6 +40,7 @@ class _FakeMdnsAdvertiser extends MdnsAdvertiser {
     lastPort = port;
     lastPlatform = platform;
     lastCurrentRound = currentRound;
+    lastHostColorId = hostColorId;
   }
 
   @override
@@ -1960,6 +1963,101 @@ void main() {
       expect(mdns.startCount, 1);
       expect(mdns.lastCurrentRound, 3);
       expect(mdns.lastPlatform, advertiseHostPlatformToken());
+    });
+  });
+
+  group('HostRoomController mDNS hostColorId TXT', () {
+    test('startRoom advertises acting-host color', () async {
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+
+      final hostId = controller.room!.hostPlayerId;
+      expect(
+        mdns.lastHostColorId,
+        controller.room!.playersById[hostId]!.colorId,
+      );
+      expect(mdns.lastHostColorId, 'color_1');
+    });
+
+    test('updateLocalPlayer re-advertises when host color changes', () async {
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      expect(mdns.lastHostColorId, 'color_1');
+      final startsBefore = mdns.startCount;
+      final hostId = controller.room!.hostPlayerId;
+
+      expect(controller.updateLocalPlayer(hostId, colorId: 'color_7'), isTrue);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(mdns.startCount, greaterThan(startsBefore));
+      expect(mdns.lastHostColorId, 'color_7');
+    });
+
+    test('applyAuthoritativeSnapshot re-advertises when host color changes',
+        () async {
+      final mdns = _FakeMdnsAdvertiser();
+      final seed = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+      );
+      await seed.startRoom(displayName: 'Sala', hostDeviceId: 'host-device');
+      seed.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      final seedRoom = seed.room!;
+      expect(TurnEngine.startGame(seedRoom, 1000), isTrue);
+      final snapshot = seed.exportRoomSnapshot()!;
+      final originalHostId = seedRoom.originalHostPlayerId;
+      await seed.stopRoom(broadcastDiscarded: false);
+
+      final controller = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startFromSnapshot(
+        snapshot: snapshot,
+        actingHostPlayerId: originalHostId,
+      );
+      expect(mdns.lastHostColorId, 'color_1');
+      final startsBefore = mdns.startCount;
+
+      final updated = Map<String, dynamic>.from(snapshot);
+      final players = Map<String, dynamic>.from(
+        updated['playersById'] as Map? ?? const {},
+      );
+      final hostJson = Map<String, dynamic>.from(
+        players[originalHostId] as Map? ?? const {},
+      );
+      hostJson['colorId'] = 'color_7';
+      players[originalHostId] = hostJson;
+      updated['playersById'] = players;
+
+      expect(
+        controller.applyAuthoritativeSnapshot(
+          updated,
+          actingHostPlayerId: originalHostId,
+        ),
+        isTrue,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(mdns.startCount, greaterThan(startsBefore));
+      expect(mdns.lastHostColorId, 'color_7');
     });
   });
 }

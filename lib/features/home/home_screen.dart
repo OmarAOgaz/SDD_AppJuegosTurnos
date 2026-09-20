@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/models/discovered_room.dart';
 import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
-import '../../core/network/manual_endpoint_store.dart';
 import '../../core/providers/network_providers.dart';
 import '../../core/providers/profile_providers.dart';
 
@@ -22,7 +21,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _stoppingHost = false;
   bool _resuming = false;
   List<DiscoveredRoom> _mdnsRooms = [];
-  List<ManualEndpoint> _manualEndpoints = [];
   GameResumeEntry? _resumeEntry;
 
   @override
@@ -40,7 +38,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
     await browser.start();
-    await _reloadManualEndpoints();
   }
 
   Future<void> _reloadResumeEntry() async {
@@ -51,19 +48,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _resumeEntry = store.load());
   }
 
-  Future<void> _reloadManualEndpoints() async {
-    final store = await ref.read(manualEndpointStoreProvider.future);
-    if (!mounted) {
-      return;
-    }
-    setState(() => _manualEndpoints = store.loadAll());
-  }
-
   List<DiscoveredRoom> get _mergedRooms {
     final merger = ref.read(roomListMergerProvider);
     return merger.merge(
       mdnsRooms: _mdnsRooms,
-      manualEndpoints: _manualEndpoints,
       resume: _resumeEntry,
     );
   }
@@ -148,17 +136,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    final store = await ref.read(manualEndpointStoreProvider.future);
-    await store.add(
-      ManualEndpoint(
-        host: host,
-        port: port,
-        label: labelController.text.trim().isEmpty
-            ? null
-            : labelController.text.trim(),
-      ),
-    );
-    await _reloadManualEndpoints();
+    // Manual join is removed from the discovery model; Home UI drop is PR 3.
+    setState(() => _statusMessage = 'Manual IP join is no longer available');
   }
 
   Future<void> _connectToRoom(DiscoveredRoom room) async {
