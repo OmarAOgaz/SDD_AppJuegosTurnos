@@ -18,7 +18,7 @@ class MdnsAdvertiser {
     required int currentRound,
     String? hostColorId,
   }) async {
-    if (!kEnableMdns) {
+    if (!isMdnsEnabled) {
       return;
     }
 

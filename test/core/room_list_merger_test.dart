@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:turnos_juegos/core/constants/network_constants.dart';
 import 'package:turnos_juegos/core/models/discovered_room.dart';
 import 'package:turnos_juegos/core/network/game_resume_store.dart';
 import 'package:turnos_juegos/core/network/room_list_merger.dart';
@@ -135,6 +136,21 @@ void main() {
       expect(resumable.hostColorId, 'color_2');
       expect(resumable.hostIp, '192.168.1.10');
       expect(resumable.port, 9000);
+    });
+
+    test('kEnableMdns false drops mDNS rooms so the list is empty', () {
+      debugMdnsEnabledOverride = false;
+      addTearDown(() => debugMdnsEnabledOverride = null);
+
+      const mdnsRoom = DiscoveredRoom(
+        roomId: 'room-hidden',
+        displayName: 'Hidden',
+        hostIp: '192.168.1.10',
+        port: 9000,
+      );
+
+      final rooms = merger.merge(mdnsRooms: const [mdnsRoom]);
+      expect(rooms, isEmpty);
     });
   });
 }

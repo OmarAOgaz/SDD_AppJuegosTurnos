@@ -4,6 +4,12 @@ library;
 const bool kEnableMdns = true;
 const bool kEnableForegroundService = true;
 
+/// Test-only override for [kEnableMdns]. Production MUST leave this null.
+bool? debugMdnsEnabledOverride;
+
+/// Effective mDNS flag: [debugMdnsEnabledOverride] ?? [kEnableMdns].
+bool get isMdnsEnabled => debugMdnsEnabledOverride ?? kEnableMdns;
+
 /// Android FGS notification channel id (must stay stable across releases).
 const String kFgsChannelId = 'turnos_active_game';
 
