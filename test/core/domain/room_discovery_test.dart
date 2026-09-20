@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:turnos_juegos/core/domain/host_heal_compare.dart';
 import 'package:turnos_juegos/core/domain/room_discovery.dart';
 import 'package:turnos_juegos/core/models/discovered_room.dart';
 
@@ -151,6 +152,10 @@ void main() {
       expect(room!.platform, isNull);
       expect(room.currentRound, isNull);
       expect(room.port, 4242);
+      expect(parseHostPlatformToken(null), HostPlatformToken.other);
+      expect(parseHostCurrentRound(null), 0);
+      expect(parseHostPlatformToken(room.platform), HostPlatformToken.other);
+      expect(parseHostCurrentRound(room.currentRound), 0);
     });
 
     test('blank platform and bad/negative round → null fields', () {
