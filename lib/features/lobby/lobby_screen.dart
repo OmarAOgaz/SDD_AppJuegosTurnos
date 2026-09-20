@@ -180,6 +180,14 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     return _buildClient(context);
   }
 
+  Future<void> _discardAndGoHome() async {
+    await ref.read(hostRoomControllerProvider).discardRoom();
+    if (!mounted) {
+      return;
+    }
+    context.go('/');
+  }
+
   Widget _buildHost(BuildContext context) {
     final controller = ref.watch(hostRoomControllerProvider);
     final room = controller.room;
@@ -194,17 +202,12 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
     final players = room.seatedPlayers();
     final canStart = controller.canStartGame();
 
-    return Scaffold(
+    final hostLobby = Scaffold(
       appBar: AppBar(
         title: Text('Lobby — ${room.displayName}'),
         actions: [
           TextButton(
-            onPressed: () async {
-              await controller.discardRoom();
-              if (context.mounted) {
-                context.go('/');
-              }
-            },
+            onPressed: _discardAndGoHome,
             child: const Text('Cerrar sala'),
           ),
         ],
@@ -352,6 +355,17 @@ class _LobbyScreenState extends ConsumerState<LobbyScreen> {
           ),
         ],
       ),
+    );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          return;
+        }
+        unawaited(_discardAndGoHome());
+      },
+      child: hostLobby,
     );
   }
 
