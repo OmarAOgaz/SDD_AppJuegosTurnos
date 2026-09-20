@@ -7,7 +7,7 @@
 | Estimated changed lines | 700–1000 |
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
-| Suggested split | PR 1 theme → PR 2 discovery → PR 3 Home UI → PR 4 lobby back → PR 5 cleanup → PR 6 verify-remediation tests → PR 7 partial-coverage tests → PR 8 spec-heal-defaults |
+| Suggested split | PR 1 theme → PR 2 discovery → PR 3 Home UI → PR 4 lobby back → PR 5 cleanup → PR 6 verify-remediation tests → PR 7 partial-coverage tests → PR 8 spec-heal-defaults → PR 9 warning fixes |
 | Delivery strategy | auto-chain |
 | Chain strategy | stacked-to-main |
 
@@ -28,6 +28,7 @@ Chain strategy: stacked-to-main
 | 6 | Verify-remediation covering tests | PR 6 | stacks after PR 5; tests for 3 CRITICAL untested scenarios |
 | 7 | Partial-coverage tests | PR 7 | stacks after PR 6; on-color, null Naranja, host-back stop flags |
 | 8 | Spec heal mapper+heal defaults | PR 8 | stacks after PR 7; spec THEN + covering test; mapper stays null |
+| 9 | Verify warning fixes | PR 9 | stacks after PR 8; unused_import + flutter-test.ps1 PROGRAMFILES wrapper |
 
 ## Phase 1: Theme (PR 1)
 
@@ -72,3 +73,8 @@ Chain strategy: stacked-to-main
 - [x] 7.2 Naranja missing hostColorId: pump `_r('gone', 'Sin color', null)`, assert Card `#FB8C00` and listed + tappable; keep unknown-id Naranja assertion.
 - [x] 7.3 Host back advertise/serve stop: `_FakeHost.discardRoom` sets `advertising`/`serving` false (`isHosting` → serving); after BackButton expect discardCalls==1, Home, both flags false.
 - [x] 7.4 Align lan-discovery scenario `Missing platform and currentRound defaults` with mapper+heal: keep heal semantics in the requirement body; rewrite THEN so browse mapping stores null `platform` and null `currentRound` while heal/compare parsers treat those as non-Android (`other`) and `0`. Do not change the mapper. Cover both halves in `test/core/domain/room_discovery_test.dart`.
+
+## Phase 8: Verify warning fixes (PR 9)
+
+- [x] 8.1 Remove unused `import 'package:turnos_juegos/core/network/game_resume_store.dart';` from `test/core/network/game_socket_client_reconnect_test.dart` so `dart analyze` no longer reports unused_import on that file.
+- [x] 8.2 Add `scripts/flutter-test.ps1` that restores `PROGRAMFILES(X86)` / `ProgramFiles(x86)` for agent shells and forwards args to `flutter test`; set `openspec/config.yaml` `rules.verify.test_command` to `powershell -NoProfile -File scripts/flutter-test.ps1`. Do not rewrite `openspec/testing-capabilities.md`.
