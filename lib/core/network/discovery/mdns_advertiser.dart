@@ -55,7 +55,7 @@ class MdnsAdvertiser {
   }
 }
 
-/// Resolves the first non-loopback IPv4 address for manual connect hints.
+/// Resolves the first non-loopback IPv4 address for the host LAN endpoint.
 Future<String?> findLanIPv4() async {
   final interfaces = await NetworkInterface.list(
     type: InternetAddressType.IPv4,

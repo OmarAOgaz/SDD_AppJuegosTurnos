@@ -55,4 +55,4 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Cleanup (PR 5)
 
-- [ ] 5.1 Strip leftover manual-IP fixtures/comments; `dart analyze` + `flutter test`. Do not restyle `LobbyPlayerRow`.
+- [x] 5.1 Strip leftover manual-IP fixtures/comments; `dart analyze` + `flutter test`. Do not restyle `LobbyPlayerRow`.
