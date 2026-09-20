@@ -25,6 +25,7 @@ Chain strategy: stacked-to-main
 | 3 | Home `Crear partida` + `Partidas` | PR 3 | stacks after PR 2; Home widget tests in unit |
 | 4 | Host back discards | PR 4 | stacks after PR 3; lobby widget test in unit |
 | 5 | Leftover fixture cleanup | PR 5 | stacks after PR 4; no `LobbyPlayerRow` restyle |
+| 6 | Verify-remediation covering tests | PR 6 | stacks after PR 5; tests for 3 CRITICAL untested scenarios |
 
 ## Phase 1: Theme (PR 1)
 
@@ -56,3 +57,9 @@ Chain strategy: stacked-to-main
 ## Phase 5: Cleanup (PR 5)
 
 - [x] 5.1 Strip leftover manual-IP fixtures/comments; `dart analyze` + `flutter test`. Do not restyle `LobbyPlayerRow`.
+
+## Phase 6: Verify remediation covering tests
+
+- [x] 6.1 Cover lan-discovery MODIFIED `mDNS advertisement and browse` / `mDNS disabled by feature flag`: `kEnableMdns` false skips browse and Home Partidas is empty (testable override; production default stays true).
+- [x] 6.2 Cover lan-transport MODIFIED `Connection handshake exposes roomId` / `Handshake supplies roomId`: HANDSHAKE payload includes host `roomId`.
+- [x] 6.3 Cover lobby MODIFIED `Host abandon lobby discards room` / `Host discards waiting lobby`: `discardRoom()` broadcasts `ROOM_DISCARDED`, client navigates Home, room is no longer joinable.

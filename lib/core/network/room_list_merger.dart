@@ -16,7 +16,7 @@ class RoomListMerger {
   }) {
     final merged = <String, DiscoveredRoom>{};
 
-    if (kEnableMdns) {
+    if (isMdnsEnabled) {
       for (final room in mdnsRooms) {
         merged[room.roomId] = room;
       }

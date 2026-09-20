@@ -24,7 +24,7 @@ class MdnsBrowser {
   bool get isBrowsing => _discovery != null;
 
   Future<void> start() async {
-    if (!kEnableMdns) {
+    if (!isMdnsEnabled) {
       _emit();
       return;
     }

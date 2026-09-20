@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/domain/lobby_rules.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/local_player_profile.dart';
 import 'package:turnos_juegos/core/models/player.dart';
+import 'package:turnos_juegos/core/models/ws_envelope.dart';
 import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 import 'package:turnos_juegos/core/providers/profile_providers.dart';
@@ -67,8 +71,12 @@ class _FakeClient extends GameSocketClient {
   }
 
   final Map<String, dynamic> _lobby;
+  final incoming = StreamController<WsEnvelope>.broadcast();
+
   @override
   Map<String, dynamic>? get lastLobbyState => _lobby;
+  @override
+  Stream<WsEnvelope> get messages => incoming.stream;
   @override
   Future<void> connect({required String host, required int port}) async {}
   @override
@@ -233,5 +241,55 @@ void main() {
     expect(host.discardCalls, 1);
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('Cerrar sala'), findsNothing);
+  });
+
+  testWidgets('client ROOM_DISCARDED navigates Home', (tester) async {
+    final room = _room();
+    final client = _FakeClient({
+      'playersById': room.playersById.map((k, v) => MapEntry(k, v.toJson())),
+    }, _g);
+    addTearDown(client.incoming.close);
+
+    final router = GoRouter(
+      initialLocation: '/lobby',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, __) => const Scaffold(body: Text('Home')),
+        ),
+        GoRoute(
+          path: '/lobby',
+          builder: (_, __) => const LobbyScreen(
+            role: 'client',
+            host: '127.0.0.1',
+            port: 9,
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          deviceIdProvider.overrideWith((ref) async => 'device-guest'),
+          localPlayerProfileProvider.overrideWith(_FixedProfile.new),
+          gameSocketClientProvider.overrideWith((ref) => client),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Lobby'), findsOneWidget);
+    client.incoming.add(
+      const WsEnvelope(
+        type: MessageTypes.roomDiscarded,
+        payload: {'roomId': 'r1'},
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Lobby'), findsNothing);
   });
 }

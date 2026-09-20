@@ -89,6 +89,8 @@ class _RecordingWebSocketHostServer extends WebSocketHostServer {
 class _LobbySyncRecordingServer extends WebSocketHostServer {
   final List<WsEnvelope> broadcasts = [];
   final List<(String sessionId, WsEnvelope envelope)> unicasts = [];
+  WsEnvelope Function()? handshakeFactory;
+  int stopCount = 0;
 
   @override
   Future<int> start({
@@ -96,6 +98,7 @@ class _LobbySyncRecordingServer extends WebSocketHostServer {
     required WsEnvelope Function() handshakeFactory,
     WsSessionClosedHandler? onSessionClosed,
   }) async {
+    this.handshakeFactory = handshakeFactory;
     return 9999;
   }
 
@@ -116,7 +119,9 @@ class _LobbySyncRecordingServer extends WebSocketHostServer {
   }
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    stopCount++;
+  }
 }
 
 class _DelayedStopServer extends WebSocketHostServer {
@@ -794,6 +799,55 @@ void main() {
       release.complete();
       await stopFuture;
       expect(controller.isHosting, isFalse);
+    });
+  });
+
+  group('HostRoomController discardRoom', () {
+    test('broadcasts ROOM_DISCARDED and stops advertise/serve', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      final room = await controller.startRoom(
+        displayName: 'Waiting lobby',
+        hostDeviceId: 'host-device',
+      );
+      final roomId = room.roomId;
+      server.broadcasts.clear();
+      final mdnsStopsBefore = mdns.stopCount;
+      final serverStopsBefore = server.stopCount;
+
+      await controller.discardRoom();
+
+      final discarded = server.broadcasts
+          .where((envelope) => envelope.type == MessageTypes.roomDiscarded)
+          .toList();
+      expect(discarded, hasLength(1));
+      expect(discarded.single.payload['roomId'], roomId);
+      expect(controller.room, isNull);
+      expect(controller.isHosting, isFalse);
+      expect(mdns.stopCount, greaterThan(mdnsStopsBefore));
+      expect(server.stopCount, greaterThan(serverStopsBefore));
+    });
+  });
+
+  group('Connection handshake exposes roomId', () {
+    test('startRoom handshakeFactory includes host roomId', () async {
+      final server = _LobbySyncRecordingServer();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+      );
+      final room = await controller.startRoom(
+        displayName: 'Sala handshake',
+        hostDeviceId: 'host-device',
+      );
+
+      final handshake = server.handshakeFactory!.call();
+      expect(handshake.type, MessageTypes.handshake);
+      expect(handshake.payload['roomId'], room.roomId);
     });
   });
 

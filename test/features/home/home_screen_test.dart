@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:turnos_juegos/core/constants/network_constants.dart';
 import 'package:turnos_juegos/core/models/discovered_room.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/local_player_profile.dart';
@@ -178,5 +179,25 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('room-mystery')));
     await tester.pumpAndSettle();
     expect(find.text('seated-lobby-client'), findsOneWidget);
+  });
+
+  testWidgets('kEnableMdns false: no browse and Partidas empty', (tester) async {
+    debugMdnsEnabledOverride = false;
+    addTearDown(() => debugMdnsEnabledOverride = null);
+    final browser = MdnsBrowser();
+    addTearDown(browser.dispose);
+
+    await _pumpHome(
+      tester,
+      _app(
+        browser: browser,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(browser.isBrowsing, isFalse);
+    expect(browser.currentRooms, isEmpty);
+    expect(find.text('Partidas'), findsOneWidget);
+    expect(find.byType(Card), findsNothing);
   });
 }
