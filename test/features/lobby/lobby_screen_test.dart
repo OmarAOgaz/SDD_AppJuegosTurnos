@@ -44,13 +44,20 @@ class _FakeHost extends HostRoomController {
   _FakeHost(this._room);
   final GameRoom _room;
   int discardCalls = 0;
+  bool advertising = true;
+  bool serving = true;
 
   @override
   GameRoom? get room => _room;
 
   @override
+  bool get isHosting => serving;
+
+  @override
   Future<void> discardRoom() async {
     discardCalls++;
+    advertising = false;
+    serving = false;
   }
 
   @override
@@ -240,6 +247,8 @@ void main() {
 
     expect(host.discardCalls, 1);
     expect(find.text('Home'), findsOneWidget);
+    expect(host.advertising, isFalse);
+    expect(host.serving, isFalse);
     expect(find.text('Cerrar sala'), findsNothing);
   });
 

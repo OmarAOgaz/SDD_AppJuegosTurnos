@@ -63,3 +63,9 @@ Chain strategy: stacked-to-main
 - [x] 6.1 Cover lan-discovery MODIFIED `mDNS advertisement and browse` / `mDNS disabled by feature flag`: `kEnableMdns` false skips browse and Home Partidas is empty (testable override; production default stays true).
 - [x] 6.2 Cover lan-transport MODIFIED `Connection handshake exposes roomId` / `Handshake supplies roomId`: HANDSHAKE payload includes host `roomId`.
 - [x] 6.3 Cover lobby MODIFIED `Host abandon lobby discards room` / `Host discards waiting lobby`: `discardRoom()` broadcasts `ROOM_DISCARDED`, client navigates Home, room is no longer joinable.
+
+## Phase 7: Partial-coverage tests (PR 7)
+
+- [x] 7.1 Host color fill on-color text: in `color_2 fill vs unknown Naranja still tappable`, assert room-blue ListTile title uses readable on-color from `ThemeData.estimateBrightnessForColor(Color(0xFF1E88E5))`.
+- [x] 7.2 Naranja missing hostColorId: pump `_r('gone', 'Sin color', null)`, assert Card `#FB8C00` and listed + tappable; keep unknown-id Naranja assertion.
+- [x] 7.3 Host back advertise/serve stop: `_FakeHost.discardRoom` sets `advertising`/`serving` false (`isHosting` → serving); after BackButton expect discardCalls==1, Home, both flags false.
