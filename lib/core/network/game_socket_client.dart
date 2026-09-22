@@ -206,6 +206,38 @@ class GameSocketClient {
     );
   }
 
+  void sendRequestReturnTurn({required String playerId}) {
+    _send(
+      WsEnvelope(
+        type: MessageTypes.requestReturnTurn,
+        payload: {'playerId': playerId},
+      ),
+    );
+  }
+
+  void sendRespondReturnTurn({
+    required String playerId,
+    required String requestId,
+    bool accepted = false,
+    bool cancelled = false,
+  }) {
+    final payload = <String, dynamic>{
+      'playerId': playerId,
+      'requestId': requestId,
+    };
+    if (cancelled) {
+      payload['cancelled'] = true;
+    } else {
+      payload['accepted'] = accepted;
+    }
+    _send(
+      WsEnvelope(
+        type: MessageTypes.respondReturnTurn,
+        payload: payload,
+      ),
+    );
+  }
+
   /// Original-host reclaim after reconnecting to an acting host.
   void sendHostReclaim({
     required String roomId,

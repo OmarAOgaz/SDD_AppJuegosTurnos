@@ -1,6 +1,7 @@
 import '../constants/message_types.dart';
 import '../domain/turn_engine.dart';
 import '../models/game_phase.dart';
+import '../models/turn_state.dart';
 import '../models/ws_envelope.dart';
 
 /// Client-side authoritative sync snapshot with timer interpolation.
@@ -31,6 +32,19 @@ class ClientSyncState {
 
   bool get isEnded => gamePhaseWire == GameRoomPhase.ended.wireValue;
 
+  int? get turnPausedAtMs {
+    final value = lastGameState?['turnPausedAt'];
+    return value is int ? value : null;
+  }
+
+  PendingReturnRequest? get pendingReturnRequest =>
+      PendingReturnRequest.tryParse(lastGameState?['pendingReturnRequest']);
+
+  ReturnOutcome? get lastReturnOutcome =>
+      ReturnOutcome.tryParse(lastGameState?['lastReturnOutcome']);
+
+  bool get hasPendingReturnRequest => pendingReturnRequest != null;
+
   int estimatedServerNowMs() {
     final base = serverNowAtReceive;
     final received = receivedAtMs;
@@ -50,7 +64,9 @@ class ClientSyncState {
     if (startedAt is! int || duration is! int) {
       return null;
     }
-    final elapsedMs = estimatedServerNowMs() - startedAt;
+    final pausedAt = turnPausedAtMs;
+    final nowMs = pausedAt ?? estimatedServerNowMs();
+    final elapsedMs = nowMs - startedAt;
     final remainingMs = duration * 1000 - elapsedMs;
     return (remainingMs / 1000).ceil();
   }

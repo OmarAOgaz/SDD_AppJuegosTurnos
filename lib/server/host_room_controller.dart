@@ -93,6 +93,7 @@ class HostRoomController extends ChangeNotifier {
   String? _hostLanIp;
   final Map<String, HostSession> _sessions = {};
   Timer? _heartbeatWatchdog;
+  Timer? _returnExpiryTimer;
 
   /// When false, this device must not act as authoritative host (post-reclaim).
   bool _hostingAuthorityActive = true;
@@ -228,6 +229,8 @@ class HostRoomController extends ChangeNotifier {
     );
 
     _startHeartbeatWatchdog();
+    _prepareTurnMutation(DateTime.now().millisecondsSinceEpoch);
+    _syncReturnExpiryTimer();
 
     if (room.gamePhase == GameRoomPhase.inGame ||
         room.gamePhase == GameRoomPhase.betweenRounds) {
@@ -267,7 +270,10 @@ class HostRoomController extends ChangeNotifier {
     }
     room.playersById[room.hostPlayerId]?.connected = true;
     _room = room;
-    _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
+    _syncReturnExpiryTimer();
+    _broadcastGameState(serverNow);
     _readvertiseMdnsIfHostColorChanged();
     return true;
   }
@@ -299,6 +305,7 @@ class HostRoomController extends ChangeNotifier {
     _lastAdvertisedHostColorId = null;
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = null;
+    _cancelReturnExpiryTimer();
     _sessions.clear();
 
     if (stopForegroundService) {
@@ -470,9 +477,12 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
     if (!TurnEngine.startGame(room, serverNow)) {
+      _syncReturnExpiryTimer();
       return false;
     }
+    _syncReturnExpiryTimer();
     _broadcastGameState(serverNow);
     _readvertiseMdnsIfRoundChanged();
     await _foregroundServiceBridge.ensureActiveMatchSession();
@@ -485,19 +495,70 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
     final passed = TurnEngine.tryPassTurn(
       room: room,
       senderPlayerId: senderPlayerId,
       serverNowMs: serverNow,
     );
     if (!passed) {
+      _syncReturnExpiryTimer();
       return false;
     }
+    _syncReturnExpiryTimer();
     if (room.gamePhase == GameRoomPhase.betweenRounds) {
       _server.broadcast(_buildRoundCompleted(serverNow));
     }
     _broadcastGameState(serverNow);
     _readvertiseMdnsIfRoundChanged();
+    return true;
+  }
+
+  bool requestReturnTurn(String senderPlayerId) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
+    final requested = TurnEngine.tryRequestReturnTurn(
+      room: room,
+      senderPlayerId: senderPlayerId,
+      serverNowMs: serverNow,
+    );
+    if (!requested) {
+      _syncReturnExpiryTimer();
+      return false;
+    }
+    _syncReturnExpiryTimer();
+    _broadcastGameState(serverNow);
+    return true;
+  }
+
+  bool respondReturnTurn({
+    required String senderPlayerId,
+    required ReturnTurnResponse response,
+    String? requestId,
+  }) {
+    final room = _room;
+    if (room == null) {
+      return false;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
+    final resolved = TurnEngine.tryRespondReturnTurn(
+      room: room,
+      senderPlayerId: senderPlayerId,
+      serverNowMs: serverNow,
+      response: response,
+      requestId: requestId,
+    );
+    if (!resolved) {
+      _syncReturnExpiryTimer();
+      return false;
+    }
+    _syncReturnExpiryTimer();
+    _broadcastGameState(serverNow);
     return true;
   }
 
@@ -533,6 +594,14 @@ class HostRoomController extends ChangeNotifier {
     target.disabled = disabled;
 
     final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
+    if (disabled) {
+      TurnEngine.onPlayerDisabled(
+        room: room,
+        playerId: playerId,
+        serverNowMs: serverNow,
+      );
+    }
     if (disabled &&
         room.gamePhase == GameRoomPhase.inGame &&
         room.turnState.activePlayerId == playerId) {
@@ -542,6 +611,7 @@ class HostRoomController extends ChangeNotifier {
         serverNowMs: serverNow,
       );
     }
+    _syncReturnExpiryTimer();
     _broadcastGameState(serverNow);
     _readvertiseMdnsIfRoundChanged();
     return true;
@@ -553,9 +623,12 @@ class HostRoomController extends ChangeNotifier {
       return false;
     }
     final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
     if (!TurnEngine.tryStartNextRound(room, serverNow)) {
+      _syncReturnExpiryTimer();
       return false;
     }
+    _syncReturnExpiryTimer();
     _broadcastGameState(serverNow);
     _readvertiseMdnsIfRoundChanged();
     return true;
@@ -583,7 +656,9 @@ class HostRoomController extends ChangeNotifier {
       return null;
     }
     final serverNow = DateTime.now().millisecondsSinceEpoch;
+    _prepareTurnMutation(serverNow);
     TurnEngine.endGame(room, serverNow);
+    _cancelReturnExpiryTimer();
     final finalPayload = room.toGameStatePayload(serverNow: serverNow);
     _server.broadcast(
       WsEnvelope(type: MessageTypes.gameState, payload: finalPayload),
@@ -743,6 +818,10 @@ class HostRoomController extends ChangeNotifier {
         _handleUpdatePlayer(session, envelope);
       case MessageTypes.passTurn:
         _handlePassTurn(session, envelope);
+      case MessageTypes.requestReturnTurn:
+        _handleRequestReturnTurn(session, envelope);
+      case MessageTypes.respondReturnTurn:
+        _handleRespondReturnTurn(session, envelope);
       case MessageTypes.setPlayerDisabled:
         _handleSetPlayerDisabled(session, envelope);
       case MessageTypes.hostReclaim:
@@ -851,6 +930,36 @@ class HostRoomController extends ChangeNotifier {
       return;
     }
     passTurn(senderId);
+  }
+
+  void _handleRequestReturnTurn(HostSession session, WsEnvelope envelope) {
+    final senderId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
+    if (senderId == null) {
+      return;
+    }
+    requestReturnTurn(senderId);
+  }
+
+  void _handleRespondReturnTurn(HostSession session, WsEnvelope envelope) {
+    final senderId =
+        envelope.payload['playerId'] as String? ?? session.playerId;
+    if (senderId == null) {
+      return;
+    }
+    final requestId = envelope.payload['requestId'] as String?;
+    final cancelled = envelope.payload['cancelled'] == true;
+    final accepted = envelope.payload['accepted'] == true;
+    final response = cancelled
+        ? ReturnTurnResponse.cancel
+        : accepted
+            ? ReturnTurnResponse.accept
+            : ReturnTurnResponse.reject;
+    respondReturnTurn(
+      senderPlayerId: senderId,
+      response: response,
+      requestId: requestId,
+    );
   }
 
   void _handleSetPlayerDisabled(HostSession session, WsEnvelope envelope) {
@@ -1041,6 +1150,7 @@ class HostRoomController extends ChangeNotifier {
 
   WsEnvelope _buildGameState(int serverNow) {
     final room = _room!;
+    _prepareTurnMutation(serverNow);
     TurnEngine.refreshPhase(room, serverNow);
     return WsEnvelope(
       type: MessageTypes.gameState,
@@ -1131,6 +1241,55 @@ class HostRoomController extends ChangeNotifier {
     unawaited(_readvertiseMdns());
   }
 
+  void _prepareTurnMutation(int serverNowMs) {
+    final room = _room;
+    if (room == null) {
+      return;
+    }
+    TurnEngine.expireReturnRequestIfDue(room, serverNowMs);
+    TurnEngine.clearReturnRequestIfPreviousIneligible(room, serverNowMs);
+    if (room.turnState.pendingReturnRequest == null) {
+      _cancelReturnExpiryTimer();
+    }
+  }
+
+  void _cancelReturnExpiryTimer() {
+    _returnExpiryTimer?.cancel();
+    _returnExpiryTimer = null;
+  }
+
+  void _syncReturnExpiryTimer() {
+    _cancelReturnExpiryTimer();
+    final pending = _room?.turnState.pendingReturnRequest;
+    if (pending == null) {
+      return;
+    }
+    final delayMs =
+        pending.expiresAtMs - DateTime.now().millisecondsSinceEpoch;
+    if (delayMs <= 0) {
+      _onReturnExpiryFired();
+      return;
+    }
+    _returnExpiryTimer = Timer(
+      Duration(milliseconds: delayMs),
+      _onReturnExpiryFired,
+    );
+  }
+
+  void _onReturnExpiryFired() {
+    final room = _room;
+    if (room == null) {
+      return;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    if (!TurnEngine.expireReturnRequestIfDue(room, serverNow)) {
+      _syncReturnExpiryTimer();
+      return;
+    }
+    _cancelReturnExpiryTimer();
+    _broadcastGameState(serverNow);
+  }
+
   void _startHeartbeatWatchdog() {
     _heartbeatWatchdog?.cancel();
     _heartbeatWatchdog = Timer.periodic(
@@ -1209,6 +1368,15 @@ class HostRoomController extends ChangeNotifier {
   set debugHostingAuthorityActive(bool value) {
     _hostingAuthorityActive = value;
   }
+
+  @visibleForTesting
+  bool get debugReturnExpiryTimerArmed => _returnExpiryTimer?.isActive ?? false;
+
+  @visibleForTesting
+  void debugFireReturnExpiryTimer() => _onReturnExpiryFired();
+
+  @visibleForTesting
+  void debugRearmReturnExpiryTimer() => _syncReturnExpiryTimer();
 
   @override
   void dispose() {
