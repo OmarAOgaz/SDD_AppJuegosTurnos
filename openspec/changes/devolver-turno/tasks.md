@@ -44,9 +44,9 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Feedback resolvers (PR 3, parallel after PR 1; stack after PR 2)
 
-- [ ] 3.1 `lib/core/domain/acting_identity.dart`: expose acting seat id. Spec: acting-as current; Dual-role.
-- [ ] 3.2 `lib/core/domain/turn_feedback.dart`: `resolveSwipeIntent` (64px/300px/s); `resolveReturnRequestRole` (answer first); `shouldFireTurnStartCue(activationSource)`; outcome cues (`rejected`/`expired` only). Spec: gates; Dual-role; cue routing.
-- [ ] 3.3 `test/core/domain/turn_feedback_test.dart` + `test/core/domain/acting_identity_test.dart`: swipe, dual-role, four cue routes.
+- [x] 3.1 `lib/core/domain/acting_identity.dart`: expose acting seat id. Spec: acting-as current; Dual-role.
+- [x] 3.2 `lib/core/domain/turn_feedback.dart`: `resolveSwipeIntent` (64px/300px/s); `resolveReturnRequestRole` (answer first); `shouldFireTurnStartCue(activationSource)`; outcome cues (`rejected`/`expired` only). Spec: gates; Dual-role; cue routing.
+- [x] 3.3 `test/core/domain/turn_feedback_test.dart` + `test/core/domain/acting_identity_test.dart`: swipe, dual-role, four cue routes.
 
 ## Phase 4: UI + FX + audio (PR 4, sequential after PR 2+3)
 
