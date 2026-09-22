@@ -57,3 +57,7 @@ Chain strategy: stacked-to-main
 - [x] 4.5 `SoundPreviewService.playEffect`; `assets/sounds/error_1.wav` + `pubspec.yaml`; fallback haptic+click. Spec: blocked error sound.
 - [x] 4.6 `test/features/game_screen_feedback_test.dart` + `test/features/game/touch_fx_overlay_test.dart`: threshold, tap replay, dialog/card, gesture regressions, arrows.
 - [x] 4.7 `powershell -NoProfile -File scripts/flutter-test.ps1`. Do not reopen locked decisions.
+
+## Verify warning fixes (PR 5, stacked on PR 4)
+
+- [x] 5.1 Occupancy gates (panel open / cue visible) are silent `SwipeIntent.none` like tap; ineligible return stays red-X `blocked`. Spec + ADR 3 + widget tests.

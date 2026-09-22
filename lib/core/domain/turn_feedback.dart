@@ -102,8 +102,12 @@ GestureIntent resolveTapIntent({
 ///
 /// A left swipe qualifies when [dx] is at most [-returnSwipeMinDistance] or
 /// [velocityDx] is at most [-returnSwipeMinVelocity]. Below that threshold the
-/// caller MUST replay the gesture as a tap. Cue-visible and panel-open gates
-/// yield [SwipeIntent.blocked] (red arrow) rather than mutating turn state.
+/// caller MUST replay the gesture as a tap when occupancy is clear.
+///
+/// Occupancy gates (panel open or cue visible) yield [SwipeIntent.none] — a
+/// silent no-op, same as tap. Ineligible return (not acting, no last-pass,
+/// already pending) yields [SwipeIntent.blocked] (red arrow + error sound)
+/// rather than mutating turn state.
 SwipeIntent resolveSwipeIntent({
   required double dx,
   required double velocityDx,
@@ -122,11 +126,10 @@ SwipeIntent resolveSwipeIntent({
   if (!isLeftSwipe) {
     return SwipeIntent.none;
   }
-  if (!isDeviceActing ||
-      !hasReturnableLastPass ||
-      panelOpen ||
-      cueVisible ||
-      hasPendingReturnRequest) {
+  if (panelOpen || cueVisible) {
+    return SwipeIntent.none;
+  }
+  if (!isDeviceActing || !hasReturnableLastPass || hasPendingReturnRequest) {
     return SwipeIntent.blocked;
   }
   return SwipeIntent.requestReturn;

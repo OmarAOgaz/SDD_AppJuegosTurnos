@@ -321,12 +321,12 @@ void main() {
       expect(eligible(isDeviceActing: false), SwipeIntent.blocked);
     });
 
-    test('cue visible is blocked', () {
-      expect(eligible(cueVisible: true), SwipeIntent.blocked);
+    test('cue visible is silent none (occupancy, not blocked)', () {
+      expect(eligible(cueVisible: true), SwipeIntent.none);
     });
 
-    test('panel open is blocked', () {
-      expect(eligible(panelOpen: true), SwipeIntent.blocked);
+    test('panel open is silent none (occupancy, not blocked)', () {
+      expect(eligible(panelOpen: true), SwipeIntent.none);
     });
 
     test('already pending is blocked', () {

@@ -2912,6 +2912,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
   /// Completes a horizontal drag: qualifying left swipe requests return;
   /// below threshold replays as a tap so tap-to-pass is not swallowed.
+  /// Occupancy (panel open or cue visible) is a silent no-op via the resolver,
+  /// same as tap — never a red blocked arrow.
   void _handleInGameSwipe({
     required double dx,
     required double velocityDx,
@@ -2924,9 +2926,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required VoidCallback onPass,
     required VoidCallback onRequestReturn,
   }) {
-    if (_panelOpen) {
-      return;
-    }
     final intent = resolveSwipeIntent(
       dx: dx,
       velocityDx: velocityDx,
@@ -2939,6 +2938,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
     switch (intent) {
       case SwipeIntent.none:
+        // Tap-replay only when occupancy is clear. Occupancy-gated qualifying
+        // swipes resolve to none; replaying them as tap would flash invalid-X
+        // on non-acting devices instead of staying silent.
+        if (_panelOpen || _showTurnStartCue) {
+          break;
+        }
         _handleInGameTap(
           isMyDeviceActive: isMyDeviceActive,
           canHostPassForDisconnectedActive: canHostPassForDisconnectedActive,
