@@ -18,8 +18,24 @@ const _rippleRingCount = 5;
 @visibleForTesting
 const touchFxInvalidXDuration = Duration(milliseconds: 500);
 
-/// Return-request arrow flash (~400ms; distinct from ripple and invalid X).
-const returnArrowFlashMs = Duration(milliseconds: 400);
+/// Return-request arrow flash (~800ms; distinct from ripple and invalid X).
+const returnArrowFlashMs = Duration(milliseconds: 800);
+
+/// Painted chevron length (2× the original ~54px arrow).
+@visibleForTesting
+const returnArrowLength = 108.0;
+
+/// Half-height of the chevron head (2× 22).
+@visibleForTesting
+const returnArrowHalfHeight = 44.0;
+
+/// Half-thickness of the chevron shaft (2× 7).
+@visibleForTesting
+const returnArrowShaftHalf = 14.0;
+
+/// Blocked-X arm extent from the overlay center (2× 18).
+@visibleForTesting
+const returnArrowBlockedXExtent = 36.0;
 
 /// Alias used by tests that wait for the longest in-flight FX to clear.
 @visibleForTesting
@@ -70,13 +86,30 @@ class TouchFxOverlayState extends State<TouchFxOverlay>
     with TickerProviderStateMixin {
   final List<_ActiveFx> _effects = [];
 
+  /// Overlay [Size.center], matching where return arrows are painted.
+  Offset _overlayCenter({Offset fallback = Offset.zero}) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      return box.size.center(Offset.zero);
+    }
+    return fallback;
+  }
+
+  bool _isReturnArrow(TouchFxKind kind) =>
+      kind == TouchFxKind.returnArrow || kind == TouchFxKind.returnArrowBlocked;
+
   /// In-flight effects for assertions (progress mirrors controller value).
+  ///
+  /// Return-arrow offsets are the overlay center (the painted location), even
+  /// if the enqueue call passed a swipe-origin [Offset].
   @visibleForTesting
   List<TouchFxEffect> get debugEffects => [
         for (final fx in _effects)
           TouchFxEffect(
             kind: fx.kind,
-            offset: fx.offset,
+            offset: _isReturnArrow(fx.kind)
+                ? _overlayCenter(fallback: fx.offset)
+                : fx.offset,
             color: fx.color,
             progress: fx.controller.value,
           ),
@@ -90,16 +123,24 @@ class TouchFxOverlayState extends State<TouchFxOverlay>
     _enqueue(TouchFxKind.invalidX, offset, color);
   }
 
+  /// Enqueues a green return arrow. [offset] is kept for API compatibility;
+  /// paint and [debugEffects] use overlay [Size.center].
   void enqueueReturnArrow(Offset offset,
       {Color color = const Color(0xFF43A047)}) {
-    _enqueue(TouchFxKind.returnArrow, offset, color);
+    _enqueue(TouchFxKind.returnArrow, _overlayCenter(fallback: offset), color);
   }
 
+  /// Enqueues a red blocked return arrow. [offset] is kept for API
+  /// compatibility; paint and [debugEffects] use overlay [Size.center].
   void enqueueReturnArrowBlocked(
     Offset offset, {
     Color color = const Color(0xFFE53935),
   }) {
-    _enqueue(TouchFxKind.returnArrowBlocked, offset, color);
+    _enqueue(
+      TouchFxKind.returnArrowBlocked,
+      _overlayCenter(fallback: offset),
+      color,
+    );
   }
 
   /// Disposes and removes in-flight [TouchFxKind.invalidX] effects only.
@@ -230,9 +271,9 @@ class _TouchFxPainter extends CustomPainter {
         case TouchFxKind.invalidX:
           _paintInvalidX(canvas, fx);
         case TouchFxKind.returnArrow:
-          _paintReturnArrow(canvas, fx, blocked: false);
+          _paintReturnArrow(canvas, size, fx, blocked: false);
         case TouchFxKind.returnArrowBlocked:
-          _paintReturnArrow(canvas, fx, blocked: true);
+          _paintReturnArrow(canvas, size, fx, blocked: true);
       }
     }
   }
@@ -289,28 +330,29 @@ class _TouchFxPainter extends CustomPainter {
     canvas.drawLine(c, d, paint);
   }
 
-  /// Left-pointing chevron. Blocked draws a crossing X on the shaft so it
-  /// stays distinct from the invalid-tap mark (X only, no arrow).
+  /// Left-pointing chevron at overlay [Size.center] (ignores swipe origin).
+  /// Blocked draws a crossing X on the shaft so it stays distinct from the
+  /// invalid-tap mark (X only, no arrow).
   void _paintReturnArrow(
     Canvas canvas,
+    Size size,
     TouchFxEffect fx, {
     required bool blocked,
   }) {
     final t = fx.progress;
     final opacity = (1.0 - t).clamp(0.0, 1.0);
-    final o = fx.offset;
-    const length = 54.0;
-    const halfHeight = 22.0;
-    const shaftHalf = 7.0;
+    final o = size.center(Offset.zero);
 
-    final tip = Offset(o.dx - length * 0.55, o.dy);
-    final headTop = Offset(o.dx - length * 0.05, o.dy - halfHeight);
-    final headBottom = Offset(o.dx - length * 0.05, o.dy + halfHeight);
-    final shaftRight = Offset(o.dx + length * 0.45, o.dy);
+    final tip = Offset(o.dx - returnArrowLength * 0.55, o.dy);
+    final headTop =
+        Offset(o.dx - returnArrowLength * 0.05, o.dy - returnArrowHalfHeight);
+    final headBottom =
+        Offset(o.dx - returnArrowLength * 0.05, o.dy + returnArrowHalfHeight);
+    final shaftRight = Offset(o.dx + returnArrowLength * 0.45, o.dy);
 
     final outline = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 7.0
+      ..strokeWidth = 14.0
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round
       ..color = Colors.black.withValues(alpha: opacity * 0.55);
@@ -321,10 +363,10 @@ class _TouchFxPainter extends CustomPainter {
     final path = Path()
       ..moveTo(tip.dx, tip.dy)
       ..lineTo(headTop.dx, headTop.dy)
-      ..lineTo(headTop.dx, o.dy - shaftHalf)
-      ..lineTo(shaftRight.dx, o.dy - shaftHalf)
-      ..lineTo(shaftRight.dx, o.dy + shaftHalf)
-      ..lineTo(headBottom.dx, o.dy + shaftHalf)
+      ..lineTo(headTop.dx, o.dy - returnArrowShaftHalf)
+      ..lineTo(shaftRight.dx, o.dy - returnArrowShaftHalf)
+      ..lineTo(shaftRight.dx, o.dy + returnArrowShaftHalf)
+      ..lineTo(headBottom.dx, o.dy + returnArrowShaftHalf)
       ..lineTo(headBottom.dx, headBottom.dy)
       ..close();
     canvas.drawPath(path, fill);
@@ -336,18 +378,30 @@ class _TouchFxPainter extends CustomPainter {
 
     final xPaint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.5
+      ..strokeWidth = 9.0
       ..strokeCap = StrokeCap.round
       ..color = fx.color.withValues(alpha: opacity);
     final xOutline = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.5
+      ..strokeWidth = 13.0
       ..strokeCap = StrokeCap.round
       ..color = Colors.black.withValues(alpha: opacity * 0.55);
-    final a = Offset(o.dx - 18, o.dy - 18);
-    final b = Offset(o.dx + 18, o.dy + 18);
-    final c = Offset(o.dx + 18, o.dy - 18);
-    final d = Offset(o.dx - 18, o.dy + 18);
+    final a = Offset(
+      o.dx - returnArrowBlockedXExtent,
+      o.dy - returnArrowBlockedXExtent,
+    );
+    final b = Offset(
+      o.dx + returnArrowBlockedXExtent,
+      o.dy + returnArrowBlockedXExtent,
+    );
+    final c = Offset(
+      o.dx + returnArrowBlockedXExtent,
+      o.dy - returnArrowBlockedXExtent,
+    );
+    final d = Offset(
+      o.dx - returnArrowBlockedXExtent,
+      o.dy + returnArrowBlockedXExtent,
+    );
     canvas.drawLine(a, b, xOutline);
     canvas.drawLine(c, d, xOutline);
     canvas.drawLine(a, b, xPaint);

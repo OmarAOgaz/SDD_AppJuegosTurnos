@@ -50,7 +50,7 @@ import 'widgets/game_session_banners.dart';
 @visibleForTesting
 const inGameGestureLayerKey = Key('inGameGestureLayer');
 
-/// Waiting card while a return request is pending (requester device).
+/// Waiting modal while a return request is pending (requester device).
 @visibleForTesting
 const returnWaitingCardKey = Key('returnWaitingCard');
 
@@ -2481,7 +2481,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final requesterPlayer = pendingReturnRequest == null
         ? null
         : playersById[pendingReturnRequest.requesterPlayerId];
-    final showWaitingCard =
+    final showWaitingDialog =
         returnRole == ReturnRequestRole.waiting && !_hideWaitingForReturnArrow;
     final showAcceptDialog = returnRole == ReturnRequestRole.answer;
 
@@ -2601,8 +2601,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ],
           ),
         ),
-        if (showWaitingCard)
-          _buildReturnWaitingCard(
+        if (showWaitingDialog)
+          _buildReturnWaitingDialog(
             previousName: previousPlayer?.displayName ?? '—',
             previousColor:
                 ColorCatalog.byId(previousPlayer?.colorId ?? '')?.color ??
@@ -2614,8 +2614,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         if (showAcceptDialog)
           _buildReturnAcceptDialog(
-            currentName: requesterPlayer?.displayName ?? activeName,
-            currentColor:
+            requesterName: requesterPlayer?.displayName ?? activeName,
+            requesterColor:
                 ColorCatalog.byId(requesterPlayer?.colorId ?? '')?.color ??
                     color,
             onAccept: () => onRespondReturn?.call(
@@ -2967,9 +2967,17 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
+  Offset _returnArrowOverlayCenter() {
+    final box = _touchFxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      return box.size.center(Offset.zero);
+    }
+    return Offset.zero;
+  }
+
   void _flashReturnArrow({required bool blocked}) {
     final fx = _touchFxKey.currentState;
-    final at = _lastTapDownOffset ?? Offset.zero;
+    final at = _returnArrowOverlayCenter();
     if (fx == null) {
       return;
     }
@@ -2998,42 +3006,35 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
   }
 
-  Widget _buildReturnWaitingCard({
+  Widget _buildReturnWaitingDialog({
     required String previousName,
     required Color previousColor,
     required VoidCallback onCancel,
   }) {
-    return Positioned(
-      left: 24,
-      right: 24,
-      bottom: 48,
+    return Positioned.fill(
       child: Material(
         key: returnWaitingCardKey,
-        color: Colors.black.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text.rich(
-                TextSpan(
-                  style: const TextStyle(color: Colors.white, fontSize: 18),
-                  children: [
-                    const TextSpan(text: 'esperando que '),
-                    TextSpan(
-                      text: previousName,
-                      style: TextStyle(
-                        color: previousColor,
-                        fontWeight: FontWeight.bold,
-                      ),
+        color: Colors.black54,
+        child: Center(
+          child: AlertDialog(
+            content: Text.rich(
+              TextSpan(
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+                children: [
+                  const TextSpan(text: 'esperando que '),
+                  TextSpan(
+                    text: previousName,
+                    style: TextStyle(
+                      color: previousColor,
+                      fontWeight: FontWeight.bold,
                     ),
-                    const TextSpan(text: ' acepte el turno'),
-                  ],
-                ),
-                textAlign: TextAlign.center,
+                  ),
+                  const TextSpan(text: ' acepte el turno'),
+                ],
               ),
-              const SizedBox(height: 12),
+              textAlign: TextAlign.center,
+            ),
+            actions: [
               TextButton(
                 key: returnCancelButtonKey,
                 onPressed: onCancel,
@@ -3047,8 +3048,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   Widget _buildReturnAcceptDialog({
-    required String currentName,
-    required Color currentColor,
+    required String requesterName,
+    required Color requesterColor,
     required VoidCallback onAccept,
     required VoidCallback onReject,
   }) {
@@ -3058,13 +3059,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         color: Colors.black54,
         child: Center(
           child: AlertDialog(
-            title: Text.rich(
+            content: Text.rich(
               TextSpan(
-                text: currentName,
-                style: TextStyle(
-                  color: currentColor,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(fontSize: 18),
+                children: [
+                  TextSpan(
+                    text: requesterName,
+                    style: TextStyle(
+                      color: requesterColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const TextSpan(text: ' te está devolviendo el turno'),
+                ],
               ),
             ),
             actions: [

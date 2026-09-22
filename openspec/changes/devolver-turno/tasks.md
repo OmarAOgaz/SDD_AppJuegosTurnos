@@ -4,10 +4,10 @@
 
 | Field | Value |
 |-------|-------|
-| Estimated changed lines | 1100–1600 |
+| Estimated changed lines | 1300–1900 |
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
-| Suggested split | PR 1 → PR 2 → PR 3 → PR 4 |
+| Suggested split | PR 1 → PR 2 → PR 3 → PR 4 → PR 5 → PR 6 → PR 7 |
 | Delivery strategy | ask-on-risk |
 | Chain strategy | stacked-to-main |
 
@@ -16,14 +16,14 @@ Chained PRs recommended: Yes
 Chain strategy: stacked-to-main
 400-line budget risk: High
 
-### This unit (Phase 6 / PR 6)
+### This unit (Phase 7 / PR 7)
 
 | Field | Value |
 |-------|-------|
-| Estimated changed lines | 250–380 |
+| Estimated changed lines | 180–320 |
 | 400-line budget risk | Medium |
 | Chained PRs recommended | Yes |
-| Suggested split | PR 6 stacked on `fix/return-turn-occupancy-gate` / #155 |
+| Suggested split | PR 7 stacked on `feat/return-turn-fixed-order-wrap` / #157 |
 | Delivery strategy | ask-on-risk (RESOLVED stacked-to-main) |
 | Chain strategy | stacked-to-main |
 
@@ -42,6 +42,7 @@ Chain strategy: stacked-to-main
 | 4 | Swipe UI, arrows, dialogs, `playEffect` + `error_1.wav` | PR 4 | Stack on PR 3; widget/FX tests |
 | 5 | Verify-warning remediation: occupancy silent vs ineligible red-X | PR 5 | Stack on PR 4 / #153 |
 | 6 | Fixed-order wrap: `durationSeconds`, persist/null lastPass, rewind then formula A vs D, mDNS, UI helper | PR 6 | Stack on PR 5 / #155 (`fix/return-turn-occupancy-gate`); tests in-unit |
+| 7 | Return UI lock: 800ms centered 2× arrows, waiting AlertDialog, accept body copy | PR 7 | Stack on PR 6 / #157 (`feat/return-turn-fixed-order-wrap`); widget/FX tests in-unit |
 
 ## Phase 1: Engine + types (PR 1, sequential)
 
@@ -94,3 +95,15 @@ Supersedes 1.3 wrap-null and 1.6 “no wrap”; leave those `[x]`.
 - [x] 6.8 `test/server/host_room_controller_test.dart`: `durationSeconds` on GAME_STATE lastPass; wrap accept re-advertises TXT `currentRound` via existing `_FakeMdnsAdvertiser`. Spec: GAME_STATE; ADR 14.
 - [x] 6.9 `test/core/domain/turn_feedback_test.dart` + `test/features/game_screen_feedback_test.dart`: green wrap (fixed first-of-N+1); red variable first-of-round (helper false). Spec: swipe arrows.
 - [x] 6.10 `powershell -NoProfile -File scripts/flutter-test.ps1`. Do not reopen locked decisions 1–12.
+
+## Phase 7: Return UI lock (PR 7, stacked on #157)
+
+Supersedes 4.2 waiting-card and 4.4 400ms; leave those `[x]`.
+
+- [x] 7.1 `lib/features/game/touch_fx_overlay.dart`: `returnArrowFlashMs=800ms`. `_paintReturnArrow` at `size.center` (ignore swipe Offset). Geometry ×2: 54→108, 22→44, 7→14, strokes ×2, blocked X ±18→±36. Keep `enqueueReturnArrow(Offset)`. Spec: swipe arrows; ADR 15.
+- [x] 7.2 `lib/features/game/game_screen.dart` `_flashReturnArrow`: enqueue overlay `Size.center`, not `_lastTapDownOffset`. Keep `_hideWaitingForReturnArrow` + `Timer(returnArrowFlashMs)`. Spec: green then popup; ADR 15–16.
+- [x] 7.3 Replace `_buildReturnWaitingCard` with in-tree `AlertDialog` (`Positioned.fill` like accept). Copy `esperando que {previousName} acepte el turno` + `Cancelar`; previousName in previous seat color. No `Navigator.showDialog`. Dual-role: no waiting. Retarget `returnWaitingCardKey`. Spec: Waiting popup; ADR 16.
+- [x] 7.4 `_buildReturnAcceptDialog` content `{requesterName} te está devolviendo el turno`; requesterName in requester color; `Aceptar`/`Rechazar`. Dual-role: one accept dialog, never stacked with waiting. Spec: Accept dialog; ADR 17.
+- [x] 7.5 `test/features/game/touch_fx_overlay_test.dart`: 800ms clear; paint/`debugEffects.offset` at `Size.center` even if enqueue Offset is swipe-origin; geometry ~2×. Spec: swipe arrows; ADR 15.
+- [x] 7.6 `test/features/game_screen_feedback_test.dart`: waiting is dialog not card; no popup until after 800ms green; accept body + requester color; dual-role one accept dialog. Spec: waiting/accept/dual-role.
+- [x] 7.7 `powershell -NoProfile -File scripts/flutter-test.ps1`. Do not reopen locked decisions 1–17.

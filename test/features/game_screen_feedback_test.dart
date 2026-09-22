@@ -2735,11 +2735,26 @@ void main() {
       expect(controller.passTurnCalls, isEmpty);
       final fx = _touchFxState(tester).debugEffects;
       expect(fx.single.kind, TouchFxKind.returnArrow);
+      final overlaySize = tester.getSize(find.byKey(touchFxOverlayKey));
+      expect(fx.single.offset, overlaySize.center(Offset.zero));
       expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
 
-      await tester.pump(returnArrowFlashMs);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.pump();
       expect(find.byKey(returnWaitingCardKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(returnWaitingCardKey),
+          matching: find.byType(AlertDialog),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.text('Cancelar'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
@@ -2808,6 +2823,8 @@ void main() {
       expect(controller.passTurnCalls, isEmpty);
       final fx = _touchFxState(tester).debugEffects;
       expect(fx.single.kind, TouchFxKind.returnArrowBlocked);
+      final overlaySize = tester.getSize(find.byKey(touchFxOverlayKey));
+      expect(fx.single.offset, overlaySize.center(Offset.zero));
       expect(
         _sounds.playedEffects,
         [SoundPreviewService.blockedReturnErrorAssetPath],
@@ -2844,6 +2861,8 @@ void main() {
       expect(controller.passTurnCalls, isEmpty);
       final fx = _touchFxState(tester).debugEffects;
       expect(fx.single.kind, TouchFxKind.returnArrow);
+      final wrapOverlaySize = tester.getSize(find.byKey(touchFxOverlayKey));
+      expect(fx.single.offset, wrapOverlaySize.center(Offset.zero));
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -2878,6 +2897,8 @@ void main() {
       expect(controller.passTurnCalls, isEmpty);
       final fx = _touchFxState(tester).debugEffects;
       expect(fx.single.kind, TouchFxKind.returnArrowBlocked);
+      final variableOverlaySize = tester.getSize(find.byKey(touchFxOverlayKey));
+      expect(fx.single.offset, variableOverlaySize.center(Offset.zero));
       expect(
         _sounds.playedEffects,
         [SoundPreviewService.blockedReturnErrorAssetPath],
@@ -3005,7 +3026,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('waiting card names previous in seat color', (tester) async {
+    testWidgets('waiting dialog names previous in seat color', (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(
           activePlayerId: _hostId,
@@ -3022,6 +3043,14 @@ void main() {
 
       expect(find.byKey(returnWaitingCardKey), findsOneWidget);
       expect(find.byKey(returnAcceptDialogKey), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(returnWaitingCardKey),
+          matching: find.byType(AlertDialog),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(
         find.textContaining('esperando que '),
         findsOneWidget,
@@ -3052,7 +3081,35 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('accept dialog names current in seat color', (tester) async {
+    testWidgets('waiting dialog blocks tap-pass while pending', (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+          pendingReturnRequest: _samplePending(
+            requesterId: _hostId,
+            previousId: _clientId,
+          ),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byKey(returnWaitingCardKey), findsOneWidget);
+      final barrierAt =
+          tester.getTopLeft(find.byKey(returnWaitingCardKey)) +
+              const Offset(8, 8);
+      await tester.tapAt(barrierAt);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, isEmpty);
+      expect(controller.respondReturnTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('accept dialog names requester in seat color', (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(
           activePlayerId: _clientId,
@@ -3069,9 +3126,13 @@ void main() {
 
       expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
       expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.text('Aceptar'), findsOneWidget);
       expect(find.text('Rechazar'), findsOneWidget);
-      expect(find.text(_clientName), findsOneWidget);
+      expect(
+        find.textContaining('te está devolviendo el turno'),
+        findsOneWidget,
+      );
       final title = tester.widget<Text>(
         find.descendant(
           of: find.byType(AlertDialog),
@@ -3080,8 +3141,12 @@ void main() {
           ),
         ),
       );
+      final span = title.textSpan! as TextSpan;
+      final nameSpan = span.children!.whereType<TextSpan>().firstWhere(
+            (s) => s.text == _clientName,
+          );
       expect(
-        (title.textSpan! as TextSpan).style?.color,
+        nameSpan.style?.color,
         ColorCatalog.byId(_clientColorId)!.color,
       );
 
@@ -3112,8 +3177,47 @@ void main() {
 
       expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
       expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.text('Aceptar'), findsOneWidget);
       expect(find.text('Rechazar'), findsOneWidget);
+      expect(
+        find.textContaining('te está devolviendo el turno'),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'dual-role swipe never shows waiting during 800ms hide window',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _hostId,
+        remainingSeconds: 30,
+        lastPass: _sampleLastPass(playerId: _clientId),
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, [_hostId]);
+      expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
+      expect(find.byType(AlertDialog), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });
