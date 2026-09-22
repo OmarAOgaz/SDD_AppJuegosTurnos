@@ -2379,5 +2379,64 @@ void main() {
       expect(room.turnState.lastPass, isNull);
       expect(room.turnState.lastReturnOutcome, isNull);
     });
+
+    test('GAME_STATE lastPass includes durationSeconds', () async {
+      final fixture = await _threePlayerGame();
+      expect(fixture.controller.passTurn(fixture.hostId), isTrue);
+
+      final lastPass = _lastGameState(fixture.server)['lastPass'] as Map;
+      expect(lastPass['playerId'], fixture.hostId);
+      expect(
+        lastPass['durationSeconds'],
+        fixture.controller.room!.turnState.currentRoundDurationSeconds,
+      );
+      expect(lastPass['durationSeconds'], greaterThan(0));
+    });
+
+    test('wrap accept re-advertises TXT currentRound', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      expect(await controller.startGame(), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(mdns.lastCurrentRound, 1);
+
+      final hostId = controller.room!.hostPlayerId;
+      final guestId =
+          controller.room!.turnSequence.firstWhere((id) => id != hostId);
+      expect(controller.passTurn(hostId), isTrue);
+      expect(controller.passTurn(guestId), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.room!.turnState.currentRound, 2);
+      expect(mdns.lastCurrentRound, 2);
+      expect(controller.room!.turnState.lastPass, isNotNull);
+      expect(controller.room!.turnState.lastPass!.durationSeconds, greaterThan(0));
+
+      expect(controller.requestReturnTurn(hostId), isTrue);
+      final startsBefore = mdns.startCount;
+      expect(
+        controller.respondReturnTurn(
+          senderPlayerId: guestId,
+          response: ReturnTurnResponse.accept,
+        ),
+        isTrue,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.room!.turnState.currentRound, 1);
+      expect(mdns.startCount, greaterThan(startsBefore));
+      expect(mdns.lastCurrentRound, 1);
+    });
   });
 }

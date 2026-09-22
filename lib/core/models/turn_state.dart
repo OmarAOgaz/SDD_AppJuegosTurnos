@@ -6,6 +6,7 @@ class LastPassSnapshot {
     required this.playerId,
     required this.elapsedMs,
     required this.round,
+    this.durationSeconds = 0,
     required this.turnCountDelta,
     required this.turnMsDelta,
     required this.exceededTurnCountDelta,
@@ -18,8 +19,11 @@ class LastPassSnapshot {
   /// Previous-seat elapsed used by formula A.
   final int elapsedMs;
 
-  /// Round in which the pass occurred (blocks cross-round return).
+  /// Round in which the pass occurred. Fixed-order wrap keeps N while current is N+1.
   final int round;
+
+  /// Round duration seconds at the pass. Missing JSON degrades to 0.
+  final int durationSeconds;
 
   final int turnCountDelta;
   final int turnMsDelta;
@@ -31,6 +35,7 @@ class LastPassSnapshot {
       'playerId': playerId,
       'elapsedMs': elapsedMs,
       'round': round,
+      'durationSeconds': durationSeconds,
       'turnCountDelta': turnCountDelta,
       'turnMsDelta': turnMsDelta,
       'exceededTurnCountDelta': exceededTurnCountDelta,
@@ -43,6 +48,7 @@ class LastPassSnapshot {
       playerId: json['playerId'] as String? ?? '',
       elapsedMs: json['elapsedMs'] as int? ?? 0,
       round: json['round'] as int? ?? 0,
+      durationSeconds: json['durationSeconds'] as int? ?? 0,
       turnCountDelta: json['turnCountDelta'] as int? ?? 0,
       turnMsDelta: json['turnMsDelta'] as int? ?? 0,
       exceededTurnCountDelta: json['exceededTurnCountDelta'] as int? ?? 0,

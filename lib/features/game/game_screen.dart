@@ -1923,6 +1923,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               : null,
           pendingReturnRequest: room.turnState.pendingReturnRequest,
           lastPass: room.turnState.lastPass,
+          variableTurnOrder: room.config.variableTurnOrder,
           lastReturnOutcome: room.turnState.lastReturnOutcome,
           lastActivationSource: room.turnState.lastActivationSource,
           localPlayerId: room.hostPlayerId,
@@ -2185,6 +2186,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           pendingReturnRequest:
               PendingReturnRequest.tryParse(state?['pendingReturnRequest']),
           lastPass: LastPassSnapshot.tryParse(state?['lastPass']),
+          variableTurnOrder: state?['variableTurnOrder'] == true,
           lastReturnOutcome:
               ReturnOutcome.tryParse(state?['lastReturnOutcome']),
           lastActivationSource: state?['lastActivationSource'] is String
@@ -2332,6 +2334,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     TurnStartCueKey? currentCueKey,
     PendingReturnRequest? pendingReturnRequest,
     LastPassSnapshot? lastPass,
+    bool variableTurnOrder = false,
     ReturnOutcome? lastReturnOutcome,
     TurnActivationSource? lastActivationSource,
     String? localPlayerId,
@@ -2530,7 +2533,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     canHostPassForDisconnectedActive:
                         canHostPassForDisconnectedActive,
                     gamePhase: gamePhase,
-                    hasReturnableLastPass: lastPass != null,
+                    hasReturnableLastPass: TurnEngine.hasReturnableLastPass(
+                      lastPass,
+                      currentRound ?? 0,
+                      variableTurnOrder,
+                    ),
                     hasPendingReturnRequest: pendingReturnRequest != null,
                     localColorId: localColorId,
                     onPass: onPass,

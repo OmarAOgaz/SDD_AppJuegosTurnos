@@ -559,6 +559,7 @@ class HostRoomController extends ChangeNotifier {
     }
     _syncReturnExpiryTimer();
     _broadcastGameState(serverNow);
+    _readvertiseMdnsIfRoundChanged();
     return true;
   }
 
