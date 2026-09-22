@@ -17,12 +17,14 @@ import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/player.dart';
 import 'package:turnos_juegos/core/models/room_config.dart';
+import 'package:turnos_juegos/core/models/turn_state.dart';
 import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 import 'package:turnos_juegos/core/sensors/motion_sensor_source.dart';
 import 'package:turnos_juegos/features/game/game_screen.dart';
 import 'package:turnos_juegos/features/game/touch_fx_overlay.dart';
 import 'package:turnos_juegos/features/game/turn_start_cue.dart';
+import 'package:turnos_juegos/features/game/widgets/game_session_banners.dart';
 import 'package:turnos_juegos/features/lobby/widgets/lobby_reorder_controls.dart';
 import 'package:turnos_juegos/server/host_room_controller.dart';
 
@@ -34,11 +36,18 @@ class _RecordingSoundPreviewService extends SoundPreviewService {
       : super(player: _SilentPreviewPlayer(), audioContext: AudioContext());
 
   final List<String> previewedIds = [];
+  final List<String> playedEffects = [];
 
   @override
   Future<SoundPreviewResult> preview(String soundId) async {
     previewedIds.add(soundId);
     return SoundPreviewStarted(soundId);
+  }
+
+  @override
+  Future<SoundPreviewResult> playEffect(String assetPath) async {
+    playedEffects.add(assetPath);
+    return SoundPreviewStarted(assetPath);
   }
 }
 
@@ -114,12 +123,34 @@ class _RecordingSocketClient extends GameSocketClient {
   _RecordingSocketClient({required super.deviceId});
 
   final List<String> passTurnCalls = [];
+  final List<String> requestReturnTurnCalls = [];
+  final List<Map<String, dynamic>> respondReturnTurnCalls = [];
   final List<String> leaveCalls = [];
   int disconnectCalls = 0;
 
   @override
   void sendPassTurn({required String playerId}) {
     passTurnCalls.add(playerId);
+  }
+
+  @override
+  void sendRequestReturnTurn({required String playerId}) {
+    requestReturnTurnCalls.add(playerId);
+  }
+
+  @override
+  void sendRespondReturnTurn({
+    required String playerId,
+    required String requestId,
+    bool accepted = false,
+    bool cancelled = false,
+  }) {
+    respondReturnTurnCalls.add({
+      'playerId': playerId,
+      'requestId': requestId,
+      'accepted': accepted,
+      'cancelled': cancelled,
+    });
   }
 
   @override
@@ -140,6 +171,9 @@ class _FakeHostRoomController extends HostRoomController {
 
   GameRoom? _fakeRoom;
   final List<String> passTurnCalls = [];
+  final List<String> requestReturnTurnCalls = [];
+  final List<(String sender, ReturnTurnResponse response, String? requestId)>
+      respondReturnTurnCalls = [];
   int endGameCalls = 0;
   final List<List<String>> reorderBetweenRoundsCalls = [];
   final List<int> setRoundIncrementCalls = [];
@@ -156,6 +190,41 @@ class _FakeHostRoomController extends HostRoomController {
   @override
   bool passTurn(String senderPlayerId) {
     passTurnCalls.add(senderPlayerId);
+    return true;
+  }
+
+  @override
+  bool requestReturnTurn(String senderPlayerId) {
+    requestReturnTurnCalls.add(senderPlayerId);
+    final room = _fakeRoom;
+    final lastPass = room?.turnState.lastPass;
+    if (room == null || lastPass == null) {
+      return false;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    room.turnState.pendingReturnRequest = PendingReturnRequest(
+      requestId: '$senderPlayerId@$now',
+      requesterPlayerId: senderPlayerId,
+      previousPlayerId: lastPass.playerId,
+      requestedAtMs: now,
+      expiresAtMs: now + PendingReturnRequest.timeoutMs,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool respondReturnTurn({
+    required String senderPlayerId,
+    required ReturnTurnResponse response,
+    String? requestId,
+  }) {
+    respondReturnTurnCalls.add((senderPlayerId, response, requestId));
+    final room = _fakeRoom;
+    if (room != null) {
+      room.turnState.pendingReturnRequest = null;
+      notifyListeners();
+    }
     return true;
   }
 
@@ -297,6 +366,10 @@ GameRoom _buildHostRoom({
   required String activePlayerId,
   required int remainingSeconds,
   int durationSeconds = 60,
+  LastPassSnapshot? lastPass,
+  PendingReturnRequest? pendingReturnRequest,
+  ReturnOutcome? lastReturnOutcome,
+  TurnActivationSource? lastActivationSource,
 }) {
   final room = GameRoom(
     roomId: 'room-1',
@@ -313,7 +386,11 @@ GameRoom _buildHostRoom({
     ..baseTurnDurationSeconds = durationSeconds
     ..currentRoundDurationSeconds = durationSeconds
     ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch -
-        (durationSeconds - remainingSeconds) * 1000;
+        (durationSeconds - remainingSeconds) * 1000
+    ..lastPass = lastPass
+    ..pendingReturnRequest = pendingReturnRequest
+    ..lastReturnOutcome = lastReturnOutcome
+    ..lastActivationSource = lastActivationSource;
   return room;
 }
 
@@ -366,9 +443,15 @@ Map<String, dynamic> _clientGameState({
   required String activePlayerId,
   required int remainingSeconds,
   int durationSeconds = 60,
+  LastPassSnapshot? lastPass,
+  PendingReturnRequest? pendingReturnRequest,
+  ReturnOutcome? lastReturnOutcome,
+  TurnActivationSource? lastActivationSource,
+  Map<String, Player>? playersById,
 }) {
   final turnStartedAt =
       _serverNow - (durationSeconds - remainingSeconds) * 1000;
+  final players = playersById ?? _players();
   return {
     'roomId': 'room-1',
     'gamePhase': GameRoomPhase.inGame.wireValue,
@@ -379,21 +462,75 @@ Map<String, dynamic> _clientGameState({
     'currentRound': 1,
     'currentRoundDurationSeconds': durationSeconds,
     'currentRoundTurnDurationSeconds': durationSeconds,
-    'playersById':
-        _players().map((id, player) => MapEntry(id, player.toJson())),
+    'playersById': players.map((id, player) => MapEntry(id, player.toJson())),
+    if (lastPass != null) 'lastPass': lastPass.toJson(),
+    if (pendingReturnRequest != null)
+      'pendingReturnRequest': pendingReturnRequest.toJson(),
+    if (lastReturnOutcome != null)
+      'lastReturnOutcome': lastReturnOutcome.toJson(),
+    if (lastActivationSource != null)
+      'lastActivationSource': lastActivationSource.wireValue,
   };
+}
+
+LastPassSnapshot _sampleLastPass({String playerId = _hostId}) {
+  return LastPassSnapshot(
+    playerId: playerId,
+    elapsedMs: 20000,
+    round: 1,
+    turnCountDelta: 1,
+    turnMsDelta: 20000,
+    exceededTurnCountDelta: 0,
+    exceededMsDelta: 0,
+  );
+}
+
+PendingReturnRequest _samplePending({
+  String requesterId = _clientId,
+  String previousId = _hostId,
+}) {
+  return PendingReturnRequest(
+    requestId: '$requesterId@$_serverNow',
+    requesterPlayerId: requesterId,
+    previousPlayerId: previousId,
+    requestedAtMs: _serverNow,
+    expiresAtMs: _serverNow + PendingReturnRequest.timeoutMs,
+  );
+}
+
+ReturnOutcome _sampleOutcome({
+  required ReturnOutcomeResult result,
+  String requesterId = _clientId,
+  String previousId = _hostId,
+}) {
+  return ReturnOutcome(
+    requestId: '$requesterId@$_serverNow',
+    result: result,
+    requesterPlayerId: requesterId,
+    previousPlayerId: previousId,
+  );
 }
 
 ClientSyncState _fixedSync({
   required String activePlayerId,
   required int remainingSeconds,
   int durationSeconds = 60,
+  LastPassSnapshot? lastPass,
+  PendingReturnRequest? pendingReturnRequest,
+  ReturnOutcome? lastReturnOutcome,
+  TurnActivationSource? lastActivationSource,
+  Map<String, Player>? playersById,
 }) {
   return ClientSyncState(
     lastGameState: _clientGameState(
       activePlayerId: activePlayerId,
       remainingSeconds: remainingSeconds,
       durationSeconds: durationSeconds,
+      lastPass: lastPass,
+      pendingReturnRequest: pendingReturnRequest,
+      lastReturnOutcome: lastReturnOutcome,
+      lastActivationSource: lastActivationSource,
+      playersById: playersById,
     ),
     allowTimerInterpolation: false,
     receivedAtMs: _serverNow,
@@ -1905,8 +2042,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'host: tap during acted-as cue does not pass or show ripple',
+    testWidgets('host: tap during acted-as cue does not pass or show ripple',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
@@ -1938,8 +2074,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets(
-        'host: own-to-proxied activation clears toast and invalid X',
+    testWidgets('host: own-to-proxied activation clears toast and invalid X',
         (tester) async {
       final room =
           _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
@@ -2527,7 +2662,8 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('client panel never shows the host skip toggle', (tester) async {
+    testWidgets('client panel never shows the host skip toggle',
+        (tester) async {
       final client = _clientAs(_clientId);
       final sync = _fixedSync(activePlayerId: _hostId, remainingSeconds: 30);
       await _mount(tester, _wrapClient(client: client, syncState: sync));
@@ -2560,6 +2696,437 @@ void main() {
         find.byKey(inGameSkipToggleKey(_clientId)),
       );
       expect(toggle.value, isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('Return turn (Requirement: swipe UI + dialogs + cues)', () {
+    Future<void> swipeLeft(
+      WidgetTester tester, {
+      double dx = -80,
+      Duration duration = const Duration(milliseconds: 500),
+    }) async {
+      await tester.timedDrag(_gestureLayer, Offset(dx, 0), duration);
+      await tester.pump();
+    }
+
+    testWidgets('swipe past 64px with lastPass requests return and green arrow',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, [_hostId]);
+      expect(controller.passTurnCalls, isEmpty);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx.single.kind, TouchFxKind.returnArrow);
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+
+      await tester.pump(returnArrowFlashMs);
+      await tester.pump();
+      expect(find.byKey(returnWaitingCardKey), findsOneWidget);
+      expect(find.text('Cancelar'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('swipe below 64px replays as tap-pass', (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester, dx: -40);
+
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, [_hostId]);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx.single.kind, TouchFxKind.ripple);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('fast left move under 64px still requests via velocity',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      final start = tester.getCenter(_gestureLayer);
+      final gesture = await tester.startGesture(start);
+      const step = Offset(-10, 0);
+      const stepDt = Duration(milliseconds: 10);
+      for (var i = 1; i <= 5; i++) {
+        await gesture.moveBy(step, timeStamp: stepDt * i);
+      }
+      await gesture.up(timeStamp: const Duration(milliseconds: 60));
+      await tester.pump();
+
+      expect(controller.requestReturnTurnCalls, [_hostId]);
+      expect(controller.passTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('blocked swipe (no lastPass) shows red arrow and error SFX',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, isEmpty);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx.single.kind, TouchFxKind.returnArrowBlocked);
+      expect(
+        _sounds.playedEffects,
+        [SoundPreviewService.blockedReturnErrorAssetPath],
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('tap-pass still works when lastPass exists', (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await tester.tap(_gestureLayer);
+      await tester.pump();
+
+      expect(controller.passTurnCalls, [_hostId]);
+      expect(controller.requestReturnTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('long-press still opens panel when lastPass exists',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _longPressOpenPanel(tester);
+
+      expect(_infoPanel, findsOneWidget);
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('peer banner swipe dismisses without requesting return',
+        (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _hostId,
+        remainingSeconds: 30,
+        lastPass: _sampleLastPass(playerId: _clientId),
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      expect(find.byKey(gameSessionPeerDisconnectBannerKey), findsOneWidget);
+      await tester.drag(
+        find.byKey(gameSessionPeerDisconnectBannerKey),
+        const Offset(400, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(gameSessionPeerDisconnectBannerKey), findsNothing);
+      expect(controller.requestReturnTurnCalls, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('waiting card names previous in seat color', (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+          pendingReturnRequest: _samplePending(
+            requesterId: _hostId,
+            previousId: _clientId,
+          ),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byKey(returnWaitingCardKey), findsOneWidget);
+      expect(find.byKey(returnAcceptDialogKey), findsNothing);
+      expect(
+        find.textContaining('esperando que '),
+        findsOneWidget,
+      );
+      final rich = tester.widget<Text>(
+        find.descendant(
+          of: find.byKey(returnWaitingCardKey),
+          matching: find.byWidgetPredicate(
+            (w) => w is Text && w.textSpan != null,
+          ),
+        ),
+      );
+      final span = rich.textSpan! as TextSpan;
+      final nameSpan = span.children!.whereType<TextSpan>().firstWhere(
+            (s) => s.text == _clientName,
+          );
+      expect(nameSpan.style?.color, ColorCatalog.byId(_clientColorId)!.color);
+      expect(find.text('Cancelar'), findsOneWidget);
+
+      await tester.tap(find.byKey(returnCancelButtonKey));
+      await tester.pump();
+      expect(controller.respondReturnTurnCalls, isNotEmpty);
+      expect(
+        controller.respondReturnTurnCalls.single.$2,
+        ReturnTurnResponse.cancel,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('accept dialog names current in seat color', (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _clientId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _hostId),
+          pendingReturnRequest: _samplePending(
+            requesterId: _clientId,
+            previousId: _hostId,
+          ),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.text('Aceptar'), findsOneWidget);
+      expect(find.text('Rechazar'), findsOneWidget);
+      expect(find.text(_clientName), findsOneWidget);
+      final title = tester.widget<Text>(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byWidgetPredicate(
+            (w) => w is Text && w.textSpan != null,
+          ),
+        ),
+      );
+      expect(
+        (title.textSpan! as TextSpan).style?.color,
+        ColorCatalog.byId(_clientColorId)!.color,
+      );
+
+      await tester.tap(find.byKey(returnRejectButtonKey));
+      await tester.pump();
+      expect(
+        controller.respondReturnTurnCalls.single.$2,
+        ReturnTurnResponse.reject,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('dual-role host sees only accept dialog', (tester) async {
+      final room = _buildHostRoom(
+        activePlayerId: _hostId,
+        remainingSeconds: 30,
+        lastPass: _sampleLastPass(playerId: _clientId),
+        pendingReturnRequest: _samplePending(
+          requesterId: _hostId,
+          previousId: _clientId,
+        ),
+      );
+      room.playersById[_clientId]!.connected = false;
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byKey(returnAcceptDialogKey), findsOneWidget);
+      expect(find.byKey(returnWaitingCardKey), findsNothing);
+      expect(find.text('Aceptar'), findsOneWidget);
+      expect(find.text('Rechazar'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host acting-as current waits when previous is connected',
+        (tester) async {
+      const anaId = 'ana-1';
+      const brunoId = 'bruno-1';
+      final players = _players();
+      players[anaId] = Player(
+        playerId: anaId,
+        displayName: 'Ana',
+        colorId: 'color_3',
+        soundId: 'sound_3',
+        deviceId: 'device-ana',
+      );
+      players[brunoId] = Player(
+        playerId: brunoId,
+        displayName: 'Bruno',
+        colorId: 'color_4',
+        soundId: 'sound_4',
+        deviceId: 'device-bruno',
+        connected: false,
+      );
+      final room = GameRoom(
+        roomId: 'room-1',
+        displayName: 'Sala test',
+        hostPlayerId: _hostId,
+        gamePhase: GameRoomPhase.inGame,
+        turnSequence: [_hostId, anaId, brunoId],
+        slots: [_hostId, anaId, brunoId],
+        playersById: players,
+      );
+      room.turnState
+        ..activePlayerId = brunoId
+        ..currentRound = 1
+        ..baseTurnDurationSeconds = 60
+        ..currentRoundDurationSeconds = 60
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch - 10000
+        ..lastPass = _sampleLastPass(playerId: anaId)
+        ..pendingReturnRequest = _samplePending(
+          requesterId: brunoId,
+          previousId: anaId,
+        );
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      await tester.pump();
+
+      expect(find.byKey(returnWaitingCardKey), findsOneWidget);
+      expect(find.byKey(returnAcceptDialogKey), findsNothing);
+      expect(find.textContaining('Ana'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('request arrival cues previous seat', (tester) async {
+      final client = _clientAs(_hostId);
+      final sync = _fixedSync(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+        pendingReturnRequest: _samplePending(
+          requesterId: _clientId,
+          previousId: _hostId,
+        ),
+      );
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(_sounds.previewedIds, contains('sound_1'));
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('rejected outcome cues requester, cancel does not',
+        (tester) async {
+      final rejectedClient = _clientAs(_clientId);
+      final rejectedSync = _fixedSync(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+        lastReturnOutcome: _sampleOutcome(result: ReturnOutcomeResult.rejected),
+      );
+      await _mount(
+        tester,
+        _wrapClient(client: rejectedClient, syncState: rejectedSync),
+      );
+      await tester.pump();
+      expect(find.byType(TurnStartCue), findsOneWidget);
+      expect(_sounds.previewedIds, contains('sound_2'));
+
+      _sounds.previewedIds.clear();
+      final cancelClient = _clientAs(_clientId);
+      final cancelSync = _fixedSync(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+        lastReturnOutcome:
+            _sampleOutcome(result: ReturnOutcomeResult.cancelled),
+      );
+      await _mount(
+        tester,
+        _wrapClient(client: cancelClient, syncState: cancelSync),
+      );
+      await tester.pump();
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_sounds.previewedIds, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('accept restore does not fire turn-start cue', (tester) async {
+      final client = _clientAs(_hostId);
+      final sync = _fixedSync(
+        activePlayerId: _hostId,
+        remainingSeconds: 30,
+        lastReturnOutcome: _sampleOutcome(
+          result: ReturnOutcomeResult.accepted,
+          requesterId: _clientId,
+          previousId: _hostId,
+        ),
+        lastActivationSource: TurnActivationSource.returnRestore,
+      );
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await tester.pump();
+
+      expect(find.byType(TurnStartCue), findsNothing);
+      expect(_sounds.previewedIds, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('client swipe sends REQUEST_RETURN_TURN', (tester) async {
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(
+        activePlayerId: _clientId,
+        remainingSeconds: 30,
+        lastPass: _sampleLastPass(playerId: _hostId),
+      );
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(client.requestReturnTurnCalls, [_clientId]);
+      expect(client.passTurnCalls, isEmpty);
 
       await tester.pumpWidget(const SizedBox());
     });
