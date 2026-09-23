@@ -5,6 +5,7 @@ import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/player.dart';
 import 'package:turnos_juegos/core/models/room_config.dart';
+import 'package:turnos_juegos/core/models/turn_state.dart';
 
 GameRoom _roomWithTwoPlayers({bool variableTurnOrder = false}) {
   final room = LobbyRules.createHostRoom(
@@ -582,4 +583,610 @@ void main() {
       expect((players['host-1'] as Map)['disabled'], isFalse);
     });
   });
+
+  group('TurnState return-turn JSON', () {
+    test('omits absent return fields and treats missing as none', () {
+      final empty = TurnState.fromJson(const {});
+      expect(empty.turnPausedAtMs, isNull);
+      expect(empty.lastPass, isNull);
+      expect(empty.pendingReturnRequest, isNull);
+      expect(empty.lastReturnOutcome, isNull);
+      expect(empty.lastActivationSource, isNull);
+      expect(empty.toJson().containsKey('turnPausedAt'), isFalse);
+      expect(empty.toJson().containsKey('lastPass'), isFalse);
+      expect(empty.toJson().containsKey('pendingReturnRequest'), isFalse);
+      expect(empty.toJson().containsKey('lastReturnOutcome'), isFalse);
+    });
+
+    test('round-trips snapshot, pending, pause, and outcome', () {
+      final original = TurnState(
+        activePlayerId: 'p2',
+        turnStartedAtMs: 10,
+        currentRound: 1,
+        turnPausedAtMs: 20,
+        lastPass: const LastPassSnapshot(
+          playerId: 'host-1',
+          elapsedMs: 20000,
+          round: 1,
+          turnCountDelta: 1,
+          turnMsDelta: 20000,
+          exceededTurnCountDelta: 0,
+          exceededMsDelta: 0,
+        ),
+        pendingReturnRequest: const PendingReturnRequest(
+          requestId: 'p2@20',
+          requesterPlayerId: 'p2',
+          previousPlayerId: 'host-1',
+          requestedAtMs: 20,
+          expiresAtMs: 10020,
+        ),
+        lastReturnOutcome: const ReturnOutcome(
+          requestId: 'p2@20',
+          result: ReturnOutcomeResult.accepted,
+          requesterPlayerId: 'p2',
+          previousPlayerId: 'host-1',
+        ),
+        lastActivationSource: TurnActivationSource.returnRestore,
+      );
+
+      final restored = TurnState.fromJson(original.toJson());
+      expect(restored.turnPausedAtMs, 20);
+      expect(restored.lastPass!.playerId, 'host-1');
+      expect(restored.lastPass!.elapsedMs, 20000);
+      expect(restored.pendingReturnRequest!.requestId, 'p2@20');
+      expect(restored.pendingReturnRequest!.expiresAtMs, 10020);
+      expect(restored.lastReturnOutcome!.result, ReturnOutcomeResult.accepted);
+      expect(
+        restored.lastActivationSource,
+        TurnActivationSource.returnRestore,
+      );
+    });
+
+    test('copyWith clear flags drop nullable return fields', () {
+      final filled = TurnState(
+        turnPausedAtMs: 5,
+        lastPass: const LastPassSnapshot(
+          playerId: 'host-1',
+          elapsedMs: 1000,
+          round: 1,
+          turnCountDelta: 1,
+          turnMsDelta: 1000,
+          exceededTurnCountDelta: 0,
+          exceededMsDelta: 0,
+        ),
+        pendingReturnRequest: const PendingReturnRequest(
+          requestId: 'p2@5',
+          requesterPlayerId: 'p2',
+          previousPlayerId: 'host-1',
+          requestedAtMs: 5,
+          expiresAtMs: 10005,
+        ),
+        lastReturnOutcome: const ReturnOutcome(
+          requestId: 'p2@5',
+          result: ReturnOutcomeResult.rejected,
+          requesterPlayerId: 'p2',
+          previousPlayerId: 'host-1',
+        ),
+        lastActivationSource: TurnActivationSource.pass,
+      );
+
+      final cleared = filled.copyWith(
+        clearTurnPausedAt: true,
+        clearLastPass: true,
+        clearPendingReturnRequest: true,
+        clearLastReturnOutcome: true,
+        clearLastActivationSource: true,
+      );
+      expect(cleared.turnPausedAtMs, isNull);
+      expect(cleared.lastPass, isNull);
+      expect(cleared.pendingReturnRequest, isNull);
+      expect(cleared.lastReturnOutcome, isNull);
+      expect(cleared.lastActivationSource, isNull);
+      expect(filled.turnPausedAtMs, 5);
+      expect(filled.lastPass, isNotNull);
+    });
+  });
+
+  group('TurnEngine return turn', () {
+    test('intra-round pass records last-pass identity elapsed and deltas', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 20_000,
+        ),
+        isTrue,
+      );
+
+      final lastPass = room.turnState.lastPass!;
+      expect(lastPass.playerId, 'host-1');
+      expect(lastPass.elapsedMs, 20_000);
+      expect(lastPass.round, 1);
+      expect(lastPass.turnCountDelta, 1);
+      expect(lastPass.turnMsDelta, 20_000);
+      expect(lastPass.exceededTurnCountDelta, 0);
+      expect(lastPass.exceededMsDelta, 0);
+    });
+
+    test('formula A restore is 20+10 → 30 elapsed / 30 remaining', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 20_000,
+      );
+
+      const requestAt = start + 30_000;
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: requestAt,
+        ),
+        isTrue,
+      );
+
+      const acceptAt = requestAt + 5_000;
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: acceptAt,
+          response: ReturnTurnResponse.accept,
+          requestId: room.turnState.pendingReturnRequest!.requestId,
+        ),
+        isTrue,
+      );
+
+      expect(room.turnState.activePlayerId, 'host-1');
+      expect(room.turnState.turnPausedAtMs, isNull);
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.lastPass, isNull);
+      expect(
+        room.turnState.lastReturnOutcome!.result,
+        ReturnOutcomeResult.accepted,
+      );
+      expect(
+        room.turnState.lastActivationSource,
+        TurnActivationSource.returnRestore,
+      );
+      expect(TurnEngine.remainingSeconds(room, acceptAt), 30);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+      expect(room.turnState.phase, TurnPhase.normal);
+    });
+
+    test('pause freezes remaining while pending', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 20_000,
+      );
+
+      const requestAt = start + 30_000;
+      TurnEngine.tryRequestReturnTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: requestAt,
+      );
+
+      expect(room.turnState.turnPausedAtMs, requestAt);
+      expect(TurnEngine.remainingSeconds(room, requestAt), 50);
+      expect(TurnEngine.remainingSeconds(room, requestAt + 5_000), 50);
+      expect(room.turnState.phase, TurnPhase.normal);
+      TurnEngine.refreshPhase(room, requestAt + 5_000);
+      expect(room.turnState.phase, TurnPhase.normal);
+    });
+
+    test('reject keeps current seat and resumes from paused elapsed', () {
+      final room = _pendingBrunoRequest();
+      final pending = room.turnState.pendingReturnRequest!;
+      const requestAt = 1_030_000;
+      const rejectAt = requestAt + 4_000;
+
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: rejectAt,
+          response: ReturnTurnResponse.reject,
+          requestId: pending.requestId,
+        ),
+        isTrue,
+      );
+
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.turnPausedAtMs, isNull);
+      expect(
+        room.turnState.lastReturnOutcome!.result,
+        ReturnOutcomeResult.rejected,
+      );
+      expect(TurnEngine.remainingSeconds(room, rejectAt), 50);
+      expect(room.turnState.lastPass, isNotNull);
+    });
+
+    test('cancel keeps current seat and resumes from paused elapsed', () {
+      final room = _pendingBrunoRequest();
+      final pending = room.turnState.pendingReturnRequest!;
+      const requestAt = 1_030_000;
+      const cancelAt = requestAt + 2_000;
+
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: cancelAt,
+          response: ReturnTurnResponse.cancel,
+          requestId: pending.requestId,
+        ),
+        isTrue,
+      );
+
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(
+        room.turnState.lastReturnOutcome!.result,
+        ReturnOutcomeResult.cancelled,
+      );
+      expect(TurnEngine.remainingSeconds(room, cancelAt), 50);
+    });
+
+    test('expiry keeps current seat and resumes from paused elapsed', () {
+      final room = _pendingBrunoRequest();
+      const requestAt = 1_030_000;
+      const expireAt = requestAt + TurnEngine.returnRequestTimeoutMs;
+
+      expect(TurnEngine.expireReturnRequestIfDue(room, expireAt - 1), isFalse);
+      expect(room.turnState.pendingReturnRequest, isNotNull);
+
+      expect(TurnEngine.expireReturnRequestIfDue(room, expireAt), isTrue);
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(
+        room.turnState.lastReturnOutcome!.result,
+        ReturnOutcomeResult.expired,
+      );
+      expect(TurnEngine.remainingSeconds(room, expireAt), 50);
+    });
+
+    test('accept rewinds passer deltas and does not complete requester', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.refreshPhase(room, start + 75_000);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 75_000,
+      );
+
+      final ana = room.playersById['host-1']!;
+      expect(ana.turnCount, 1);
+      expect(ana.totalTurnMs, 75_000);
+      expect(ana.exceededTurnCount, 1);
+      expect(ana.totalExceededMs, 15_000);
+
+      TurnEngine.tryRequestReturnTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 80_000,
+      );
+      TurnEngine.tryRespondReturnTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 81_000,
+        response: ReturnTurnResponse.accept,
+      );
+
+      expect(ana.turnCount, 0);
+      expect(ana.totalTurnMs, 0);
+      expect(ana.exceededTurnCount, 0);
+      expect(ana.totalExceededMs, 0);
+      expect(room.playersById['p2']!.turnCount, 0);
+      expect(room.playersById['p2']!.totalTurnMs, 0);
+    });
+
+    test('later real pass after restore is one combined turn', () {
+      final room = _pendingBrunoRequest();
+      TurnEngine.tryRespondReturnTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: 1_035_000,
+        response: ReturnTurnResponse.accept,
+      );
+
+      const passAt = 1_040_000;
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: passAt,
+        ),
+        isTrue,
+      );
+
+      final ana = room.playersById['host-1']!;
+      expect(ana.turnCount, 1);
+      expect(ana.totalTurnMs, 35_000);
+      expect(room.playersById['p2']!.turnCount, 0);
+    });
+
+    test('one-level undo: restored seat cannot re-request until a new pass', () {
+      final room = _pendingBrunoRequest();
+      TurnEngine.tryRespondReturnTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: 1_035_000,
+        response: ReturnTurnResponse.accept,
+      );
+
+      expect(room.turnState.lastPass, isNull);
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: 1_036_000,
+        ),
+        isFalse,
+      );
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.activePlayerId, 'host-1');
+    });
+
+    test('round wrap does not leave a returnable last-pass', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+      expect(room.turnState.lastPass, isNotNull);
+
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2_000,
+      );
+
+      expect(room.turnState.currentRound, 2);
+      expect(room.turnState.lastPass, isNull);
+      expect(room.turnState.activePlayerId, 'host-1');
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 3_000,
+        ),
+        isFalse,
+      );
+    });
+
+    test('first seat of the match cannot request return', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 1_000,
+        ),
+        isFalse,
+      );
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.turnPausedAtMs, isNull);
+    });
+
+    test('non-current sender cannot request return', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 2_000,
+        ),
+        isFalse,
+      );
+      expect(room.turnState.pendingReturnRequest, isNull);
+    });
+
+    test('host acting-as disconnected current may request return', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 20_000,
+      );
+      room.playersById['p2']!.connected = false;
+
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 30_000,
+        ),
+        isTrue,
+      );
+      expect(room.turnState.pendingReturnRequest!.requesterPlayerId, 'p2');
+      expect(room.turnState.pendingReturnRequest!.previousPlayerId, 'host-1');
+    });
+
+    test('host may accept for a disconnected previous seat', () {
+      final room = _pendingBrunoRequest();
+      room.playersById['host-1']!.connected = false;
+
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: 1_035_000,
+          response: ReturnTurnResponse.accept,
+        ),
+        isTrue,
+      );
+      expect(room.turnState.activePlayerId, 'host-1');
+      expect(
+        room.turnState.lastActivationSource,
+        TurnActivationSource.returnRestore,
+      );
+    });
+
+    test('pass is blocked while a return request is pending', () {
+      final room = _pendingBrunoRequest();
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: 1_031_000,
+        ),
+        isFalse,
+      );
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(room.turnState.pendingReturnRequest, isNotNull);
+    });
+
+    test('pass works after pending is rejected', () {
+      final room = _pendingBrunoRequest();
+      TurnEngine.tryRespondReturnTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: 1_031_000,
+        response: ReturnTurnResponse.reject,
+      );
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: 1_032_000,
+        ),
+        isTrue,
+      );
+      expect(room.gamePhase, GameRoomPhase.inGame);
+      expect(room.turnState.currentRound, 2);
+    });
+
+    test('disabled previous clears pending and keeps current active', () {
+      final room = _pendingBrunoRequest();
+      room.playersById['host-1']!.disabled = true;
+
+      expect(
+        TurnEngine.onPlayerDisabled(
+          room: room,
+          playerId: 'host-1',
+          serverNowMs: 1_034_000,
+        ),
+        isTrue,
+      );
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(
+        room.turnState.lastReturnOutcome!.result,
+        ReturnOutcomeResult.rejected,
+      );
+      expect(TurnEngine.remainingSeconds(room, 1_034_000), 50);
+    });
+
+    test('endGame drops leftover pending without leaking pause', () {
+      final room = _pendingBrunoRequest();
+      TurnEngine.endGame(room, 1_040_000);
+
+      expect(room.gamePhase, GameRoomPhase.ended);
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.lastPass, isNull);
+      expect(room.turnState.turnPausedAtMs, isNull);
+    });
+
+    test('round close drops leftover pending invariant', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+      TurnEngine.tryRequestReturnTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2_000,
+      );
+      expect(room.turnState.pendingReturnRequest, isNotNull);
+
+      TurnEngine.tryRespondReturnTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2_500,
+        response: ReturnTurnResponse.cancel,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 3_000,
+      );
+
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.lastPass, isNull);
+      expect(room.turnState.turnPausedAtMs, isNull);
+    });
+
+    test('stale requestId does not mutate pending', () {
+      final room = _pendingBrunoRequest();
+      final originalId = room.turnState.pendingReturnRequest!.requestId;
+
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: 1_031_000,
+          response: ReturnTurnResponse.accept,
+          requestId: 'stale@0',
+        ),
+        isFalse,
+      );
+      expect(room.turnState.pendingReturnRequest!.requestId, originalId);
+      expect(room.turnState.activePlayerId, 'p2');
+    });
+  });
+}
+
+GameRoom _pendingBrunoRequest() {
+  final room = _roomWithTwoPlayers();
+  const start = 1_000_000;
+  TurnEngine.startGame(room, start);
+  TurnEngine.tryPassTurn(
+    room: room,
+    senderPlayerId: 'host-1',
+    serverNowMs: start + 20_000,
+  );
+  TurnEngine.tryRequestReturnTurn(
+    room: room,
+    senderPlayerId: 'p2',
+    serverNowMs: start + 30_000,
+  );
+  return room;
 }
