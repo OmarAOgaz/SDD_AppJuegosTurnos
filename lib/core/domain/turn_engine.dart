@@ -17,6 +17,7 @@ class TurnEngine {
 
   static const int warningThresholdSeconds = 15;
   static const int returnRequestTimeoutMs = PendingReturnRequest.timeoutMs;
+  static const int returnRejectLockThreshold = 3;
 
   static bool startGame(GameRoom room, int serverNowMs) {
     if (!LobbyRules.canStartGame(room)) {
@@ -163,6 +164,9 @@ class TurnEngine {
       return false;
     }
     if (room.turnState.pendingReturnRequest != null) {
+      return false;
+    }
+    if (isReturnRejectLocked(room.turnState.returnRejectCount)) {
       return false;
     }
     if (!_senderIsActingCurrent(room, senderPlayerId)) {
@@ -428,10 +432,17 @@ class TurnEngine {
     return !variableTurnOrder && lastPass.round == currentRound - 1;
   }
 
+  /// After this many explicit rejects, further return requests this turn are blocked.
+  static bool isReturnRejectLocked(int returnRejectCount) {
+    return returnRejectCount >= returnRejectLockThreshold;
+  }
+
   static bool _closeRound(GameRoom room, int serverNowMs) {
     _dropPendingAndPause(room);
     if (room.config.variableTurnOrder) {
-      room.turnState.lastPass = null;
+      room.turnState
+        ..lastPass = null
+        ..returnRejectCount = 0;
       room.gamePhase = GameRoomPhase.betweenRounds;
       room.turnState
         ..activePlayerId = null
@@ -462,7 +473,8 @@ class TurnEngine {
       ..turnStartedAtMs = serverNowMs
       ..phase = TurnPhase.normal
       ..turnPausedAtMs = null
-      ..lastActivationSource = TurnActivationSource.pass;
+      ..lastActivationSource = TurnActivationSource.pass
+      ..returnRejectCount = 0;
   }
 
   static void _pauseClock(GameRoom room, int serverNowMs) {
@@ -541,7 +553,8 @@ class TurnEngine {
         requesterPlayerId: pending.requesterPlayerId,
         previousPlayerId: pending.previousPlayerId,
       )
-      ..lastActivationSource = TurnActivationSource.returnRestore;
+      ..lastActivationSource = TurnActivationSource.returnRestore
+      ..returnRejectCount = 0;
 
     refreshPhase(room, serverNowMs);
     return true;
@@ -554,6 +567,9 @@ class TurnEngine {
     PendingReturnRequest pending,
   ) {
     _resumeClock(room, serverNowMs);
+    if (result == ReturnOutcomeResult.rejected) {
+      room.turnState.returnRejectCount += 1;
+    }
     room.turnState
       ..pendingReturnRequest = null
       ..lastReturnOutcome = ReturnOutcome(
@@ -586,7 +602,9 @@ class TurnEngine {
 
   static void _dropReturnTurnState(GameRoom room) {
     _dropPendingAndPause(room);
-    room.turnState.lastPass = null;
+    room.turnState
+      ..lastPass = null
+      ..returnRejectCount = 0;
   }
 
   static int _elapsedMs(GameRoom room, int serverNowMs) {

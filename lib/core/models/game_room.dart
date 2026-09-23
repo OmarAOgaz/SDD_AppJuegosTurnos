@@ -133,6 +133,8 @@ class GameRoom {
         'lastReturnOutcome': turnState.lastReturnOutcome!.toJson(),
       if (turnState.lastActivationSource != null)
         'lastActivationSource': turnState.lastActivationSource!.wireValue,
+      if (turnState.returnRejectCount > 0)
+        'returnRejectCount': turnState.returnRejectCount,
     };
   }
 
@@ -196,6 +198,7 @@ class GameRoom {
                 json['lastActivationSource'] as String,
               )
             : null,
+        returnRejectCount: json['returnRejectCount'] as int? ?? 0,
       ),
       slots: (json['slots'] as List?)?.whereType<String>().toList() ??
           <String>[],

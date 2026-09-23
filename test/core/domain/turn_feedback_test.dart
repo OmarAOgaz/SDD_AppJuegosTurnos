@@ -278,6 +278,7 @@ void main() {
       bool panelOpen = false,
       bool cueVisible = false,
       bool hasPendingReturnRequest = false,
+      bool returnRejectLocked = false,
     }) {
       return resolveSwipeIntent(
         dx: dx,
@@ -288,6 +289,7 @@ void main() {
         panelOpen: panelOpen,
         cueVisible: cueVisible,
         hasPendingReturnRequest: hasPendingReturnRequest,
+        returnRejectLocked: returnRejectLocked,
       );
     }
 
@@ -387,6 +389,10 @@ void main() {
 
     test('already pending is blocked', () {
       expect(eligible(hasPendingReturnRequest: true), SwipeIntent.blocked);
+    });
+
+    test('three-reject lock is blocked even with returnable last-pass', () {
+      expect(eligible(returnRejectLocked: true), SwipeIntent.blocked);
     });
 
     test('outside inGame is none even with a qualifying swipe', () {
