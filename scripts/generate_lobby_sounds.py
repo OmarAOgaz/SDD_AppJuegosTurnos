@@ -97,6 +97,23 @@ def metallic(dur: float = 0.2) -> list[float]:
     return samples
 
 
+def error_blip(dur: float = 0.12) -> list[float]:
+    """Non-catalog blocked-return error: two falling squares + noise."""
+    n = int(dur * SR)
+    e = env(n, 0.002, 0.04)
+    samples: list[float] = []
+    rng = 424242
+    for i in range(n):
+        t = i / SR
+        rng = (1103515245 * rng + 12345) & 0x7FFFFFFF
+        noise = ((rng / 0x7FFFFFFF) * 2 - 1) * 0.15
+        f = 420 if i < n // 2 else 180
+        ph = 2 * math.pi * f * t
+        sq = 1.0 if math.sin(ph) >= 0 else -1.0
+        samples.append((0.7 * sq + noise) * e[i])
+    return samples
+
+
 def digital(dur: float = 0.16) -> list[float]:
     n = int(dur * SR)
     e = env(n, 0.001, 0.05)
@@ -123,15 +140,28 @@ FILES = {
 }
 
 
+ERROR_FILES = {
+    "error_1.wav": error_blip(),
+}
+
+
+def write_named(name: str, samples: list[float]) -> tuple[str, str]:
+    path = OUT / name
+    write_wav(path, samples)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    print(f"{name} {path.stat().st_size} {digest}")
+    return digest, name
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     lines: list[str] = []
     for name, samples in FILES.items():
-        path = OUT / name
-        write_wav(path, samples)
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest, name = write_named(name, samples)
         lines.append(f"{digest}  {name}")
-        print(f"{name} {path.stat().st_size} {digest}")
+    for name, samples in ERROR_FILES.items():
+        digest, name = write_named(name, samples)
+        lines.append(f"{digest}  {name}")
     (OUT / "CHECKSUMS.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

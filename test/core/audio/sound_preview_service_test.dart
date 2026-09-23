@@ -197,4 +197,19 @@ void main() {
     }
     expect(hashes, hasLength(8));
   });
+
+  test('playEffect bypasses catalog and plays raw asset path', () async {
+    expect(SoundCatalog.all, hasLength(8));
+    expect(
+      SoundCatalog.byId('error_1'),
+      isNull,
+      reason: 'blocked-return error must not be a catalog entry',
+    );
+    final f = _Fake();
+    final started = await svc(f).playEffect(
+      SoundPreviewService.blockedReturnErrorAssetPath,
+    );
+    expect(started, isA<SoundPreviewStarted>());
+    expect(f.calls, ['stop', 'play:sounds/error_1.wav']);
+  });
 }

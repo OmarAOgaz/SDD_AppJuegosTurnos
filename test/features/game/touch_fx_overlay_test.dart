@@ -48,7 +48,53 @@ void main() {
     expect(key.currentState!.debugEffects, isEmpty);
   });
 
-  testWidgets('clearInvalidXMarks removes X and leaves ripples', (tester) async {
+  testWidgets('enqueueReturnArrow then clears after 400ms', (tester) async {
+    final key = GlobalKey<TouchFxOverlayState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TouchFxOverlay(key: key),
+      ),
+    );
+
+    key.currentState!.enqueueReturnArrow(const Offset(50, 80));
+    await tester.pump();
+
+    final mid = key.currentState!.debugEffects;
+    expect(mid, hasLength(1));
+    expect(mid.single.kind, TouchFxKind.returnArrow);
+    expect(mid.single.offset, const Offset(50, 80));
+    expect(mid.single.color, const Color(0xFF43A047));
+
+    await tester.pump(returnArrowFlashMs);
+    expect(key.currentState!.debugEffects, isEmpty);
+  });
+
+  testWidgets('enqueueReturnArrowBlocked is red X-arrow not invalidX',
+      (tester) async {
+    final key = GlobalKey<TouchFxOverlayState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TouchFxOverlay(key: key),
+      ),
+    );
+
+    key.currentState!.enqueueReturnArrowBlocked(const Offset(12, 34));
+    await tester.pump();
+
+    final mid = key.currentState!.debugEffects;
+    expect(mid, hasLength(1));
+    expect(mid.single.kind, TouchFxKind.returnArrowBlocked);
+    expect(mid.single.kind, isNot(TouchFxKind.invalidX));
+    expect(mid.single.kind, isNot(TouchFxKind.ripple));
+    expect(mid.single.offset, const Offset(12, 34));
+    expect(mid.single.color, const Color(0xFFE53935));
+
+    await tester.pump(returnArrowFlashMs);
+    expect(key.currentState!.debugEffects, isEmpty);
+  });
+
+  testWidgets('clearInvalidXMarks removes X and leaves ripples',
+      (tester) async {
     final key = GlobalKey<TouchFxOverlayState>();
     await tester.pumpWidget(
       MaterialApp(

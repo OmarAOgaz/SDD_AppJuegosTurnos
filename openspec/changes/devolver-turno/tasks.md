@@ -50,10 +50,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: UI + FX + audio (PR 4, sequential after PR 2+3)
 
-- [ ] 4.1 `lib/features/game/game_screen.dart`: horizontal drag; tap-replay below threshold; `_panelOpen`/`_showTurnStartCue` gates. Spec: cue/panel no-op; tap-pass unchanged.
-- [ ] 4.2 Waiting card `esperando que {previousName} acepte el turno` + `Cancelar`; accept dialog `Aceptar`/`Rechazar`; seat-colored names; role from 3.2. Spec: waiting/accept/dual-role.
-- [ ] 4.3 Cue on request (previous) and rejected/expired (requester); skip restore/cancel. Spec: cue routing.
-- [ ] 4.4 `lib/features/game/touch_fx_overlay.dart`: `returnArrow`/`returnArrowBlocked`, `returnArrowFlashMs=400`. Spec: swipe arrows.
-- [ ] 4.5 `SoundPreviewService.playEffect`; `assets/sounds/error_1.wav` + `pubspec.yaml`; fallback haptic+click. Spec: blocked error sound.
-- [ ] 4.6 `test/features/game_screen_feedback_test.dart` + `test/features/game/touch_fx_overlay_test.dart`: threshold, tap replay, dialog/card, gesture regressions, arrows.
-- [ ] 4.7 `powershell -NoProfile -File scripts/flutter-test.ps1`. Do not reopen locked decisions.
+- [x] 4.1 `lib/features/game/game_screen.dart`: horizontal drag; tap-replay below threshold; `_panelOpen`/`_showTurnStartCue` gates. Spec: cue/panel no-op; tap-pass unchanged.
+- [x] 4.2 Waiting card `esperando que {previousName} acepte el turno` + `Cancelar`; accept dialog `Aceptar`/`Rechazar`; seat-colored names; role from 3.2. Spec: waiting/accept/dual-role.
+- [x] 4.3 Cue on request (previous) and rejected/expired (requester); skip restore/cancel. Spec: cue routing.
+- [x] 4.4 `lib/features/game/touch_fx_overlay.dart`: `returnArrow`/`returnArrowBlocked`, `returnArrowFlashMs=400`. Spec: swipe arrows.
+- [x] 4.5 `SoundPreviewService.playEffect`; `assets/sounds/error_1.wav` + `pubspec.yaml`; fallback haptic+click. Spec: blocked error sound.
+- [x] 4.6 `test/features/game_screen_feedback_test.dart` + `test/features/game/touch_fx_overlay_test.dart`: threshold, tap replay, dialog/card, gesture regressions, arrows.
+- [x] 4.7 `powershell -NoProfile -File scripts/flutter-test.ps1`. Do not reopen locked decisions.
