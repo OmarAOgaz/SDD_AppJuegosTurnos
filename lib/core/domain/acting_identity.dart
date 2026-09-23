@@ -8,6 +8,7 @@ class ActingIdentity {
   const ActingIdentity({
     required this.isOwn,
     required this.isActingAs,
+    this.actingSeatId,
     this.colorId,
     this.soundId,
   });
@@ -17,6 +18,13 @@ class ActingIdentity {
 
   /// Host is passing for a disconnected active seat that is not local.
   final bool isActingAs;
+
+  /// Seat this device is acting as while [isDeviceActing]; otherwise null.
+  ///
+  /// Own turn uses the local seat id. Host acting-as uses the disconnected
+  /// active seat id so waiting-card and outcome-cue routing key off the
+  /// acted-as current, not the host's own [localPlayerId].
+  final String? actingSeatId;
 
   /// Palette for cue / warning / overtime / ripple / sound.
   final String? colorId;
@@ -48,6 +56,7 @@ ActingIdentity resolveActingIdentity({
   return ActingIdentity(
     isOwn: isOwn,
     isActingAs: isActingAs,
+    actingSeatId: (isOwn || isActingAs) ? activePlayer.playerId : null,
     colorId: palette?.colorId,
     soundId: palette?.soundId,
   );
