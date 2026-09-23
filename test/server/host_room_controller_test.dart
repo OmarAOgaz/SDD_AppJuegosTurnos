@@ -8,6 +8,7 @@ import 'package:turnos_juegos/core/domain/host_heal_compare.dart';
 import 'package:turnos_juegos/core/domain/host_succession.dart';
 import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
+import 'package:turnos_juegos/core/models/turn_state.dart';
 import 'package:turnos_juegos/core/lifecycle/foreground_service_bridge.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/ws_envelope.dart';
@@ -2112,6 +2113,330 @@ void main() {
 
       expect(mdns.startCount, greaterThan(startsBefore));
       expect(mdns.lastHostColorId, 'color_7');
+    });
+  });
+
+  group('HostRoomController return-turn wire', () {
+    Future<
+        ({
+          HostRoomController controller,
+          _LobbySyncRecordingServer server,
+          String hostId,
+          String playerAId,
+          String playerBId,
+        })> _threePlayerGame() async {
+      final fixture = await _lobbySyncFixture();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      controller.debugDispatchMessage(
+        'session-a',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Ana'),
+      );
+      controller.debugDispatchMessage(
+        'session-b',
+        _joinEnvelope(deviceId: 'device-b', displayName: 'Bruno'),
+      );
+      final hostId = controller.room!.hostPlayerId;
+      final playerAId = server.unicasts[0].$2.payload['playerId'] as String;
+      final playerBId = server.unicasts[1].$2.payload['playerId'] as String;
+      expect(await controller.startGame(), isTrue);
+      return (
+        controller: controller,
+        server: server,
+        hostId: hostId,
+        playerAId: playerAId,
+        playerBId: playerBId,
+      );
+    }
+
+    Map<String, dynamic> _lastGameState(_LobbySyncRecordingServer server) {
+      final gameStates = server.broadcasts
+          .where((envelope) => envelope.type == MessageTypes.gameState)
+          .toList();
+      expect(gameStates, isNotEmpty);
+      return gameStates.last.payload;
+    }
+
+    test('current seat request broadcasts pending pause lastPass and arms timer',
+        () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      server.broadcasts.clear();
+
+      controller.debugRegisterSession('session-a', playerId: fixture.playerAId);
+      controller.debugDispatchMessage(
+        'session-a',
+        WsEnvelope(
+          type: MessageTypes.requestReturnTurn,
+          payload: {'playerId': fixture.playerAId},
+        ),
+      );
+
+      final payload = _lastGameState(server);
+      expect(payload['turnPausedAt'], isA<int>());
+      expect(payload['pendingReturnRequest'], isA<Map>());
+      expect(
+        (payload['pendingReturnRequest'] as Map)['requesterPlayerId'],
+        fixture.playerAId,
+      );
+      expect(
+        (payload['pendingReturnRequest'] as Map)['previousPlayerId'],
+        fixture.hostId,
+      );
+      expect(payload['lastPass'], isA<Map>());
+      expect((payload['lastPass'] as Map)['playerId'], fixture.hostId);
+      expect(controller.debugReturnExpiryTimerArmed, isTrue);
+      expect(controller.room!.turnState.pendingReturnRequest, isNotNull);
+    });
+
+    test('non-current request is rejected without pending', () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      server.broadcasts.clear();
+
+      controller.debugDispatchMessage(
+        'session-b',
+        WsEnvelope(
+          type: MessageTypes.requestReturnTurn,
+          payload: {'playerId': fixture.playerBId},
+        ),
+      );
+
+      expect(server.broadcasts, isEmpty);
+      expect(controller.room!.turnState.pendingReturnRequest, isNull);
+      expect(controller.debugReturnExpiryTimerArmed, isFalse);
+    });
+
+    test('host acting-as disconnected current may request return', () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      controller.room!.playersById[fixture.playerAId]!.connected = false;
+
+      expect(controller.requestReturnTurn(fixture.hostId), isTrue);
+      expect(
+        controller.room!.turnState.pendingReturnRequest?.requesterPlayerId,
+        fixture.playerAId,
+      );
+    });
+
+    test('PASS_TURN is blocked while pending and works after reject', () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      expect(controller.requestReturnTurn(fixture.playerAId), isTrue);
+      expect(controller.passTurn(fixture.playerAId), isFalse);
+      expect(controller.room!.turnState.activePlayerId, fixture.playerAId);
+
+      expect(
+        controller.respondReturnTurn(
+          senderPlayerId: fixture.hostId,
+          response: ReturnTurnResponse.reject,
+        ),
+        isTrue,
+      );
+      expect(controller.room!.turnState.pendingReturnRequest, isNull);
+      expect(controller.passTurn(fixture.playerAId), isTrue);
+      expect(controller.room!.turnState.activePlayerId, fixture.playerBId);
+    });
+
+    test('host answers accept for disconnected previous', () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      expect(controller.passTurn(fixture.playerAId), isTrue);
+      expect(controller.requestReturnTurn(fixture.playerBId), isTrue);
+      controller.room!.playersById[fixture.playerAId]!.connected = false;
+
+      expect(
+        controller.respondReturnTurn(
+          senderPlayerId: fixture.hostId,
+          response: ReturnTurnResponse.accept,
+        ),
+        isTrue,
+      );
+      expect(controller.room!.turnState.activePlayerId, fixture.playerAId);
+      expect(controller.room!.turnState.pendingReturnRequest, isNull);
+      expect(
+        controller.room!.turnState.lastReturnOutcome?.result,
+        ReturnOutcomeResult.accepted,
+      );
+    });
+
+    test('unauthorized respond is dropped', () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      expect(controller.requestReturnTurn(fixture.playerAId), isTrue);
+
+      expect(
+        controller.respondReturnTurn(
+          senderPlayerId: fixture.playerBId,
+          response: ReturnTurnResponse.reject,
+        ),
+        isFalse,
+      );
+      expect(controller.room!.turnState.pendingReturnRequest, isNotNull);
+    });
+
+    test('expiry timer fire clears pending and broadcasts expired outcome',
+        () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      final server = fixture.server;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      expect(controller.requestReturnTurn(fixture.playerAId), isTrue);
+      final pending = controller.room!.turnState.pendingReturnRequest!;
+      controller.room!.turnState.pendingReturnRequest = PendingReturnRequest(
+        requestId: pending.requestId,
+        requesterPlayerId: pending.requesterPlayerId,
+        previousPlayerId: pending.previousPlayerId,
+        requestedAtMs: pending.requestedAtMs,
+        expiresAtMs: DateTime.now().millisecondsSinceEpoch - 1,
+      );
+      server.broadcasts.clear();
+      controller.debugFireReturnExpiryTimer();
+
+      expect(controller.room!.turnState.pendingReturnRequest, isNull);
+      expect(controller.debugReturnExpiryTimerArmed, isFalse);
+      expect(
+        controller.room!.turnState.lastReturnOutcome?.result,
+        ReturnOutcomeResult.expired,
+      );
+      final payload = _lastGameState(server);
+      expect(payload.containsKey('pendingReturnRequest'), isFalse);
+      expect((payload['lastReturnOutcome'] as Map)['result'], 'expired');
+    });
+
+    test('SYNC_REQUEST includes pending fields while request is open', () async {
+      final fixture = await _threePlayerGame();
+      final controller = fixture.controller;
+      expect(controller.passTurn(fixture.hostId), isTrue);
+      expect(controller.requestReturnTurn(fixture.playerAId), isTrue);
+
+      final replies = <WsEnvelope>[];
+      controller.debugDispatchMessageWithSend(
+        'session-a',
+        const WsEnvelope(type: MessageTypes.syncRequest, payload: {}),
+        replies.add,
+      );
+      expect(replies.single.type, MessageTypes.gameState);
+      expect(replies.single.payload['turnPausedAt'], isA<int>());
+      expect(replies.single.payload['pendingReturnRequest'], isA<Map>());
+      expect(replies.single.payload['lastPass'], isA<Map>());
+    });
+
+    test('succession inherits pending and re-arms expiry timer', () async {
+      final seedFixture = await _threePlayerGame();
+      final seed = seedFixture.controller;
+      expect(seed.passTurn(seedFixture.hostId), isTrue);
+      expect(seed.requestReturnTurn(seedFixture.playerAId), isTrue);
+      final pending = seed.room!.turnState.pendingReturnRequest!;
+      final snapshot = seed.exportRoomSnapshot()!;
+      expect(snapshot['pendingReturnRequest'], isA<Map>());
+      expect(snapshot['turnPausedAt'], isA<int>());
+      await seed.stopRoom(broadcastDiscarded: false);
+
+      final server = _LobbySyncRecordingServer();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+      );
+      final room = await controller.startFromSnapshot(
+        snapshot: snapshot,
+        actingHostPlayerId: seedFixture.playerAId,
+      );
+      expect(room.turnState.pendingReturnRequest?.requestId, pending.requestId);
+      expect(
+        room.turnState.pendingReturnRequest?.expiresAtMs,
+        pending.expiresAtMs,
+      );
+      expect(controller.debugReturnExpiryTimerArmed, isTrue);
+    });
+
+    test('absent GAME_STATE fields mean no pending after snapshot', () async {
+      final seedFixture = await _threePlayerGame();
+      final seed = seedFixture.controller;
+      expect(seed.passTurn(seedFixture.hostId), isTrue);
+      final snapshot = seed.exportRoomSnapshot()!;
+      snapshot.remove('pendingReturnRequest');
+      snapshot.remove('turnPausedAt');
+      snapshot.remove('lastPass');
+      snapshot.remove('lastReturnOutcome');
+      await seed.stopRoom(broadcastDiscarded: false);
+
+      final controller = HostRoomController(
+        server: _LobbySyncRecordingServer(),
+        mdnsAdvertiser: _FakeMdnsAdvertiser(),
+      );
+      final room = await controller.startFromSnapshot(snapshot: snapshot);
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.turnPausedAtMs, isNull);
+      expect(room.turnState.lastPass, isNull);
+      expect(room.turnState.lastReturnOutcome, isNull);
+    });
+
+    test('GAME_STATE lastPass includes durationSeconds', () async {
+      final fixture = await _threePlayerGame();
+      expect(fixture.controller.passTurn(fixture.hostId), isTrue);
+
+      final lastPass = _lastGameState(fixture.server)['lastPass'] as Map;
+      expect(lastPass['playerId'], fixture.hostId);
+      expect(
+        lastPass['durationSeconds'],
+        fixture.controller.room!.turnState.currentRoundDurationSeconds,
+      );
+      expect(lastPass['durationSeconds'], greaterThan(0));
+    });
+
+    test('wrap accept re-advertises TXT currentRound', () async {
+      final server = _LobbySyncRecordingServer();
+      final mdns = _FakeMdnsAdvertiser();
+      final controller = HostRoomController(
+        server: server,
+        mdnsAdvertiser: mdns,
+      );
+      await controller.startRoom(
+        displayName: 'Sala',
+        hostDeviceId: 'host-device',
+      );
+      controller.debugDispatchMessage(
+        'client-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'A'),
+      );
+      expect(await controller.startGame(), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(mdns.lastCurrentRound, 1);
+
+      final hostId = controller.room!.hostPlayerId;
+      final guestId =
+          controller.room!.turnSequence.firstWhere((id) => id != hostId);
+      expect(controller.passTurn(hostId), isTrue);
+      expect(controller.passTurn(guestId), isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.room!.turnState.currentRound, 2);
+      expect(mdns.lastCurrentRound, 2);
+      expect(controller.room!.turnState.lastPass, isNotNull);
+      expect(controller.room!.turnState.lastPass!.durationSeconds, greaterThan(0));
+
+      expect(controller.requestReturnTurn(hostId), isTrue);
+      final startsBefore = mdns.startCount;
+      expect(
+        controller.respondReturnTurn(
+          senderPlayerId: guestId,
+          response: ReturnTurnResponse.accept,
+        ),
+        isTrue,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.room!.turnState.currentRound, 1);
+      expect(mdns.startCount, greaterThan(startsBefore));
+      expect(mdns.lastCurrentRound, 1);
     });
   });
 }

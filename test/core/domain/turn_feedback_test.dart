@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
+import 'package:turnos_juegos/core/models/turn_state.dart';
 
 void main() {
   group('resolveTurnFeedback', () {
@@ -231,6 +233,30 @@ void main() {
         isTrue,
       );
     });
+
+    test('returnRestore does not fire even when the cue key changes', () {
+      expect(
+        shouldFireTurnStartCue(
+          isMyDeviceActive: true,
+          lastFired: keyA,
+          current: keyB,
+          activationSource: TurnActivationSource.returnRestore,
+        ),
+        isFalse,
+      );
+    });
+
+    test('pass activationSource still fires on a new key', () {
+      expect(
+        shouldFireTurnStartCue(
+          isMyDeviceActive: true,
+          lastFired: keyA,
+          current: keyB,
+          activationSource: TurnActivationSource.pass,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('resolveInvalidTapMarkColor', () {
@@ -239,6 +265,400 @@ void main() {
       expect(resolveInvalidTapMarkColor('color_2'), Colors.red);
       expect(resolveInvalidTapMarkColor('color_3'), Colors.red);
       expect(resolveInvalidTapMarkColor(null), Colors.red);
+    });
+  });
+
+  group('resolveSwipeIntent', () {
+    SwipeIntent eligible({
+      double dx = -returnSwipeMinDistance,
+      double velocityDx = 0,
+      GameRoomPhase gamePhase = GameRoomPhase.inGame,
+      bool isDeviceActing = true,
+      bool hasReturnableLastPass = true,
+      bool panelOpen = false,
+      bool cueVisible = false,
+      bool hasPendingReturnRequest = false,
+    }) {
+      return resolveSwipeIntent(
+        dx: dx,
+        velocityDx: velocityDx,
+        gamePhase: gamePhase,
+        isDeviceActing: isDeviceActing,
+        hasReturnableLastPass: hasReturnableLastPass,
+        panelOpen: panelOpen,
+        cueVisible: cueVisible,
+        hasPendingReturnRequest: hasPendingReturnRequest,
+      );
+    }
+
+    test('distance at 64px left requests return when eligible', () {
+      expect(eligible(dx: -64), SwipeIntent.requestReturn);
+    });
+
+    test('distance just under 64px with no velocity is none (tap replay)', () {
+      expect(eligible(dx: -63), SwipeIntent.none);
+    });
+
+    test('velocity at 300px/s left requests return even with small dx', () {
+      expect(
+        eligible(dx: -10, velocityDx: -returnSwipeMinVelocity),
+        SwipeIntent.requestReturn,
+      );
+    });
+
+    test('velocity just under 300px/s with small dx is none', () {
+      expect(eligible(dx: -10, velocityDx: -299), SwipeIntent.none);
+    });
+
+    test('right swipe is none', () {
+      expect(eligible(dx: 80, velocityDx: 400), SwipeIntent.none);
+    });
+
+    test('first seat of the round (no last-pass) is blocked', () {
+      expect(eligible(hasReturnableLastPass: false), SwipeIntent.blocked);
+    });
+
+    test('fixed-order wrap lastPass is green request', () {
+      const lastPass = LastPassSnapshot(
+        playerId: 'p2',
+        elapsedMs: 20000,
+        round: 1,
+        durationSeconds: 60,
+        turnCountDelta: 1,
+        turnMsDelta: 20000,
+        exceededTurnCountDelta: 0,
+        exceededMsDelta: 0,
+      );
+      expect(
+        TurnEngine.hasReturnableLastPass(lastPass, 2, false),
+        isTrue,
+      );
+      expect(
+        eligible(
+          hasReturnableLastPass: TurnEngine.hasReturnableLastPass(
+            lastPass,
+            2,
+            false,
+          ),
+        ),
+        SwipeIntent.requestReturn,
+      );
+    });
+
+    test('variable-order first-of-round helper is false so swipe is blocked',
+        () {
+      const lastPass = LastPassSnapshot(
+        playerId: 'p2',
+        elapsedMs: 20000,
+        round: 1,
+        durationSeconds: 60,
+        turnCountDelta: 1,
+        turnMsDelta: 20000,
+        exceededTurnCountDelta: 0,
+        exceededMsDelta: 0,
+      );
+      expect(
+        TurnEngine.hasReturnableLastPass(lastPass, 2, true),
+        isFalse,
+      );
+      expect(
+        eligible(
+          hasReturnableLastPass: TurnEngine.hasReturnableLastPass(
+            lastPass,
+            2,
+            true,
+          ),
+        ),
+        SwipeIntent.blocked,
+      );
+    });
+
+    test('non-acting sender is blocked', () {
+      expect(eligible(isDeviceActing: false), SwipeIntent.blocked);
+    });
+
+    test('cue visible is silent none (occupancy, not blocked)', () {
+      expect(eligible(cueVisible: true), SwipeIntent.none);
+    });
+
+    test('panel open is silent none (occupancy, not blocked)', () {
+      expect(eligible(panelOpen: true), SwipeIntent.none);
+    });
+
+    test('already pending is blocked', () {
+      expect(eligible(hasPendingReturnRequest: true), SwipeIntent.blocked);
+    });
+
+    test('outside inGame is none even with a qualifying swipe', () {
+      for (final phase in [
+        GameRoomPhase.lobby,
+        GameRoomPhase.betweenRounds,
+        GameRoomPhase.ended,
+      ]) {
+        expect(eligible(gamePhase: phase), SwipeIntent.none);
+      }
+    });
+  });
+
+  group('resolveReturnRequestRole', () {
+    const pending = PendingReturnRequest(
+      requestId: 'bruno@1000',
+      requesterPlayerId: 'bruno',
+      previousPlayerId: 'ana',
+      requestedAtMs: 1000,
+      expiresAtMs: 11000,
+    );
+
+    test('no pending is none', () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'bruno',
+          hostPlayerId: 'host',
+          actingSeatId: 'bruno',
+          previousConnected: true,
+          pending: null,
+        ),
+        ReturnRequestRole.none,
+      );
+    });
+
+    test('previous connected seat answers', () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'ana',
+          hostPlayerId: 'host',
+          actingSeatId: null,
+          previousConnected: true,
+          pending: pending,
+        ),
+        ReturnRequestRole.answer,
+      );
+    });
+
+    test('requester acting seat waits', () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'bruno',
+          hostPlayerId: 'host',
+          actingSeatId: 'bruno',
+          previousConnected: true,
+          pending: pending,
+        ),
+        ReturnRequestRole.waiting,
+      );
+    });
+
+    test('bystander is none', () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'carla',
+          hostPlayerId: 'host',
+          actingSeatId: null,
+          previousConnected: true,
+          pending: pending,
+        ),
+        ReturnRequestRole.none,
+      );
+    });
+
+    test('host dual-role answers once (not waiting) when previous disconnected',
+        () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'host',
+          hostPlayerId: 'host',
+          actingSeatId: 'bruno',
+          previousConnected: false,
+          pending: pending,
+        ),
+        ReturnRequestRole.answer,
+      );
+    });
+
+    test('host acting-as requester waits when previous is connected', () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'host',
+          hostPlayerId: 'host',
+          actingSeatId: 'bruno',
+          previousConnected: true,
+          pending: pending,
+        ),
+        ReturnRequestRole.waiting,
+      );
+    });
+
+    test('disconnected previous seat itself does not answer', () {
+      expect(
+        resolveReturnRequestRole(
+          localPlayerId: 'ana',
+          hostPlayerId: 'host',
+          actingSeatId: null,
+          previousConnected: false,
+          pending: pending,
+        ),
+        ReturnRequestRole.none,
+      );
+    });
+  });
+
+  group('return-turn cue routes', () {
+    const pending = PendingReturnRequest(
+      requestId: 'bruno@1000',
+      requesterPlayerId: 'bruno',
+      previousPlayerId: 'ana',
+      requestedAtMs: 1000,
+      expiresAtMs: 11000,
+    );
+
+    ReturnOutcome outcome(ReturnOutcomeResult result) {
+      return ReturnOutcome(
+        requestId: pending.requestId,
+        result: result,
+        requesterPlayerId: pending.requesterPlayerId,
+        previousPlayerId: pending.previousPlayerId,
+      );
+    }
+
+    test('request arrival cues previous, not requester', () {
+      expect(
+        shouldFireReturnRequestCue(
+          pending: pending,
+          localPlayerId: 'ana',
+          lastFiredRequestId: null,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldFireReturnRequestCue(
+          pending: pending,
+          localPlayerId: 'bruno',
+          lastFiredRequestId: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('request arrival is deduped by requestId', () {
+      expect(
+        shouldFireReturnRequestCue(
+          pending: pending,
+          localPlayerId: 'ana',
+          lastFiredRequestId: pending.requestId,
+        ),
+        isFalse,
+      );
+    });
+
+    test('accept does not cue restore or outcome on any device', () {
+      const restoredKey = TurnStartCueKey(
+        activePlayerId: 'ana',
+        turnStartedAtMs: 3000,
+      );
+      expect(
+        shouldFireTurnStartCue(
+          isMyDeviceActive: true,
+          lastFired: null,
+          current: restoredKey,
+          activationSource: TurnActivationSource.returnRestore,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.accepted),
+          actingSeatId: 'bruno',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.accepted),
+          actingSeatId: 'ana',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('reject cues requester only', () {
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.rejected),
+          actingSeatId: 'bruno',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.rejected),
+          actingSeatId: 'ana',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('timeout cues requester only', () {
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.expired),
+          actingSeatId: 'bruno',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.expired),
+          actingSeatId: 'ana',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('host acting-as requester still receives reject/expire cue', () {
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.rejected),
+          actingSeatId: 'bruno',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isTrue,
+      );
+    });
+
+    test('cancel cues nobody', () {
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.cancelled),
+          actingSeatId: 'bruno',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.cancelled),
+          actingSeatId: 'ana',
+          lastFiredOutcomeRequestId: null,
+        ),
+        isFalse,
+      );
+    });
+
+    test('outcome cue is deduped by requestId', () {
+      expect(
+        shouldFireReturnOutcomeCue(
+          outcome: outcome(ReturnOutcomeResult.rejected),
+          actingSeatId: 'bruno',
+          lastFiredOutcomeRequestId: pending.requestId,
+        ),
+        isFalse,
+      );
     });
   });
 }

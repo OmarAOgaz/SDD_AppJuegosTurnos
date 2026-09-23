@@ -118,6 +118,9 @@ class SoundPreviewService {
   static String assetSourcePath(String path) =>
       path.startsWith('assets/') ? path.substring(7) : path;
 
+  /// Non-catalog SFX (blocked return error). Does not add a SoundCatalog entry.
+  static const blockedReturnErrorAssetPath = 'assets/sounds/error_1.wav';
+
   Future<SoundPreviewResult> preview(String soundId) async {
     if (_disposed) {
       return SoundPreviewFailure(soundId, SoundPreviewError.disposed);
@@ -126,11 +129,26 @@ class SoundPreviewService {
     if (entry == null) {
       return SoundPreviewFailure(soundId, SoundPreviewError.unknownSound);
     }
+    return _play(resultId: soundId, assetPath: entry.assetPath);
+  }
+
+  /// Plays [assetPath] directly, bypassing [SoundCatalog] (must stay 8 entries).
+  Future<SoundPreviewResult> playEffect(String assetPath) {
+    return _play(resultId: assetPath, assetPath: assetPath);
+  }
+
+  Future<SoundPreviewResult> _play({
+    required String resultId,
+    required String assetPath,
+  }) async {
+    if (_disposed) {
+      return SoundPreviewFailure(resultId, SoundPreviewError.disposed);
+    }
     final gen = ++_gen;
     _cancel(SoundPreviewError.cancelled);
     final active = Completer<SoundPreviewResult>();
     _active = active;
-    _activeId = soundId;
+    _activeId = resultId;
     await _enqueue(() async {
       if (_disposed || gen != _gen) return;
       await _player.stop();
@@ -138,7 +156,7 @@ class SoundPreviewService {
       try {
         await _player
             .playAsset(
-              assetSourcePath(entry.assetPath),
+              assetSourcePath(assetPath),
               volume: volume,
               mode: PlayerMode.lowLatency,
               ctx: _ctx,
@@ -147,25 +165,25 @@ class SoundPreviewService {
             .timeout(playingTimeout);
         if (!active.isCompleted && gen == _gen && !_disposed) {
           // audioplayers 6.8.1: successful play() already set state=playing.
-          active.complete(SoundPreviewStarted(soundId));
+          active.complete(SoundPreviewStarted(resultId));
         }
       } on TimeoutException {
         if (!active.isCompleted && gen == _gen) {
           active.complete(
-            SoundPreviewFailure(soundId, SoundPreviewError.playTimeout),
+            SoundPreviewFailure(resultId, SoundPreviewError.playTimeout),
           );
         }
       } on Object {
         if (!active.isCompleted && gen == _gen) {
           active.complete(
-            SoundPreviewFailure(soundId, SoundPreviewError.loadFailed),
+            SoundPreviewFailure(resultId, SoundPreviewError.loadFailed),
           );
         }
       }
     });
     if (_disposed || gen != _gen) {
       return SoundPreviewFailure(
-        soundId,
+        resultId,
         _disposed ? SoundPreviewError.disposed : SoundPreviewError.cancelled,
       );
     }

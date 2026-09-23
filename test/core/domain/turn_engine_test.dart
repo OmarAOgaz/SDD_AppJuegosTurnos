@@ -608,6 +608,7 @@ void main() {
           playerId: 'host-1',
           elapsedMs: 20000,
           round: 1,
+          durationSeconds: 60,
           turnCountDelta: 1,
           turnMsDelta: 20000,
           exceededTurnCountDelta: 0,
@@ -633,6 +634,7 @@ void main() {
       expect(restored.turnPausedAtMs, 20);
       expect(restored.lastPass!.playerId, 'host-1');
       expect(restored.lastPass!.elapsedMs, 20000);
+      expect(restored.lastPass!.durationSeconds, 60);
       expect(restored.pendingReturnRequest!.requestId, 'p2@20');
       expect(restored.pendingReturnRequest!.expiresAtMs, 10020);
       expect(restored.lastReturnOutcome!.result, ReturnOutcomeResult.accepted);
@@ -640,6 +642,19 @@ void main() {
         restored.lastActivationSource,
         TurnActivationSource.returnRestore,
       );
+    });
+
+    test('missing lastPass.durationSeconds degrades to 0', () {
+      final parsed = LastPassSnapshot.fromJson(const {
+        'playerId': 'host-1',
+        'elapsedMs': 1000,
+        'round': 1,
+        'turnCountDelta': 1,
+        'turnMsDelta': 1000,
+        'exceededTurnCountDelta': 0,
+        'exceededMsDelta': 0,
+      });
+      expect(parsed.durationSeconds, 0);
     });
 
     test('copyWith clear flags drop nullable return fields', () {
@@ -706,6 +721,7 @@ void main() {
       expect(lastPass.playerId, 'host-1');
       expect(lastPass.elapsedMs, 20_000);
       expect(lastPass.round, 1);
+      expect(lastPass.durationSeconds, 60);
       expect(lastPass.turnCountDelta, 1);
       expect(lastPass.turnMsDelta, 20_000);
       expect(lastPass.exceededTurnCountDelta, 0);
@@ -942,8 +958,52 @@ void main() {
       expect(room.turnState.activePlayerId, 'host-1');
     });
 
-    test('round wrap does not leave a returnable last-pass', () {
+    test('fixed-order round close keeps lastPass of round N duration D', () {
       final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+      expect(room.turnState.lastPass, isNotNull);
+
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 21_000,
+      );
+
+      expect(room.turnState.currentRound, 2);
+      expect(room.turnState.currentRoundDurationSeconds, 65);
+      expect(room.gamePhase, GameRoomPhase.inGame);
+      final lastPass = room.turnState.lastPass!;
+      expect(lastPass.playerId, 'p2');
+      expect(lastPass.round, 1);
+      expect(lastPass.durationSeconds, 60);
+      expect(lastPass.elapsedMs, 20_000);
+      expect(room.turnState.activePlayerId, 'host-1');
+      expect(
+        TurnEngine.hasReturnableLastPass(
+          lastPass,
+          room.turnState.currentRound,
+          room.config.variableTurnOrder,
+        ),
+        isTrue,
+      );
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 31_000,
+        ),
+        isTrue,
+      );
+    });
+
+    test('variable-order round close nulls lastPass', () {
+      final room = _roomWithTwoPlayers(variableTurnOrder: true);
       const start = 1_000_000;
       TurnEngine.startGame(room, start);
       TurnEngine.tryPassTurn(
@@ -959,9 +1019,9 @@ void main() {
         serverNowMs: start + 2_000,
       );
 
-      expect(room.turnState.currentRound, 2);
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
       expect(room.turnState.lastPass, isNull);
-      expect(room.turnState.activePlayerId, 'host-1');
+      expect(room.turnState.currentRound, 1);
       expect(
         TurnEngine.tryRequestReturnTurn(
           room: room,
@@ -969,6 +1029,57 @@ void main() {
           serverNowMs: start + 3_000,
         ),
         isFalse,
+      );
+    });
+
+    test('wrap accept rewinds round then formula A vs D not N+1 duration', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 21_000,
+      );
+
+      expect(room.turnState.currentRound, 2);
+      expect(room.turnState.currentRoundDurationSeconds, 65);
+
+      const requestAt = start + 31_000;
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: requestAt,
+        ),
+        isTrue,
+      );
+
+      const acceptAt = requestAt + 5_000;
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: acceptAt,
+          response: ReturnTurnResponse.accept,
+          requestId: room.turnState.pendingReturnRequest!.requestId,
+        ),
+        isTrue,
+      );
+
+      expect(room.turnState.activePlayerId, 'p2');
+      expect(room.turnState.currentRound, 1);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+      expect(room.turnState.lastPass, isNull);
+      expect(TurnEngine.remainingSeconds(room, acceptAt), 30);
+      expect(
+        room.turnState.lastActivationSource,
+        TurnActivationSource.returnRestore,
       );
     });
 

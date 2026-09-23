@@ -32,6 +32,8 @@ class MessageTypes {
 
   static const startGame = 'START_GAME';
   static const passTurn = 'PASS_TURN';
+  static const requestReturnTurn = 'REQUEST_RETURN_TURN';
+  static const respondReturnTurn = 'RESPOND_RETURN_TURN';
   static const setPlayerDisabled = 'SET_PLAYER_DISABLED';
   static const roundCompleted = 'ROUND_COMPLETED';
   static const reorderTurnOrder = 'REORDER_TURN_ORDER';

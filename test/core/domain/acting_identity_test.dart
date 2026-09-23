@@ -42,6 +42,7 @@ void main() {
       expect(identity.isOwn, isTrue);
       expect(identity.isActingAs, isFalse);
       expect(identity.isDeviceActing, isTrue);
+      expect(identity.actingSeatId, hostId);
       expect(identity.colorId, 'color_1');
       expect(identity.soundId, 'sound_1');
     });
@@ -57,6 +58,7 @@ void main() {
       expect(identity.isOwn, isFalse);
       expect(identity.isActingAs, isTrue);
       expect(identity.isDeviceActing, isTrue);
+      expect(identity.actingSeatId, clientId);
       expect(identity.colorId, 'color_2');
       expect(identity.soundId, 'sound_2');
     });
@@ -71,6 +73,7 @@ void main() {
       expect(identity.isOwn, isFalse);
       expect(identity.isActingAs, isFalse);
       expect(identity.isDeviceActing, isFalse);
+      expect(identity.actingSeatId, isNull);
       expect(identity.colorId, 'color_2');
       expect(identity.soundId, 'sound_2');
     });
@@ -85,6 +88,7 @@ void main() {
       expect(identity.isOwn, isFalse);
       expect(identity.isActingAs, isFalse);
       expect(identity.isDeviceActing, isFalse);
+      expect(identity.actingSeatId, isNull);
       expect(identity.colorId, 'color_1');
       expect(identity.soundId, 'sound_1');
     });
@@ -106,6 +110,8 @@ void main() {
       );
       expect(restored.isActingAs, isFalse);
       expect(restored.isDeviceActing, isFalse);
+      expect(acting.actingSeatId, clientId);
+      expect(restored.actingSeatId, isNull);
       expect(restored.colorId, 'color_1');
       expect(restored.soundId, 'sound_1');
     });
@@ -126,6 +132,7 @@ void main() {
       expect(identity.isOwn, isTrue);
       expect(identity.isActingAs, isFalse);
       expect(identity.isDeviceActing, isTrue);
+      expect(identity.actingSeatId, hostId);
       expect(identity.colorId, 'color_1');
     });
 
@@ -139,7 +146,20 @@ void main() {
       expect(identity.isOwn, isFalse);
       expect(identity.isActingAs, isFalse);
       expect(identity.isDeviceActing, isFalse);
+      expect(identity.actingSeatId, isNull);
       expect(identity.colorId, 'color_1');
+    });
+
+    test('acting seat id is the disconnected current while host acts-as', () {
+      final identity = resolveActingIdentity(
+        localPlayerId: hostId,
+        hostPlayerId: hostId,
+        localPlayer: host,
+        activePlayer: disconnectedClient,
+      );
+      expect(identity.isActingAs, isTrue);
+      expect(identity.actingSeatId, isNot(hostId));
+      expect(identity.actingSeatId, clientId);
     });
   });
 }

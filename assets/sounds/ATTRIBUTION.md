@@ -15,6 +15,7 @@ regen unless SHA-256 below stay identical — PR2E temp-dir verified).
 | switch_7.wav | falling chirp, 180 ms |
 | switch_19.wav | 1200/1800/2700 Hz partials, 200 ms |
 | switch_32.wav | dual beep + LCG noise, 160 ms |
+| error_1.wav | (non-catalog) two falling squares + LCG noise, 120 ms — blocked return |
 
 ## Loudness (honest)
 
@@ -31,5 +32,7 @@ Short SFX (lobby preview + turn-start seat sound) use one shared custom
 resume other-app audio); iOS `ambient` with empty options (honors Silent
 switch). `AudioContextConfig` cannot combine respectSilence with duckOthers —
 hence the explicit context. Silent/ringer-off MUST suppress audible SFX.
+`error_1.wav` is a non-catalog blocked-return effect played via
+`SoundPreviewService.playEffect`; `SoundCatalog` stays at exactly 8 entries.
 
-SHA-256: a460627c9c71aa274b77c2912923a306b93e4f9bd310d47ed85938cc6ed20cbe click_1.wav · d9808d197539fd84d0f409cc311904c9a23f1fe89f8012cace36cfe749a816b4 click_3.wav · 29c5f7883dba13cb46f1e8f287f3af48982c8a267cd676a3d26bf1c8c4503900 rollover_2.wav · 9ec32d5fbaf7e03ee60af00fa366f5082f4ec3fd636b08b84860df54edacdc20 rollover_5.wav · 9eff32a4bd9d40aa7a552da9a62c786906fad06829693ebb3ca266b90121300c switch_1.wav · 7b7583825c43dee1ad096e84c5a1de416e9d67c0ceeacfe0174710de0a7755ca switch_7.wav · 507b0cc5eeec8f08451d4baf585510109b5e1b6e620479292fb291660c9fedda switch_19.wav · 31ed0e84e938e76810ac09af9b7032a1d295d4faf70b51ef950956ff3efb5e71 switch_32.wav
+SHA-256: a460627c9c71aa274b77c2912923a306b93e4f9bd310d47ed85938cc6ed20cbe click_1.wav · d9808d197539fd84d0f409cc311904c9a23f1fe89f8012cace36cfe749a816b4 click_3.wav · 29c5f7883dba13cb46f1e8f287f3af48982c8a267cd676a3d26bf1c8c4503900 rollover_2.wav · 9ec32d5fbaf7e03ee60af00fa366f5082f4ec3fd636b08b84860df54edacdc20 rollover_5.wav · 9eff32a4bd9d40aa7a552da9a62c786906fad06829693ebb3ca266b90121300c switch_1.wav · 7b7583825c43dee1ad096e84c5a1de416e9d67c0ceeacfe0174710de0a7755ca switch_7.wav · 507b0cc5eeec8f08451d4baf585510109b5e1b6e620479292fb291660c9fedda switch_19.wav · 31ed0e84e938e76810ac09af9b7032a1d295d4faf70b51ef950956ff3efb5e71 switch_32.wav · a3c141cd487c69db545b9e7241d11811156574b7158c7db392be86c606a2db3a error_1.wav

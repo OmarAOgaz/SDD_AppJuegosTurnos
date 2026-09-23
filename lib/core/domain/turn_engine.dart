@@ -130,21 +130,21 @@ class TurnEngine {
     final elapsedMs = _elapsedMs(room, serverNowMs);
     _recordCompletedTurn(room, active, serverNowMs);
 
-    final nextId = _nextPlayerInSequence(room, activeId);
-    if (nextId == null) {
-      room.turnState.lastPass = null;
-      return _closeRound(room, serverNowMs);
-    }
-
     room.turnState.lastPass = LastPassSnapshot(
       playerId: activeId,
       elapsedMs: elapsedMs,
       round: room.turnState.currentRound,
+      durationSeconds: room.turnState.currentRoundDurationSeconds,
       turnCountDelta: 1,
       turnMsDelta: elapsedMs,
       exceededTurnCountDelta: exceededTurnCountDelta,
       exceededMsDelta: exceededMsDelta,
     );
+
+    final nextId = _nextPlayerInSequence(room, activeId);
+    if (nextId == null) {
+      return _closeRound(room, serverNowMs);
+    }
 
     _activatePlayer(room, nextId, serverNowMs);
     refreshPhase(room, serverNowMs);
@@ -175,10 +175,14 @@ class TurnEngine {
     }
 
     final lastPass = room.turnState.lastPass;
-    if (lastPass == null || lastPass.round != room.turnState.currentRound) {
+    if (!hasReturnableLastPass(
+      lastPass,
+      room.turnState.currentRound,
+      room.config.variableTurnOrder,
+    )) {
       return false;
     }
-    if (lastPass.playerId == activeId) {
+    if (lastPass!.playerId == activeId) {
       return false;
     }
     final previous = room.playersById[lastPass.playerId];
@@ -406,9 +410,28 @@ class TurnEngine {
     _dropReturnTurnState(room);
   }
 
+  /// Whether [lastPass] can be returned from [currentRound].
+  ///
+  /// Same-round last-pass is returnable. Cross-round last-pass is returnable
+  /// only in fixed order when it is exactly the previous round.
+  static bool hasReturnableLastPass(
+    LastPassSnapshot? lastPass,
+    int currentRound,
+    bool variableTurnOrder,
+  ) {
+    if (lastPass == null) {
+      return false;
+    }
+    if (lastPass.round == currentRound) {
+      return true;
+    }
+    return !variableTurnOrder && lastPass.round == currentRound - 1;
+  }
+
   static bool _closeRound(GameRoom room, int serverNowMs) {
-    _dropReturnTurnState(room);
+    _dropPendingAndPause(room);
     if (room.config.variableTurnOrder) {
+      room.turnState.lastPass = null;
       room.gamePhase = GameRoomPhase.betweenRounds;
       room.turnState
         ..activePlayerId = null
@@ -481,6 +504,24 @@ class TurnEngine {
       return false;
     }
 
+    if (lastPass.round != room.turnState.currentRound) {
+      final isFixedOrderWrap = !room.config.variableTurnOrder &&
+          lastPass.round == room.turnState.currentRound - 1;
+      if (!isFixedOrderWrap) {
+        _resolveNonAccept(
+          room,
+          serverNowMs,
+          ReturnOutcomeResult.rejected,
+          pending,
+        );
+        return false;
+      }
+      room.turnState.currentRound = lastPass.round;
+      if (lastPass.durationSeconds > 0) {
+        room.turnState.currentRoundDurationSeconds = lastPass.durationSeconds;
+      }
+    }
+
     final pausedAt = room.turnState.turnPausedAtMs ?? serverNowMs;
     final startedAt = room.turnState.turnStartedAtMs ?? pausedAt;
     final currentElapsed = pausedAt - startedAt;
@@ -537,11 +578,15 @@ class TurnEngine {
     return next < 0 ? 0 : next;
   }
 
-  static void _dropReturnTurnState(GameRoom room) {
+  static void _dropPendingAndPause(GameRoom room) {
     room.turnState
       ..pendingReturnRequest = null
-      ..lastPass = null
       ..turnPausedAtMs = null;
+  }
+
+  static void _dropReturnTurnState(GameRoom room) {
+    _dropPendingAndPause(room);
+    room.turnState.lastPass = null;
   }
 
   static int _elapsedMs(GameRoom room, int serverNowMs) {

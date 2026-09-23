@@ -28,6 +28,8 @@ void main() {
       MessageTypes.roomDiscarded,
       MessageTypes.startGame,
       MessageTypes.passTurn,
+      MessageTypes.requestReturnTurn,
+      MessageTypes.respondReturnTurn,
       MessageTypes.roundCompleted,
       MessageTypes.reorderTurnOrder,
       MessageTypes.startNextRound,

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -31,6 +32,7 @@ import '../../core/models/game_phase.dart';
 import '../../core/models/game_room.dart';
 import '../../core/models/player.dart';
 import '../../core/models/room_config.dart';
+import '../../core/models/turn_state.dart';
 import '../../core/models/ws_envelope.dart';
 import '../../core/network/game_resume_store.dart';
 import '../../core/network/game_socket_client.dart';
@@ -47,6 +49,23 @@ import 'widgets/game_session_banners.dart';
 /// also mount their own internal `RawGestureDetector`s).
 @visibleForTesting
 const inGameGestureLayerKey = Key('inGameGestureLayer');
+
+/// Waiting modal while a return request is pending (requester device).
+@visibleForTesting
+const returnWaitingCardKey = Key('returnWaitingCard');
+
+/// Accept/reject overlay on the previous seat (or host-for-previous).
+@visibleForTesting
+const returnAcceptDialogKey = Key('returnAcceptDialog');
+
+@visibleForTesting
+const returnCancelButtonKey = Key('returnCancelButton');
+
+@visibleForTesting
+const returnAcceptButtonKey = Key('returnAcceptButton');
+
+@visibleForTesting
+const returnRejectButtonKey = Key('returnRejectButton');
 
 /// Persistent dismissible turn info / exit panel opened by a 500ms long-press.
 @visibleForTesting
@@ -189,6 +208,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Color? _turnStartCueColor;
   Key _turnStartCueInstanceKey = const ValueKey(0);
   int _turnStartCueEpoch = 0;
+  String? _lastFiredReturnRequestId;
+  String? _lastFiredReturnOutcomeRequestId;
+  Timer? _returnArrowTimer;
+  bool _hideWaitingForReturnArrow = false;
+  double _dragDx = 0;
+  Offset? _dragOrigin;
 
   final GlobalKey<TouchFxOverlayState> _touchFxKey =
       GlobalKey<TouchFxOverlayState>();
@@ -1139,6 +1164,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   void dispose() {
     _uiTick?.cancel();
     _presentationTimer?.cancel();
+    _returnArrowTimer?.cancel();
     _pauseCoalesceGate.dispose();
     unawaited(_stopMotion(resetDetector: true));
     unawaited(_socketStateSub?.cancel() ?? Future<void>.value());
@@ -1171,15 +1197,62 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   /// run in a single post-frame callback. Acting flag / [lastFired] update
   /// synchronously to prevent duplicate fires on the next rebuild. Clear runs
   /// on rising edge and on acting key-change (own→proxied has no inactive gap).
+  ///
+  /// Return-turn: request arrival cues the previous seat; rejected/expired cue
+  /// the requester; accept restore and self-cancel stay silent. Restore still
+  /// advances [_lastFiredCue] so a later real pass can cue.
   void _syncTurnStartCue({
     required GameRoomPhase gamePhase,
     required bool isMyDeviceActive,
     required TurnStartCueKey? currentKey,
     required Color? localColor,
     required String? localSoundId,
+    TurnActivationSource activationSource = TurnActivationSource.pass,
+    PendingReturnRequest? pending,
+    ReturnOutcome? outcome,
+    String? localPlayerId,
+    String? actingSeatId,
   }) {
     if (gamePhase != GameRoomPhase.inGame) {
       _wasMyDeviceActive = false;
+      return;
+    }
+
+    final cueColor = localColor ?? Colors.white;
+
+    if (shouldFireReturnRequestCue(
+      pending: pending,
+      localPlayerId: localPlayerId,
+      lastFiredRequestId: _lastFiredReturnRequestId,
+    )) {
+      _lastFiredReturnRequestId = pending!.requestId;
+      _scheduleTurnStartCue(color: cueColor, soundId: localSoundId);
+    }
+
+    if (shouldFireReturnOutcomeCue(
+      outcome: outcome,
+      actingSeatId: actingSeatId,
+      lastFiredOutcomeRequestId: _lastFiredReturnOutcomeRequestId,
+    )) {
+      _lastFiredReturnOutcomeRequestId = outcome!.requestId;
+      if (currentKey != null) {
+        _lastFiredCue = currentKey;
+      }
+      _wasMyDeviceActive = isMyDeviceActive;
+      _scheduleTurnStartCue(color: cueColor, soundId: localSoundId);
+      return;
+    }
+
+    // Self-cancel resumes the clock (new cue key) but must stay silent.
+    if (outcome != null &&
+        outcome.result == ReturnOutcomeResult.cancelled &&
+        actingSeatId == outcome.requesterPlayerId &&
+        _lastFiredReturnOutcomeRequestId != outcome.requestId) {
+      _lastFiredReturnOutcomeRequestId = outcome.requestId;
+      if (currentKey != null) {
+        _lastFiredCue = currentKey;
+      }
+      _wasMyDeviceActive = isMyDeviceActive;
       return;
     }
 
@@ -1188,8 +1261,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       isMyDeviceActive: isMyDeviceActive,
       lastFired: _lastFiredCue,
       current: currentKey,
+      activationSource: activationSource,
     );
     _wasMyDeviceActive = isMyDeviceActive;
+
+    if (activationSource == TurnActivationSource.returnRestore &&
+        currentKey != null) {
+      _lastFiredCue = currentKey;
+    }
 
     final fireCue = shouldFire && currentKey != null;
     final activation = rising || fireCue;
@@ -1200,7 +1279,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     if (fireCue) {
       _lastFiredCue = currentKey;
     }
-    final cueColor = localColor ?? Colors.white;
     final soundId = localSoundId;
     final nextEpoch = fireCue ? ++_turnStartCueEpoch : _turnStartCueEpoch;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1227,6 +1305,28 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     });
   }
 
+  void _scheduleTurnStartCue({
+    required Color color,
+    required String? soundId,
+  }) {
+    final nextEpoch = ++_turnStartCueEpoch;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || nextEpoch != _turnStartCueEpoch) {
+        return;
+      }
+      _clearPresentation(notify: true);
+      _touchFxKey.currentState?.clearInvalidXMarks();
+      setState(() {
+        _showTurnStartCue = true;
+        _turnStartCueColor = color;
+        _turnStartCueInstanceKey = ValueKey(nextEpoch);
+      });
+      if (soundId != null && soundId.isNotEmpty) {
+        unawaited(_soundPreview.preview(soundId));
+      }
+    });
+  }
+
   Player? _playerById(Map<String, dynamic>? state, String? playerId) {
     if (state == null || playerId == null) {
       return null;
@@ -1240,6 +1340,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       return null;
     }
     return Player.fromJson(Map<String, dynamic>.from(json));
+  }
+
+  Map<String, Player> _playersMapFromState(Map<String, dynamic>? state) {
+    if (state == null) {
+      return const {};
+    }
+    final playersRaw = state['playersById'];
+    if (playersRaw is! Map) {
+      return const {};
+    }
+    final out = <String, Player>{};
+    for (final entry in playersRaw.entries) {
+      final json = entry.value;
+      if (json is Map) {
+        out[entry.key.toString()] =
+            Player.fromJson(Map<String, dynamic>.from(json));
+      }
+    }
+    return out;
   }
 
   List<Player> _seatedPlayersFromState(Map<String, dynamic>? state) {
@@ -1802,6 +1921,34 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   turnStartedAtMs: startedAt,
                 )
               : null,
+          pendingReturnRequest: room.turnState.pendingReturnRequest,
+          lastPass: room.turnState.lastPass,
+          variableTurnOrder: room.config.variableTurnOrder,
+          lastReturnOutcome: room.turnState.lastReturnOutcome,
+          lastActivationSource: room.turnState.lastActivationSource,
+          localPlayerId: room.hostPlayerId,
+          hostPlayerId: room.hostPlayerId,
+          actingSeatId: identity.actingSeatId,
+          playersById: room.playersById,
+          onRequestReturn: () {
+            controller.requestReturnTurn(room.hostPlayerId);
+          },
+          onRespondReturn: ({required accepted, required cancelled}) {
+            final pending = room.turnState.pendingReturnRequest;
+            if (pending == null) {
+              return;
+            }
+            final response = cancelled
+                ? ReturnTurnResponse.cancel
+                : accepted
+                    ? ReturnTurnResponse.accept
+                    : ReturnTurnResponse.reject;
+            controller.respondReturnTurn(
+              senderPlayerId: room.hostPlayerId,
+              response: response,
+              requestId: pending.requestId,
+            );
+          },
           exitActionLabel: 'Terminar partida',
           skipTogglePlayers: [
             for (final player in _seatedPlayersFromRoom(room))
@@ -2036,6 +2183,40 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   turnStartedAtMs: turnStartedAtMs,
                 )
               : null,
+          pendingReturnRequest:
+              PendingReturnRequest.tryParse(state?['pendingReturnRequest']),
+          lastPass: LastPassSnapshot.tryParse(state?['lastPass']),
+          variableTurnOrder: state?['variableTurnOrder'] == true,
+          lastReturnOutcome:
+              ReturnOutcome.tryParse(state?['lastReturnOutcome']),
+          lastActivationSource: state?['lastActivationSource'] is String
+              ? TurnActivationSource.fromWire(
+                  state!['lastActivationSource'] as String,
+                )
+              : null,
+          localPlayerId: localPlayerId,
+          hostPlayerId: state?['hostPlayerId'] as String?,
+          actingSeatId: identity.actingSeatId,
+          playersById: _playersMapFromState(state),
+          onRequestReturn: () {
+            if (client != null && localPlayerId != null) {
+              client.sendRequestReturnTurn(playerId: localPlayerId);
+            }
+          },
+          onRespondReturn: ({required accepted, required cancelled}) {
+            final pending = PendingReturnRequest.tryParse(
+              state?['pendingReturnRequest'],
+            );
+            if (client == null || localPlayerId == null || pending == null) {
+              return;
+            }
+            client.sendRespondReturnTurn(
+              playerId: localPlayerId,
+              requestId: pending.requestId,
+              accepted: accepted,
+              cancelled: cancelled,
+            );
+          },
           exitActionLabel: 'Salir partida',
           onPass: () {
             client?.sendPassTurn(playerId: localPlayerId!);
@@ -2151,6 +2332,18 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     String? localColorId,
     String? localSoundId,
     TurnStartCueKey? currentCueKey,
+    PendingReturnRequest? pendingReturnRequest,
+    LastPassSnapshot? lastPass,
+    bool variableTurnOrder = false,
+    ReturnOutcome? lastReturnOutcome,
+    TurnActivationSource? lastActivationSource,
+    String? localPlayerId,
+    String? hostPlayerId,
+    String? actingSeatId,
+    Map<String, Player> playersById = const {},
+    VoidCallback? onRequestReturn,
+    void Function({required bool accepted, required bool cancelled})?
+        onRespondReturn,
     required String exitActionLabel,
     required VoidCallback onPass,
     required Future<void> Function() onExit,
@@ -2203,6 +2396,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         currentKey: currentCueKey,
         localColor: localSeatColor,
         localSoundId: localSoundId,
+        activationSource: lastActivationSource ?? TurnActivationSource.pass,
+        pending: pendingReturnRequest,
+        outcome: lastReturnOutcome,
+        localPlayerId: localPlayerId,
+        actingSeatId: actingSeatId,
       );
     } else {
       _wasMyDeviceActive = false;
@@ -2267,6 +2465,26 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     // inGame: chrome hidden — only ambient feedback + optional toast/panel.
+    final returnRole = resolveReturnRequestRole(
+      localPlayerId: localPlayerId,
+      hostPlayerId: hostPlayerId,
+      actingSeatId: actingSeatId,
+      previousConnected: pendingReturnRequest == null
+          ? false
+          : playersById[pendingReturnRequest.previousPlayerId]?.connected ??
+              false,
+      pending: pendingReturnRequest,
+    );
+    final previousPlayer = pendingReturnRequest == null
+        ? null
+        : playersById[pendingReturnRequest.previousPlayerId];
+    final requesterPlayer = pendingReturnRequest == null
+        ? null
+        : playersById[pendingReturnRequest.requesterPlayerId];
+    final showWaitingDialog =
+        returnRole == ReturnRequestRole.waiting && !_hideWaitingForReturnArrow;
+    final showAcceptDialog = returnRole == ReturnRequestRole.answer;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -2280,6 +2498,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               (instance) {
                 instance.onTapDown = (details) {
                   _lastTapDownOffset = details.localPosition;
+                  _dragOrigin = details.localPosition;
                 };
                 instance.onTap = () => _handleInGameTap(
                       isMyDeviceActive: isMyDeviceActive,
@@ -2289,6 +2508,44 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       localColorId: localColorId,
                       onPass: onPass,
                     );
+              },
+            ),
+            HorizontalDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                    HorizontalDragGestureRecognizer>(
+              HorizontalDragGestureRecognizer.new,
+              (instance) {
+                instance.onStart = (details) {
+                  _dragOrigin ??= details.localPosition;
+                  _lastTapDownOffset = details.localPosition;
+                  _dragDx = details.localPosition.dx - _dragOrigin!.dx;
+                };
+                instance.onUpdate = (details) {
+                  _lastTapDownOffset = details.localPosition;
+                  final origin = _dragOrigin ?? details.localPosition;
+                  _dragDx = details.localPosition.dx - origin.dx;
+                };
+                instance.onEnd = (details) {
+                  _handleInGameSwipe(
+                    dx: _dragDx,
+                    velocityDx: details.velocity.pixelsPerSecond.dx,
+                    isMyDeviceActive: isMyDeviceActive,
+                    canHostPassForDisconnectedActive:
+                        canHostPassForDisconnectedActive,
+                    gamePhase: gamePhase,
+                    hasReturnableLastPass: TurnEngine.hasReturnableLastPass(
+                      lastPass,
+                      currentRound ?? 0,
+                      variableTurnOrder,
+                    ),
+                    hasPendingReturnRequest: pendingReturnRequest != null,
+                    localColorId: localColorId,
+                    onPass: onPass,
+                    onRequestReturn: onRequestReturn ?? () {},
+                  );
+                  _dragOrigin = null;
+                  _dragDx = 0;
+                };
               },
             ),
             LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<
@@ -2344,6 +2601,32 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ],
           ),
         ),
+        if (showWaitingDialog)
+          _buildReturnWaitingDialog(
+            previousName: previousPlayer?.displayName ?? '—',
+            previousColor:
+                ColorCatalog.byId(previousPlayer?.colorId ?? '')?.color ??
+                    Colors.white,
+            onCancel: () => onRespondReturn?.call(
+              accepted: false,
+              cancelled: true,
+            ),
+          ),
+        if (showAcceptDialog)
+          _buildReturnAcceptDialog(
+            requesterName: requesterPlayer?.displayName ?? activeName,
+            requesterColor:
+                ColorCatalog.byId(requesterPlayer?.colorId ?? '')?.color ??
+                    color,
+            onAccept: () => onRespondReturn?.call(
+              accepted: true,
+              cancelled: false,
+            ),
+            onReject: () => onRespondReturn?.call(
+              accepted: false,
+              cancelled: false,
+            ),
+          ),
         if (_panelOpen)
           _buildInfoPanel(
             context,
@@ -2632,6 +2915,181 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       case GestureIntent.none:
         break;
     }
+  }
+
+  /// Completes a horizontal drag: qualifying left swipe requests return;
+  /// below threshold replays as a tap so tap-to-pass is not swallowed.
+  /// Occupancy (panel open or cue visible) is a silent no-op via the resolver,
+  /// same as tap — never a red blocked arrow.
+  void _handleInGameSwipe({
+    required double dx,
+    required double velocityDx,
+    required bool isMyDeviceActive,
+    bool canHostPassForDisconnectedActive = false,
+    required GameRoomPhase gamePhase,
+    required bool hasReturnableLastPass,
+    required bool hasPendingReturnRequest,
+    String? localColorId,
+    required VoidCallback onPass,
+    required VoidCallback onRequestReturn,
+  }) {
+    final intent = resolveSwipeIntent(
+      dx: dx,
+      velocityDx: velocityDx,
+      gamePhase: gamePhase,
+      isDeviceActing: isMyDeviceActive,
+      hasReturnableLastPass: hasReturnableLastPass,
+      panelOpen: _panelOpen,
+      cueVisible: _showTurnStartCue,
+      hasPendingReturnRequest: hasPendingReturnRequest,
+    );
+    switch (intent) {
+      case SwipeIntent.none:
+        // Tap-replay only when occupancy is clear. Occupancy-gated qualifying
+        // swipes resolve to none; replaying them as tap would flash invalid-X
+        // on non-acting devices instead of staying silent.
+        if (_panelOpen || _showTurnStartCue) {
+          break;
+        }
+        _handleInGameTap(
+          isMyDeviceActive: isMyDeviceActive,
+          canHostPassForDisconnectedActive: canHostPassForDisconnectedActive,
+          gamePhase: gamePhase,
+          localColorId: localColorId,
+          onPass: onPass,
+        );
+      case SwipeIntent.blocked:
+        _flashReturnArrow(blocked: true);
+        unawaited(_playBlockedReturnError());
+      case SwipeIntent.requestReturn:
+        _flashReturnArrow(blocked: false);
+        onRequestReturn();
+    }
+  }
+
+  Offset _returnArrowOverlayCenter() {
+    final box = _touchFxKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      return box.size.center(Offset.zero);
+    }
+    return Offset.zero;
+  }
+
+  void _flashReturnArrow({required bool blocked}) {
+    final fx = _touchFxKey.currentState;
+    final at = _returnArrowOverlayCenter();
+    if (fx == null) {
+      return;
+    }
+    if (blocked) {
+      fx.enqueueReturnArrowBlocked(at);
+      return;
+    }
+    fx.enqueueReturnArrow(at);
+    _returnArrowTimer?.cancel();
+    _hideWaitingForReturnArrow = true;
+    _returnArrowTimer = Timer(returnArrowFlashMs, () {
+      if (mounted) {
+        setState(() => _hideWaitingForReturnArrow = false);
+      }
+    });
+    setState(() {});
+  }
+
+  Future<void> _playBlockedReturnError() async {
+    final result = await _soundPreview.playEffect(
+      SoundPreviewService.blockedReturnErrorAssetPath,
+    );
+    if (result is SoundPreviewFailure && mounted) {
+      await HapticFeedback.heavyImpact();
+      SystemSound.play(SystemSoundType.click);
+    }
+  }
+
+  Widget _buildReturnWaitingDialog({
+    required String previousName,
+    required Color previousColor,
+    required VoidCallback onCancel,
+  }) {
+    return Positioned.fill(
+      child: Material(
+        key: returnWaitingCardKey,
+        color: Colors.black54,
+        child: Center(
+          child: AlertDialog(
+            content: Text.rich(
+              TextSpan(
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+                children: [
+                  const TextSpan(text: 'esperando que '),
+                  TextSpan(
+                    text: previousName,
+                    style: TextStyle(
+                      color: previousColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const TextSpan(text: ' acepte el turno'),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                key: returnCancelButtonKey,
+                onPressed: onCancel,
+                child: const Text('Cancelar'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReturnAcceptDialog({
+    required String requesterName,
+    required Color requesterColor,
+    required VoidCallback onAccept,
+    required VoidCallback onReject,
+  }) {
+    return Positioned.fill(
+      child: Material(
+        key: returnAcceptDialogKey,
+        color: Colors.black54,
+        child: Center(
+          child: AlertDialog(
+            content: Text.rich(
+              TextSpan(
+                style: const TextStyle(fontSize: 18),
+                children: [
+                  TextSpan(
+                    text: requesterName,
+                    style: TextStyle(
+                      color: requesterColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const TextSpan(text: ' te está devolviendo el turno'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                key: returnRejectButtonKey,
+                onPressed: onReject,
+                child: const Text('Rechazar'),
+              ),
+              FilledButton(
+                key: returnAcceptButtonKey,
+                onPressed: onAccept,
+                child: const Text('Aceptar'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

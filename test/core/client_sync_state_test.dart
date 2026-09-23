@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
+import 'package:turnos_juegos/core/models/turn_state.dart';
 import 'package:turnos_juegos/core/models/ws_envelope.dart';
 
 void main() {
@@ -91,6 +92,72 @@ void main() {
         peerB.betweenRoundsElapsedSeconds(),
       );
       expect(peerA.betweenRoundsElapsedSeconds(), 12);
+    });
+  });
+
+  group('return-turn pause interpolation', () {
+    test('turnPausedAt freezes remaining despite interpolated serverNow', () {
+      const startedAt = 1_000_000;
+      const pausedAt = startedAt + 10_000;
+      const state = ClientSyncState(
+        lastGameState: {
+          'gamePhase': 'IN_GAME',
+          'serverNow': pausedAt,
+          'turnStartedAt': startedAt,
+          'turnPausedAt': pausedAt,
+          'currentRoundTurnDurationSeconds': 60,
+          'pendingReturnRequest': {
+            'requestId': 'p2@$pausedAt',
+            'requesterPlayerId': 'p2',
+            'previousPlayerId': 'host-1',
+            'requestedAt': pausedAt,
+            'expiresAt': pausedAt + 10_000,
+          },
+        },
+        receivedAtMs: pausedAt - 20_000,
+        allowTimerInterpolation: true,
+      );
+
+      expect(state.turnPausedAtMs, pausedAt);
+      expect(state.hasPendingReturnRequest, isTrue);
+      expect(state.pendingReturnRequest?.requesterPlayerId, 'p2');
+      expect(state.remainingSeconds(), 50);
+      expect(state.interpolatedPhase(), TurnPhase.normal);
+    });
+
+    test('absent return fields mean no pending and clock interpolates', () {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final state = ClientSyncState(
+        lastGameState: {
+          'gamePhase': 'IN_GAME',
+          'serverNow': now,
+          'turnStartedAt': now - 5_000,
+          'currentRoundTurnDurationSeconds': 60,
+        },
+        receivedAtMs: now,
+      );
+
+      expect(state.turnPausedAtMs, isNull);
+      expect(state.pendingReturnRequest, isNull);
+      expect(state.lastReturnOutcome, isNull);
+      expect(state.hasPendingReturnRequest, isFalse);
+      expect(state.remainingSeconds(), closeTo(55, 1));
+    });
+
+    test('lastReturnOutcome getter parses expired result', () {
+      const state = ClientSyncState(
+        lastGameState: {
+          'gamePhase': 'IN_GAME',
+          'lastReturnOutcome': {
+            'requestId': 'p2@1',
+            'result': 'expired',
+            'requesterPlayerId': 'p2',
+            'previousPlayerId': 'host-1',
+          },
+        },
+      );
+      expect(state.lastReturnOutcome?.result, ReturnOutcomeResult.expired);
+      expect(state.lastReturnOutcome?.requesterPlayerId, 'p2');
     });
   });
 }
