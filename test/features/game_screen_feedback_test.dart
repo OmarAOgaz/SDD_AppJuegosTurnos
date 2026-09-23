@@ -2810,6 +2810,61 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets(
+        'qualifying swipe with panel open is silent (no arrow, SFX, or request)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+      await _longPressOpenPanel(tester);
+      expect(_infoPanel, findsOneWidget);
+
+      // Barrier occupies the surface; drag the panel (not the buried gesture
+      // layer) the way a player would while it is open.
+      await tester.timedDrag(
+        _infoPanel,
+        const Offset(-80, 0),
+        const Duration(milliseconds: 500),
+      );
+      await tester.pump();
+
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_touchFxState(tester).debugEffects, isEmpty);
+      expect(_sounds.playedEffects, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'qualifying swipe while cue visible is silent (no arrow, SFX, or request)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      expect(find.byType(TurnStartCue), findsOneWidget);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, isEmpty);
+      expect(_touchFxState(tester).debugEffects, isEmpty);
+      expect(_sounds.playedEffects, isEmpty);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('tap-pass still works when lastPass exists', (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(
