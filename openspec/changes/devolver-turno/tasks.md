@@ -36,11 +36,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Wire + host + sync (PR 2, sequential after PR 1)
 
-- [ ] 2.1 `lib/core/constants/message_types.dart` + `lib/core/network/game_socket_client.dart`: `REQUEST_RETURN_TURN`/`RESPOND_RETURN_TURN`. Spec: message types.
-- [ ] 2.2 `lib/core/models/game_room.dart` `toGameStatePayload`/`fromSnapshot`: `turnPausedAt`, `pendingReturnRequest`, `lastPass`, `lastReturnOutcome`. Spec: GAME_STATE fields.
-- [ ] 2.3 `lib/server/host_room_controller.dart`: handlers, `_returnExpiryTimer` + re-arm on succession, `expireReturnRequestIfDue` on every mutation, block `PASS_TURN` while pending. Spec: host-for-previous; tap-pass blocked; 10s timeout.
-- [ ] 2.4 `lib/core/lifecycle/client_sync_state.dart`: honor `turnPausedAt`; pending/outcome getters. Spec: pause interpolation.
-- [ ] 2.5 `test/server/host_room_controller_test.dart` + `test/core/client_sync_state_test.dart`: authority, timer, succession, SYNC_REQUEST, freeze, absent fields.
+- [x] 2.1 `lib/core/constants/message_types.dart` + `lib/core/network/game_socket_client.dart`: `REQUEST_RETURN_TURN`/`RESPOND_RETURN_TURN`. Spec: message types.
+- [x] 2.2 `lib/core/models/game_room.dart` `toGameStatePayload`/`fromSnapshot`: `turnPausedAt`, `pendingReturnRequest`, `lastPass`, `lastReturnOutcome`. Spec: GAME_STATE fields.
+- [x] 2.3 `lib/server/host_room_controller.dart`: handlers, `_returnExpiryTimer` + re-arm on succession, `expireReturnRequestIfDue` on every mutation, block `PASS_TURN` while pending. Spec: host-for-previous; tap-pass blocked; 10s timeout.
+- [x] 2.4 `lib/core/lifecycle/client_sync_state.dart`: honor `turnPausedAt`; pending/outcome getters. Spec: pause interpolation.
+- [x] 2.5 `test/server/host_room_controller_test.dart` + `test/core/client_sync_state_test.dart`: authority, timer, succession, SYNC_REQUEST, freeze, absent fields.
 
 ## Phase 3: Feedback resolvers (PR 3, parallel after PR 1; stack after PR 2)
 

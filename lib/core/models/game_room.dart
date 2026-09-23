@@ -124,6 +124,15 @@ class GameRoom {
       'totalBetweenRoundsMs': turnState.totalBetweenRoundsMs,
       'totalSetupMs': turnState.totalSetupMs,
       'totalExplanationMs': turnState.totalExplanationMs,
+      if (turnState.turnPausedAtMs != null)
+        'turnPausedAt': turnState.turnPausedAtMs,
+      if (turnState.lastPass != null) 'lastPass': turnState.lastPass!.toJson(),
+      if (turnState.pendingReturnRequest != null)
+        'pendingReturnRequest': turnState.pendingReturnRequest!.toJson(),
+      if (turnState.lastReturnOutcome != null)
+        'lastReturnOutcome': turnState.lastReturnOutcome!.toJson(),
+      if (turnState.lastActivationSource != null)
+        'lastActivationSource': turnState.lastActivationSource!.wireValue,
     };
   }
 
@@ -177,6 +186,16 @@ class GameRoom {
         totalBetweenRoundsMs: json['totalBetweenRoundsMs'] as int? ?? 0,
         totalSetupMs: json['totalSetupMs'] as int? ?? 0,
         totalExplanationMs: json['totalExplanationMs'] as int? ?? 0,
+        turnPausedAtMs: json['turnPausedAt'] as int?,
+        lastPass: LastPassSnapshot.tryParse(json['lastPass']),
+        pendingReturnRequest:
+            PendingReturnRequest.tryParse(json['pendingReturnRequest']),
+        lastReturnOutcome: ReturnOutcome.tryParse(json['lastReturnOutcome']),
+        lastActivationSource: json['lastActivationSource'] is String
+            ? TurnActivationSource.fromWire(
+                json['lastActivationSource'] as String,
+              )
+            : null,
       ),
       slots: (json['slots'] as List?)?.whereType<String>().toList() ??
           <String>[],
