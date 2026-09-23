@@ -592,10 +592,12 @@ void main() {
       expect(empty.pendingReturnRequest, isNull);
       expect(empty.lastReturnOutcome, isNull);
       expect(empty.lastActivationSource, isNull);
+      expect(empty.returnRejectCount, 0);
       expect(empty.toJson().containsKey('turnPausedAt'), isFalse);
       expect(empty.toJson().containsKey('lastPass'), isFalse);
       expect(empty.toJson().containsKey('pendingReturnRequest'), isFalse);
       expect(empty.toJson().containsKey('lastReturnOutcome'), isFalse);
+      expect(empty.toJson().containsKey('returnRejectCount'), isFalse);
     });
 
     test('round-trips snapshot, pending, pause, and outcome', () {
@@ -628,6 +630,7 @@ void main() {
           previousPlayerId: 'host-1',
         ),
         lastActivationSource: TurnActivationSource.returnRestore,
+        returnRejectCount: 3,
       );
 
       final restored = TurnState.fromJson(original.toJson());
@@ -642,6 +645,7 @@ void main() {
         restored.lastActivationSource,
         TurnActivationSource.returnRestore,
       );
+      expect(restored.returnRejectCount, 3);
     });
 
     test('missing lastPass.durationSeconds degrades to 0', () {
@@ -828,6 +832,7 @@ void main() {
       );
       expect(TurnEngine.remainingSeconds(room, rejectAt), 50);
       expect(room.turnState.lastPass, isNotNull);
+      expect(room.turnState.returnRejectCount, 1);
     });
 
     test('cancel keeps current seat and resumes from paused elapsed', () {
@@ -854,6 +859,7 @@ void main() {
         ReturnOutcomeResult.cancelled,
       );
       expect(TurnEngine.remainingSeconds(room, cancelAt), 50);
+      expect(room.turnState.returnRejectCount, 0);
     });
 
     test('expiry keeps current seat and resumes from paused elapsed', () {
@@ -872,6 +878,79 @@ void main() {
         ReturnOutcomeResult.expired,
       );
       expect(TurnEngine.remainingSeconds(room, expireAt), 50);
+      expect(room.turnState.returnRejectCount, 0);
+    });
+
+    test('third reject locks further return requests this turn', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 20_000,
+      );
+
+      var now = start + 30_000;
+      for (var i = 1; i <= TurnEngine.returnRejectLockThreshold; i++) {
+        expect(
+          TurnEngine.tryRequestReturnTurn(
+            room: room,
+            senderPlayerId: 'p2',
+            serverNowMs: now,
+          ),
+          isTrue,
+        );
+        final pending = room.turnState.pendingReturnRequest!;
+        now += 1_000;
+        expect(
+          TurnEngine.tryRespondReturnTurn(
+            room: room,
+            senderPlayerId: 'host-1',
+            serverNowMs: now,
+            response: ReturnTurnResponse.reject,
+            requestId: pending.requestId,
+          ),
+          isTrue,
+        );
+        expect(room.turnState.returnRejectCount, i);
+        now += 1_000;
+      }
+
+      expect(TurnEngine.isReturnRejectLocked(room.turnState.returnRejectCount), isTrue);
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: now,
+        ),
+        isFalse,
+      );
+      expect(room.turnState.pendingReturnRequest, isNull);
+      expect(room.turnState.activePlayerId, 'p2');
+    });
+
+    test('pass resets reject lock for the next seat', () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 20_000,
+      );
+      room.turnState.returnRejectCount = TurnEngine.returnRejectLockThreshold;
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: start + 40_000,
+        ),
+        isTrue,
+      );
+      expect(room.turnState.returnRejectCount, 0);
+      expect(TurnEngine.isReturnRejectLocked(room.turnState.returnRejectCount), isFalse);
     });
 
     test('accept rewinds passer deltas and does not complete requester', () {

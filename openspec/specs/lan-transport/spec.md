@@ -162,7 +162,7 @@ The transport MUST accept typed envelopes `REQUEST_RETURN_TURN` and `RESPOND_RET
 
 ### Requirement: Pending and last-pass on GAME_STATE
 
-Every `GAME_STATE` (broadcast or `SYNC_REQUEST` response) MUST carry pending-return and last-pass fields when present. Absent fields MUST mean no pending request and no returnable last-pass. Older clients MUST tolerate missing fields without crashing. Pending MUST survive client reconnect, `SYNC_REQUEST`, and host succession, and MUST still expire at 10s from original creation.
+Every `GAME_STATE` (broadcast or `SYNC_REQUEST` response) MUST carry pending-return and last-pass fields when present. Absent fields MUST mean no pending request and no returnable last-pass. Older clients MUST tolerate missing fields without crashing. Pending MUST survive client reconnect, `SYNC_REQUEST`, and host succession, and MUST still expire at 10s from original creation. `returnRejectCount` MUST be included when greater than 0; absent `returnRejectCount` MUST mean 0.
 
 #### Scenario: Sync restores pending
 

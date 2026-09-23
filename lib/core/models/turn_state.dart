@@ -221,6 +221,7 @@ class TurnState {
     this.pendingReturnRequest,
     this.lastReturnOutcome,
     this.lastActivationSource,
+    this.returnRejectCount = 0,
   });
 
   String? activePlayerId;
@@ -245,6 +246,9 @@ class TurnState {
   ReturnOutcome? lastReturnOutcome;
   TurnActivationSource? lastActivationSource;
 
+  /// Consecutive explicit rejects of return for the current seat's turn.
+  int returnRejectCount;
+
   TurnState copyWith({
     String? activePlayerId,
     int? turnStartedAtMs,
@@ -263,6 +267,7 @@ class TurnState {
     PendingReturnRequest? pendingReturnRequest,
     ReturnOutcome? lastReturnOutcome,
     TurnActivationSource? lastActivationSource,
+    int? returnRejectCount,
     bool clearActivePlayer = false,
     bool clearTurnStartedAt = false,
     bool clearBetweenRoundsEnteredAt = false,
@@ -311,6 +316,7 @@ class TurnState {
       lastActivationSource: clearLastActivationSource
           ? null
           : (lastActivationSource ?? this.lastActivationSource),
+      returnRejectCount: returnRejectCount ?? this.returnRejectCount,
     );
   }
 
@@ -336,6 +342,7 @@ class TurnState {
         'lastReturnOutcome': lastReturnOutcome!.toJson(),
       if (lastActivationSource != null)
         'lastActivationSource': lastActivationSource!.wireValue,
+      if (returnRejectCount > 0) 'returnRejectCount': returnRejectCount,
     };
   }
 
@@ -365,6 +372,7 @@ class TurnState {
       lastActivationSource: activationWire == null
           ? null
           : TurnActivationSource.fromWire(activationWire),
+      returnRejectCount: json['returnRejectCount'] as int? ?? 0,
     );
   }
 }

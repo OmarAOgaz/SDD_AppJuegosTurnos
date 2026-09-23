@@ -372,6 +372,7 @@ GameRoom _buildHostRoom({
   PendingReturnRequest? pendingReturnRequest,
   ReturnOutcome? lastReturnOutcome,
   TurnActivationSource? lastActivationSource,
+  int returnRejectCount = 0,
 }) {
   final room = GameRoom(
     roomId: 'room-1',
@@ -396,7 +397,8 @@ GameRoom _buildHostRoom({
     ..lastPass = lastPass
     ..pendingReturnRequest = pendingReturnRequest
     ..lastReturnOutcome = lastReturnOutcome
-    ..lastActivationSource = lastActivationSource;
+    ..lastActivationSource = lastActivationSource
+    ..returnRejectCount = returnRejectCount;
   return room;
 }
 
@@ -2908,6 +2910,34 @@ void main() {
     });
 
     testWidgets(
+        'three-reject lock swipe is red and does not request return',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          lastPass: _sampleLastPass(playerId: _clientId),
+          returnRejectCount: TurnEngine.returnRejectLockThreshold,
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, isEmpty);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx.single.kind, TouchFxKind.returnArrowBlocked);
+      expect(
+        _sounds.playedEffects,
+        [SoundPreviewService.blockedReturnErrorAssetPath],
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
         'qualifying swipe with panel open is silent (no arrow, SFX, or request)',
         (tester) async {
       final controller = _FakeHostRoomController(
@@ -3052,7 +3082,7 @@ void main() {
       );
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(
-        find.textContaining('esperando que '),
+        find.textContaining('Esperando que '),
         findsOneWidget,
       );
       final rich = tester.widget<Text>(
@@ -3069,6 +3099,11 @@ void main() {
           );
       expect(nameSpan.style?.color, ColorCatalog.byId(_clientColorId)!.color);
       expect(find.text('Cancelar'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Cancelar'), findsOneWidget);
+      expect(
+        tester.widget<AlertDialog>(find.byType(AlertDialog)).actionsAlignment,
+        MainAxisAlignment.center,
+      );
 
       await tester.tap(find.byKey(returnCancelButtonKey));
       await tester.pump();

@@ -106,8 +106,8 @@ GestureIntent resolveTapIntent({
 ///
 /// Occupancy gates (panel open or cue visible) yield [SwipeIntent.none] — a
 /// silent no-op, same as tap. Ineligible return (not acting, no last-pass,
-/// already pending) yields [SwipeIntent.blocked] (red arrow + error sound)
-/// rather than mutating turn state.
+/// already pending, or three explicit rejects this turn) yields
+/// [SwipeIntent.blocked] (red arrow + error sound) rather than mutating turn state.
 SwipeIntent resolveSwipeIntent({
   required double dx,
   required double velocityDx,
@@ -117,6 +117,7 @@ SwipeIntent resolveSwipeIntent({
   bool panelOpen = false,
   bool cueVisible = false,
   bool hasPendingReturnRequest = false,
+  bool returnRejectLocked = false,
 }) {
   if (gamePhase != GameRoomPhase.inGame) {
     return SwipeIntent.none;
@@ -129,7 +130,10 @@ SwipeIntent resolveSwipeIntent({
   if (panelOpen || cueVisible) {
     return SwipeIntent.none;
   }
-  if (!isDeviceActing || !hasReturnableLastPass || hasPendingReturnRequest) {
+  if (!isDeviceActing ||
+      !hasReturnableLastPass ||
+      hasPendingReturnRequest ||
+      returnRejectLocked) {
     return SwipeIntent.blocked;
   }
   return SwipeIntent.requestReturn;

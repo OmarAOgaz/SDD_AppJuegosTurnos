@@ -1923,6 +1923,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               : null,
           pendingReturnRequest: room.turnState.pendingReturnRequest,
           lastPass: room.turnState.lastPass,
+          returnRejectCount: room.turnState.returnRejectCount,
           variableTurnOrder: room.config.variableTurnOrder,
           lastReturnOutcome: room.turnState.lastReturnOutcome,
           lastActivationSource: room.turnState.lastActivationSource,
@@ -2186,6 +2187,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           pendingReturnRequest:
               PendingReturnRequest.tryParse(state?['pendingReturnRequest']),
           lastPass: LastPassSnapshot.tryParse(state?['lastPass']),
+          returnRejectCount: state?['returnRejectCount'] as int? ?? 0,
           variableTurnOrder: state?['variableTurnOrder'] == true,
           lastReturnOutcome:
               ReturnOutcome.tryParse(state?['lastReturnOutcome']),
@@ -2334,6 +2336,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     TurnStartCueKey? currentCueKey,
     PendingReturnRequest? pendingReturnRequest,
     LastPassSnapshot? lastPass,
+    int returnRejectCount = 0,
     bool variableTurnOrder = false,
     ReturnOutcome? lastReturnOutcome,
     TurnActivationSource? lastActivationSource,
@@ -2539,6 +2542,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                       variableTurnOrder,
                     ),
                     hasPendingReturnRequest: pendingReturnRequest != null,
+                    returnRejectLocked: TurnEngine.isReturnRejectLocked(
+                      returnRejectCount,
+                    ),
                     localColorId: localColorId,
                     onPass: onPass,
                     onRequestReturn: onRequestReturn ?? () {},
@@ -2929,6 +2935,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required GameRoomPhase gamePhase,
     required bool hasReturnableLastPass,
     required bool hasPendingReturnRequest,
+    bool returnRejectLocked = false,
     String? localColorId,
     required VoidCallback onPass,
     required VoidCallback onRequestReturn,
@@ -2942,6 +2949,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
       panelOpen: _panelOpen,
       cueVisible: _showTurnStartCue,
       hasPendingReturnRequest: hasPendingReturnRequest,
+      returnRejectLocked: returnRejectLocked,
     );
     switch (intent) {
       case SwipeIntent.none:
@@ -3021,7 +3029,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               TextSpan(
                 style: const TextStyle(color: Colors.white, fontSize: 18),
                 children: [
-                  const TextSpan(text: 'esperando que '),
+                  const TextSpan(text: 'Esperando que '),
                   TextSpan(
                     text: previousName,
                     style: TextStyle(
@@ -3034,8 +3042,9 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               ),
               textAlign: TextAlign.center,
             ),
+            actionsAlignment: MainAxisAlignment.center,
             actions: [
-              TextButton(
+              FilledButton(
                 key: returnCancelButtonKey,
                 onPressed: onCancel,
                 child: const Text('Cancelar'),
