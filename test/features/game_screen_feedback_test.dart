@@ -366,6 +366,8 @@ GameRoom _buildHostRoom({
   required String activePlayerId,
   required int remainingSeconds,
   int durationSeconds = 60,
+  int currentRound = 1,
+  bool variableTurnOrder = false,
   LastPassSnapshot? lastPass,
   PendingReturnRequest? pendingReturnRequest,
   ReturnOutcome? lastReturnOutcome,
@@ -379,10 +381,14 @@ GameRoom _buildHostRoom({
     turnSequence: [_hostId, _clientId],
     slots: [_hostId, _clientId],
     playersById: _players(),
+    config: RoomConfig(
+      turnDurationSeconds: durationSeconds,
+      variableTurnOrder: variableTurnOrder,
+    ),
   );
   room.turnState
     ..activePlayerId = activePlayerId
-    ..currentRound = 1
+    ..currentRound = currentRound
     ..baseTurnDurationSeconds = durationSeconds
     ..currentRoundDurationSeconds = durationSeconds
     ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch -
@@ -2792,6 +2798,76 @@ void main() {
         (tester) async {
       final controller = _FakeHostRoomController(
         _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, isEmpty);
+      expect(controller.passTurnCalls, isEmpty);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx.single.kind, TouchFxKind.returnArrowBlocked);
+      expect(
+        _sounds.playedEffects,
+        [SoundPreviewService.blockedReturnErrorAssetPath],
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('fixed-order first of next round swipe is green wrap',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          currentRound: 2,
+          lastPass: const LastPassSnapshot(
+            playerId: _clientId,
+            elapsedMs: 20000,
+            round: 1,
+            durationSeconds: 60,
+            turnCountDelta: 1,
+            turnMsDelta: 20000,
+            exceededTurnCountDelta: 0,
+            exceededMsDelta: 0,
+          ),
+        ),
+      );
+      await _mount(tester, _wrapHost(controller));
+      await _drainTurnStartCue(tester);
+
+      await swipeLeft(tester);
+
+      expect(controller.requestReturnTurnCalls, [_hostId]);
+      expect(controller.passTurnCalls, isEmpty);
+      final fx = _touchFxState(tester).debugEffects;
+      expect(fx.single.kind, TouchFxKind.returnArrow);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'variable-order first of round swipe is red (helper false)',
+        (tester) async {
+      final controller = _FakeHostRoomController(
+        _buildHostRoom(
+          activePlayerId: _hostId,
+          remainingSeconds: 30,
+          currentRound: 2,
+          variableTurnOrder: true,
+          lastPass: const LastPassSnapshot(
+            playerId: _clientId,
+            elapsedMs: 20000,
+            round: 1,
+            durationSeconds: 60,
+            turnCountDelta: 1,
+            turnMsDelta: 20000,
+            exceededTurnCountDelta: 0,
+            exceededMsDelta: 0,
+          ),
+        ),
       );
       await _mount(tester, _wrapHost(controller));
       await _drainTurnStartCue(tester);

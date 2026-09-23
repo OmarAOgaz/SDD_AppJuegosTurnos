@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/models/game_phase.dart';
 import 'package:turnos_juegos/core/models/turn_state.dart';
@@ -315,6 +316,61 @@ void main() {
 
     test('first seat of the round (no last-pass) is blocked', () {
       expect(eligible(hasReturnableLastPass: false), SwipeIntent.blocked);
+    });
+
+    test('fixed-order wrap lastPass is green request', () {
+      const lastPass = LastPassSnapshot(
+        playerId: 'p2',
+        elapsedMs: 20000,
+        round: 1,
+        durationSeconds: 60,
+        turnCountDelta: 1,
+        turnMsDelta: 20000,
+        exceededTurnCountDelta: 0,
+        exceededMsDelta: 0,
+      );
+      expect(
+        TurnEngine.hasReturnableLastPass(lastPass, 2, false),
+        isTrue,
+      );
+      expect(
+        eligible(
+          hasReturnableLastPass: TurnEngine.hasReturnableLastPass(
+            lastPass,
+            2,
+            false,
+          ),
+        ),
+        SwipeIntent.requestReturn,
+      );
+    });
+
+    test('variable-order first-of-round helper is false so swipe is blocked',
+        () {
+      const lastPass = LastPassSnapshot(
+        playerId: 'p2',
+        elapsedMs: 20000,
+        round: 1,
+        durationSeconds: 60,
+        turnCountDelta: 1,
+        turnMsDelta: 20000,
+        exceededTurnCountDelta: 0,
+        exceededMsDelta: 0,
+      );
+      expect(
+        TurnEngine.hasReturnableLastPass(lastPass, 2, true),
+        isFalse,
+      );
+      expect(
+        eligible(
+          hasReturnableLastPass: TurnEngine.hasReturnableLastPass(
+            lastPass,
+            2,
+            true,
+          ),
+        ),
+        SwipeIntent.blocked,
+      );
     });
 
     test('non-acting sender is blocked', () {
