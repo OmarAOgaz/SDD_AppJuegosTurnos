@@ -706,6 +706,162 @@ void main() {
     });
   });
 
+  group('TurnEngine.tryAdjustRoundDuration', () {
+    const start = 1_000_000;
+
+    GameRoom startedRoom({bool variableTurnOrder = false}) {
+      final room = _roomWithTwoPlayers(variableTurnOrder: variableTurnOrder);
+      expect(TurnEngine.startGame(room, start), isTrue);
+      return room;
+    }
+
+    test('steps by exactly one second without snapping to 5', () {
+      final room = startedRoom();
+      room.turnState.currentRoundDurationSeconds = 61;
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 62);
+      expect(TurnEngine.tryAdjustRoundDuration(room, -1), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 61);
+    });
+
+    test('rejects a zero delta', () {
+      final room = startedRoom();
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 0), isFalse);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+    });
+
+    test('rejects steps that cross the 15-600 bounds', () {
+      final room = startedRoom();
+      room.turnState.currentRoundDurationSeconds = 15;
+      expect(TurnEngine.tryAdjustRoundDuration(room, -1), isFalse);
+      expect(room.turnState.currentRoundDurationSeconds, 15);
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 16);
+
+      room.turnState.currentRoundDurationSeconds = 600;
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isFalse);
+      expect(room.turnState.currentRoundDurationSeconds, 600);
+      expect(TurnEngine.tryAdjustRoundDuration(room, -1), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 599);
+    });
+
+    test('value above 600 may step down but not up', () {
+      final room = startedRoom();
+      room.turnState.currentRoundDurationSeconds = 720;
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isFalse);
+      expect(room.turnState.currentRoundDurationSeconds, 720);
+      expect(TurnEngine.tryAdjustRoundDuration(room, -1), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 719);
+    });
+
+    test('lowering to elapsed or below makes the turn exceeded', () {
+      final room = startedRoom();
+      final now = start + 50_000;
+
+      for (var i = 0; i < 15; i++) {
+        expect(TurnEngine.tryAdjustRoundDuration(room, -1), isTrue);
+      }
+      TurnEngine.refreshPhase(room, now);
+
+      expect(room.turnState.currentRoundDurationSeconds, 45);
+      expect(room.turnState.phase, TurnPhase.exceeded);
+      expect(TurnEngine.excessMs(room, now), 5_000);
+    });
+
+    test('raising the duration leaves exceeded', () {
+      final room = startedRoom();
+      final now = start + 60_000;
+      TurnEngine.refreshPhase(room, now);
+      expect(room.turnState.phase, TurnPhase.exceeded);
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+      TurnEngine.refreshPhase(room, now);
+
+      expect(TurnEngine.remainingSeconds(room, now), 1);
+      expect(room.turnState.phase, TurnPhase.warning);
+    });
+
+    test('shifts remaining by the delta and keeps the turn start', () {
+      final room = startedRoom();
+      final now = start + 20_000;
+      expect(TurnEngine.remainingSeconds(room, now), 40);
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+
+      expect(TurnEngine.remainingSeconds(room, now), 41);
+      expect(room.turnState.turnStartedAtMs, start);
+    });
+
+    test('leaves base duration and lobby config untouched', () {
+      final room = startedRoom();
+
+      for (var i = 0; i < 30; i++) {
+        expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+      }
+
+      expect(room.turnState.currentRoundDurationSeconds, 90);
+      expect(room.turnState.baseTurnDurationSeconds, 60);
+      expect(room.config.turnDurationSeconds, 60);
+      expect(room.turnState.turnStartedAtMs, start);
+    });
+
+    test('pending return keeps the clock frozen', () {
+      final room = _pendingBrunoRequest();
+      final pausedAt = room.turnState.turnPausedAtMs;
+      final startedAt = room.turnState.turnStartedAtMs;
+      expect(pausedAt, isNotNull);
+      expect(TurnEngine.remainingSeconds(room, pausedAt!), 50);
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+
+      expect(TurnEngine.remainingSeconds(room, pausedAt + 5_000), 51);
+      expect(room.turnState.turnPausedAtMs, pausedAt);
+      expect(room.turnState.turnStartedAtMs, startedAt);
+      expect(room.turnState.pendingReturnRequest, isNotNull);
+    });
+
+    test('between rounds edit feeds the next round duration', () {
+      final room = startedRoom(variableTurnOrder: true);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 2_000,
+      );
+      expect(room.gamePhase, GameRoomPhase.betweenRounds);
+
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+      expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+
+      expect(room.turnState.currentRoundDurationSeconds, 62);
+      expect(TurnEngine.nextRoundDurationSeconds(room), 67);
+      expect(TurnEngine.nextRoundDurationPreview(room), 67);
+      expect(room.turnState.baseTurnDurationSeconds, 60);
+
+      expect(TurnEngine.tryStartNextRound(room, start + 10_000), isTrue);
+      expect(room.turnState.currentRoundDurationSeconds, 67);
+    });
+
+    test('rejects lobby and ended phases', () {
+      final lobby = _roomWithTwoPlayers();
+      expect(TurnEngine.tryAdjustRoundDuration(lobby, 1), isFalse);
+      expect(lobby.turnState.currentRoundDurationSeconds, 60);
+
+      final ended = startedRoom();
+      TurnEngine.endGame(ended, start + 5_000);
+      expect(ended.gamePhase, GameRoomPhase.ended);
+      expect(TurnEngine.tryAdjustRoundDuration(ended, 1), isFalse);
+      expect(ended.turnState.currentRoundDurationSeconds, 60);
+    });
+  });
+
   group('TurnEngine return turn', () {
     test('intra-round pass records last-pass identity elapsed and deltas', () {
       final room = _roomWithTwoPlayers();

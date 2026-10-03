@@ -190,6 +190,24 @@ class LobbyRules {
     return true;
   }
 
+  /// Host step on the match increment (no clamp).
+  ///
+  /// Same phases as [trySetRoundIncrement]. Rejects a zero delta and any step
+  /// that would cross the 0–120 s bounds.
+  static bool tryAdjustRoundIncrement(GameRoom room, int deltaSeconds) {
+    if (!_isRoundIncrementMutable(room)) {
+      return false;
+    }
+    final next = room.config.roundIncrementSeconds + deltaSeconds;
+    if (deltaSeconds == 0 ||
+        next < RoomConfig.minRoundIncrementSeconds ||
+        next > RoomConfig.maxRoundIncrementSeconds) {
+      return false;
+    }
+    room.config.roundIncrementSeconds = next;
+    return true;
+  }
+
   static bool trySetVariableTurnOrder(GameRoom room, bool enabled) {
     if (!_isLobbyHostMutable(room)) {
       return false;
@@ -368,9 +386,10 @@ class LobbyRules {
     return room.gamePhase == GameRoomPhase.lobby;
   }
 
-  /// Increment may be set in lobby or substituted during between-rounds.
+  /// Increment may be set in lobby or edited by the host during play.
   static bool _isRoundIncrementMutable(GameRoom room) {
     return room.gamePhase == GameRoomPhase.lobby ||
+        room.gamePhase == GameRoomPhase.inGame ||
         room.gamePhase == GameRoomPhase.betweenRounds;
   }
 
