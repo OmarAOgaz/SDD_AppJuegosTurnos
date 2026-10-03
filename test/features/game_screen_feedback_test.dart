@@ -9,6 +9,7 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 import 'package:audioplayers/audioplayers.dart';
 import 'package:turnos_juegos/core/audio/sound_preview_service.dart';
 import 'package:turnos_juegos/core/catalogs/color_catalog.dart';
+import 'package:turnos_juegos/core/domain/lobby_rules.dart';
 import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
@@ -25,6 +26,7 @@ import 'package:turnos_juegos/features/game/game_screen.dart';
 import 'package:turnos_juegos/features/game/touch_fx_overlay.dart';
 import 'package:turnos_juegos/features/game/turn_start_cue.dart';
 import 'package:turnos_juegos/features/game/widgets/game_session_banners.dart';
+import 'package:turnos_juegos/features/game/widgets/turn_setting_stepper.dart';
 import 'package:turnos_juegos/features/lobby/widgets/lobby_reorder_controls.dart';
 import 'package:turnos_juegos/server/host_room_controller.dart';
 
@@ -177,6 +179,8 @@ class _FakeHostRoomController extends HostRoomController {
   int endGameCalls = 0;
   final List<List<String>> reorderBetweenRoundsCalls = [];
   final List<int> setRoundIncrementCalls = [];
+  final List<int> adjustRoundDurationCalls = [];
+  final List<int> adjustRoundIncrementCalls = [];
   int startNextRoundCalls = 0;
   final List<(String playerId, bool disabled)> setPlayerDisabledCalls = [];
 
@@ -261,6 +265,30 @@ class _FakeHostRoomController extends HostRoomController {
       RoomConfig.maxRoundIncrementSeconds,
     );
     current.config.roundIncrementSeconds = clamped;
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool adjustRoundDuration(int deltaSeconds) {
+    adjustRoundDurationCalls.add(deltaSeconds);
+    final current = _fakeRoom;
+    if (current == null ||
+        !TurnEngine.tryAdjustRoundDuration(current, deltaSeconds)) {
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool adjustRoundIncrement(int deltaSeconds) {
+    adjustRoundIncrementCalls.add(deltaSeconds);
+    final current = _fakeRoom;
+    if (current == null ||
+        !LobbyRules.tryAdjustRoundIncrement(current, deltaSeconds)) {
+      return false;
+    }
     notifyListeners();
     return true;
   }
@@ -470,6 +498,7 @@ Map<String, dynamic> _clientGameState({
     'currentRound': 1,
     'currentRoundDurationSeconds': durationSeconds,
     'currentRoundTurnDurationSeconds': durationSeconds,
+    'roundIncrementSeconds': 5,
     'playersById': players.map((id, player) => MapEntry(id, player.toJson())),
     if (lastPass != null) 'lastPass': lastPass.toJson(),
     if (pendingReturnRequest != null)
@@ -2433,6 +2462,11 @@ void main() {
         clientConnected: false,
       );
       final controller = _FakeHostRoomController(room);
+      // Taller surface: the test font is wide, so the two steppers stack and
+      // would squeeze the lazy reorder list below the second seat.
+      tester.view.physicalSize = const Size(800, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await _mount(tester, _wrapHost(controller));
 
       expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
@@ -2440,7 +2474,11 @@ void main() {
       expect(find.text(_hostName), findsOneWidget);
       expect(find.text(_clientName), findsOneWidget);
       expect(find.byType(LobbyReorderControls), findsNWidgets(2));
-      expect(find.byKey(betweenRoundsIncrementSliderKey), findsOneWidget);
+      expect(find.byKey(stepperPlusKey(turnDurationStepperId)), findsOneWidget);
+      expect(
+        find.byKey(stepperPlusKey(roundIncrementStepperId)),
+        findsOneWidget,
+      );
       expect(find.byKey(betweenRoundsStartKey), findsOneWidget);
 
       final elapsed = tester.widget<Text>(find.byKey(betweenRoundsElapsedKey));
@@ -2479,22 +2517,44 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('host increment slider substitutes roundIncrementSeconds',
+    testWidgets('host duration stepper updates the next-duration preview',
         (tester) async {
-      final room = _buildHostBetweenRoundsRoom(roundIncrement: 5);
+      final room = _buildHostBetweenRoundsRoom(
+        baseDuration: 60,
+        roundIncrement: 5,
+      );
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+      expect(find.text('Próxima duración: 65s'), findsOneWidget);
+
+      await tester.tap(find.byKey(stepperPlusKey(turnDurationStepperId)));
+      await tester.pump();
+
+      expect(controller.adjustRoundDurationCalls, [1]);
+      expect(room.turnState.currentRoundDurationSeconds, 61);
+      expect(find.text('Duración turno (s): 61'), findsOneWidget);
+      // Preview: duration 61 + increment 5 = 66.
+      expect(find.text('Próxima duración: 66s'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host increment stepper updates the next-duration preview',
+        (tester) async {
+      final room = _buildHostBetweenRoundsRoom(
+        baseDuration: 60,
+        roundIncrement: 5,
+      );
       final controller = _FakeHostRoomController(room);
       await _mount(tester, _wrapHost(controller));
 
-      final slider = tester.widget<Slider>(
-        find.byKey(betweenRoundsIncrementSliderKey),
-      );
-      slider.onChanged!(10);
+      await tester.tap(find.byKey(stepperPlusKey(roundIncrementStepperId)));
       await tester.pump();
 
-      expect(controller.setRoundIncrementCalls, contains(10));
-      expect(room.config.roundIncrementSeconds, 10);
-      // Preview: current duration 60 + substituted increment 10 = 70.
-      expect(find.text('Próxima duración: 70s'), findsOneWidget);
+      expect(controller.adjustRoundIncrementCalls, [1]);
+      expect(room.config.roundIncrementSeconds, 6);
+      expect(find.text('Incremento por ronda (s): 6'), findsOneWidget);
+      expect(find.text('Próxima duración: 66s'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -2523,7 +2583,11 @@ void main() {
 
       expect(find.byKey(betweenRoundsBodyKey), findsNothing);
       expect(find.byKey(betweenRoundsStartKey), findsNothing);
-      expect(find.byKey(betweenRoundsIncrementSliderKey), findsNothing);
+      expect(find.byKey(stepperValueKey(turnDurationStepperId)), findsNothing);
+      expect(
+        find.byKey(stepperValueKey(roundIncrementStepperId)),
+        findsNothing,
+      );
 
       await tester.pumpWidget(const SizedBox());
     });
@@ -2547,8 +2611,10 @@ void main() {
       expect(find.text(_hostName), findsOneWidget);
       expect(find.text(_clientName), findsOneWidget);
       expect(find.byType(LobbyReorderControls), findsNothing);
-      expect(find.byKey(betweenRoundsIncrementSliderKey), findsNothing);
+      expect(find.byKey(stepperPlusKey(turnDurationStepperId)), findsNothing);
+      expect(find.byKey(stepperPlusKey(roundIncrementStepperId)), findsNothing);
       expect(find.byKey(betweenRoundsStartKey), findsNothing);
+      expect(find.text('Duración turno (s): 60'), findsOneWidget);
       expect(find.text('Incremento por ronda (s): 5'), findsOneWidget);
       expect(find.text('Próxima duración: 65s'), findsOneWidget);
 
@@ -2597,7 +2663,8 @@ void main() {
 
       expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
       expect(find.byType(LobbyReorderControls), findsWidgets);
-      expect(find.byKey(betweenRoundsIncrementSliderKey), findsOneWidget);
+      expect(
+          find.byKey(stepperPlusKey(roundIncrementStepperId)), findsOneWidget);
       expect(find.byKey(betweenRoundsStartKey), findsOneWidget);
 
       await tester.tap(find.byKey(const Key('lobby-reorder-down-0')));
@@ -2679,6 +2746,62 @@ void main() {
       await _longPressOpenPanel(tester);
       expect(find.byKey(inGameSkipToggleKey(_clientId)), findsNothing);
       expect(find.text('Omitir turno'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('host panel steppers call the controller and update values',
+        (tester) async {
+      final room =
+          _buildHostRoom(activePlayerId: _hostId, remainingSeconds: 30);
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      await _longPressOpenPanel(tester);
+      final duration = room.turnState.currentRoundDurationSeconds;
+      final increment = room.config.roundIncrementSeconds;
+      expect(find.text('Duración turno (s): $duration'), findsOneWidget);
+      expect(find.text('Incremento por ronda (s): $increment'), findsOneWidget);
+
+      await tester.tap(find.byKey(stepperPlusKey(turnDurationStepperId)));
+      await tester.pump();
+      await tester.tap(find.byKey(stepperPlusKey(roundIncrementStepperId)));
+      await tester.pump();
+
+      expect(controller.adjustRoundDurationCalls, [1]);
+      expect(controller.adjustRoundIncrementCalls, [1]);
+      expect(
+        find.text('Duración turno (s): ${duration + 1}'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Incremento por ronda (s): ${increment + 1}'),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('client panel shows the values without step buttons',
+        (tester) async {
+      final client = _clientAs(_clientId);
+      final sync = _fixedSync(activePlayerId: _hostId, remainingSeconds: 30);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+
+      await _longPressOpenPanel(tester);
+      expect(
+        find.byKey(stepperValueKey(turnDurationStepperId)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(stepperValueKey(roundIncrementStepperId)),
+        findsOneWidget,
+      );
+      expect(find.byKey(stepperMinusKey(turnDurationStepperId)), findsNothing);
+      expect(find.byKey(stepperPlusKey(turnDurationStepperId)), findsNothing);
+      expect(
+          find.byKey(stepperMinusKey(roundIncrementStepperId)), findsNothing);
+      expect(find.byKey(stepperPlusKey(roundIncrementStepperId)), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
     });

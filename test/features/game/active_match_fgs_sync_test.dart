@@ -8,6 +8,8 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:turnos_juegos/core/audio/sound_preview_service.dart';
+import 'package:turnos_juegos/core/domain/lobby_rules.dart';
+import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/lifecycle/client_sync_state.dart';
 import 'package:turnos_juegos/core/lifecycle/foreground_service_bridge.dart';
 import 'package:turnos_juegos/core/lifecycle/immersive_system_ui.dart';
@@ -107,9 +109,35 @@ class _FakeHostRoomController extends HostRoomController {
   _FakeHostRoomController(this._fakeRoom);
 
   final GameRoom? _fakeRoom;
+  final List<int> adjustRoundDurationCalls = [];
+  final List<int> adjustRoundIncrementCalls = [];
 
   @override
   GameRoom? get room => _fakeRoom;
+
+  @override
+  bool adjustRoundDuration(int deltaSeconds) {
+    adjustRoundDurationCalls.add(deltaSeconds);
+    final current = _fakeRoom;
+    if (current == null ||
+        !TurnEngine.tryAdjustRoundDuration(current, deltaSeconds)) {
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  bool adjustRoundIncrement(int deltaSeconds) {
+    adjustRoundIncrementCalls.add(deltaSeconds);
+    final current = _fakeRoom;
+    if (current == null ||
+        !LobbyRules.tryAdjustRoundIncrement(current, deltaSeconds)) {
+      return false;
+    }
+    notifyListeners();
+    return true;
+  }
 }
 
 class _MutableClientSyncNotifier extends ClientSyncNotifier {
