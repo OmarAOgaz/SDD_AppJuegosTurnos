@@ -538,6 +538,151 @@ void main() {
       );
     });
 
+    Future<
+        ({
+          HostRoomController controller,
+          _LobbySyncRecordingServer server,
+        })> _inGameFixture() async {
+      final fixture = await _lobbySyncFixture();
+      fixture.controller.debugDispatchMessage(
+        'client-session-1',
+        _joinEnvelope(deviceId: 'device-a', displayName: 'Cliente A'),
+      );
+      expect(await fixture.controller.startGame(), isTrue);
+      expect(fixture.controller.room!.gamePhase, GameRoomPhase.inGame);
+      fixture.server.broadcasts.clear();
+      return fixture;
+    }
+
+    test('setRoundIncrement inGame broadcasts GAME_STATE', () async {
+      final fixture = await _inGameFixture();
+      expect(fixture.controller.setRoundIncrement(10), isTrue);
+      expect(fixture.server.broadcasts, hasLength(1));
+      final envelope = fixture.server.broadcasts.single;
+      expect(envelope.type, MessageTypes.gameState);
+      expect(envelope.payload['roundIncrementSeconds'], 10);
+      expect(fixture.controller.room!.config.roundIncrementSeconds, 10);
+    });
+
+    test('adjustRoundDuration inGame broadcasts GAME_STATE with new keys',
+        () async {
+      final fixture = await _inGameFixture();
+      final room = fixture.controller.room!;
+      final startedAt = room.turnState.turnStartedAtMs;
+      var notifications = 0;
+      fixture.controller.addListener(() => notifications++);
+
+      expect(fixture.controller.adjustRoundDuration(1), isTrue);
+
+      expect(notifications, 1);
+      expect(fixture.server.broadcasts, hasLength(1));
+      final envelope = fixture.server.broadcasts.single;
+      expect(envelope.type, MessageTypes.gameState);
+      expect(envelope.payload['currentRoundDurationSeconds'], 61);
+      expect(envelope.payload['currentRoundTurnDurationSeconds'], 61);
+      expect(envelope.payload['turnStartedAt'], startedAt);
+      expect(room.turnState.currentRoundDurationSeconds, 61);
+      expect(room.turnState.baseTurnDurationSeconds, 60);
+      expect(room.config.turnDurationSeconds, 60);
+    });
+
+    test('adjustRoundDuration refreshes phase to exceeded', () async {
+      final fixture = await _inGameFixture();
+      final room = fixture.controller.room!;
+      room.turnState
+        ..currentRoundDurationSeconds = 16
+        ..turnStartedAtMs = DateTime.now().millisecondsSinceEpoch - 16_000;
+
+      expect(fixture.controller.adjustRoundDuration(-1), isTrue);
+
+      expect(room.turnState.phase, TurnPhase.exceeded);
+      expect(
+        fixture.server.broadcasts.single.payload['phase'],
+        TurnPhase.exceeded.wireValue,
+      );
+    });
+
+    test('adjustRoundDuration works in betweenRounds', () async {
+      final fixture = await _betweenRoundsFixture();
+      expect(fixture.controller.setRoundIncrement(5), isTrue);
+      fixture.server.broadcasts.clear();
+
+      expect(fixture.controller.adjustRoundDuration(1), isTrue);
+      expect(fixture.server.broadcasts, hasLength(1));
+      final envelope = fixture.server.broadcasts.single;
+      expect(envelope.type, MessageTypes.gameState);
+      expect(envelope.payload['currentRoundDurationSeconds'], 61);
+      expect(envelope.payload['roundIncrementSeconds'], 5);
+      expect(
+        TurnEngine.nextRoundDurationPreview(fixture.controller.room!),
+        66,
+      );
+    });
+
+    test('adjustRoundIncrement broadcasts GAME_STATE inGame and betweenRounds',
+        () async {
+      final inGame = await _inGameFixture();
+      expect(inGame.controller.adjustRoundIncrement(1), isTrue);
+      expect(inGame.server.broadcasts, hasLength(1));
+      expect(inGame.server.broadcasts.single.type, MessageTypes.gameState);
+      expect(inGame.server.broadcasts.single.payload['roundIncrementSeconds'], 1);
+      expect(
+        _lobbyConfig(inGame.server.broadcasts.single.payload)[
+            'roundIncrementSeconds'],
+        1,
+      );
+
+      final breakFixture = await _betweenRoundsFixture();
+      expect(breakFixture.controller.adjustRoundIncrement(1), isTrue);
+      expect(breakFixture.server.broadcasts, hasLength(1));
+      expect(
+        breakFixture.server.broadcasts.single.payload['roundIncrementSeconds'],
+        1,
+      );
+    });
+
+    test('adjust* without hosting authority neither mutate nor broadcast',
+        () async {
+      final fixture = await _inGameFixture();
+      final room = fixture.controller.room!;
+      fixture.controller.debugHostingAuthorityActive = false;
+
+      expect(fixture.controller.adjustRoundDuration(1), isFalse);
+      expect(fixture.controller.adjustRoundIncrement(1), isFalse);
+
+      expect(fixture.server.broadcasts, isEmpty);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+      expect(room.config.roundIncrementSeconds, 0);
+    });
+
+    test('adjust* in lobby neither mutate nor broadcast', () async {
+      final fixture = await _lobbySyncFixture();
+      final room = fixture.controller.room!;
+
+      expect(fixture.controller.adjustRoundDuration(1), isFalse);
+      expect(fixture.controller.adjustRoundIncrement(1), isFalse);
+
+      expect(fixture.server.broadcasts, isEmpty);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+      expect(room.config.roundIncrementSeconds, 0);
+    });
+
+    test('adjust* out of range or zero delta neither mutate nor broadcast',
+        () async {
+      final fixture = await _inGameFixture();
+      final room = fixture.controller.room!;
+
+      expect(fixture.controller.adjustRoundDuration(0), isFalse);
+      expect(fixture.controller.adjustRoundIncrement(0), isFalse);
+      expect(fixture.controller.adjustRoundIncrement(-1), isFalse);
+      room.turnState.currentRoundDurationSeconds = 600;
+      expect(fixture.controller.adjustRoundDuration(1), isFalse);
+
+      expect(fixture.server.broadcasts, isEmpty);
+      expect(room.turnState.currentRoundDurationSeconds, 600);
+      expect(room.config.roundIncrementSeconds, 0);
+    });
+
     test('reorderTurnOrderBetweenRounds broadcasts GAME_STATE with sequence',
         () async {
       final fixture = await _betweenRoundsFixture();

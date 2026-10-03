@@ -380,11 +380,47 @@ class HostRoomController extends ChangeNotifier {
     if (!LobbyRules.trySetRoundIncrement(room, seconds)) {
       return false;
     }
-    if (room.gamePhase == GameRoomPhase.betweenRounds) {
-      _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
-    } else {
+    if (room.gamePhase == GameRoomPhase.lobby) {
       _broadcastLobbyState();
+    } else {
+      _broadcastGameState(DateTime.now().millisecondsSinceEpoch);
     }
+    return true;
+  }
+
+  /// Host-only ±step on the live round duration during play. Result is one
+  /// `GAME_STATE`; the running turn keeps its start time.
+  bool adjustRoundDuration(int deltaSeconds) {
+    final room = _room;
+    if (room == null || !_hostingAuthorityActive) {
+      return false;
+    }
+    if (!TurnEngine.tryAdjustRoundDuration(room, deltaSeconds)) {
+      return false;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    TurnEngine.refreshPhase(room, serverNow);
+    _broadcastGameState(serverNow);
+    return true;
+  }
+
+  /// Host-only ±step on the round increment during play. Result is one
+  /// `GAME_STATE`.
+  bool adjustRoundIncrement(int deltaSeconds) {
+    final room = _room;
+    if (room == null || !_hostingAuthorityActive) {
+      return false;
+    }
+    if (room.gamePhase != GameRoomPhase.inGame &&
+        room.gamePhase != GameRoomPhase.betweenRounds) {
+      return false;
+    }
+    if (!LobbyRules.tryAdjustRoundIncrement(room, deltaSeconds)) {
+      return false;
+    }
+    final serverNow = DateTime.now().millisecondsSinceEpoch;
+    TurnEngine.refreshPhase(room, serverNow);
+    _broadcastGameState(serverNow);
     return true;
   }
 
