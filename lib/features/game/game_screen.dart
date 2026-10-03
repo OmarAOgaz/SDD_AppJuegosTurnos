@@ -43,6 +43,7 @@ import '../lobby/widgets/lobby_player_row.dart';
 import 'touch_fx_overlay.dart';
 import 'turn_start_cue.dart';
 import 'widgets/game_session_banners.dart';
+import 'widgets/turn_setting_stepper.dart';
 
 /// Identifies the sole full-screen tap/long-press layer during `inGame` —
 /// exposed so widget tests can target it unambiguously (Scaffold/MaterialApp
@@ -103,9 +104,16 @@ const betweenRoundsElapsedKey = Key('betweenRoundsElapsed');
 @visibleForTesting
 const betweenRoundsDurationPreviewKey = Key('betweenRoundsDurationPreview');
 
-/// Host-only round-increment slider on the break screen.
+/// [TurnSettingStepper] id for the live round duration (info panel and break).
 @visibleForTesting
-const betweenRoundsIncrementSliderKey = Key('betweenRoundsIncrement');
+const turnDurationStepperId = 'turnDuration';
+
+/// [TurnSettingStepper] id for the round increment (info panel and break).
+@visibleForTesting
+const roundIncrementStepperId = 'roundIncrement';
+
+const _turnDurationStepperLabel = 'Duración turno (s)';
+const _roundIncrementStepperLabel = 'Incremento por ronda (s)';
 
 /// Host-only start-next-round CTA.
 @visibleForTesting
@@ -1951,6 +1959,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             );
           },
           exitActionLabel: 'Terminar partida',
+          roundDurationSeconds: room.turnState.currentRoundDurationSeconds,
+          roundIncrementSeconds: room.config.roundIncrementSeconds,
+          onAdjustRoundDuration: controller.adjustRoundDuration,
+          onAdjustRoundIncrement: controller.adjustRoundIncrement,
           skipTogglePlayers: [
             for (final player in _seatedPlayersFromRoom(room))
               if (!player.connected && player.playerId != room.hostPlayerId)
@@ -1987,7 +1999,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     );
   }
 
-  /// Host-authoritative between-rounds break: sequence list, reorder, increment,
+  /// Host-authoritative between-rounds break: sequence list, reorder, steppers,
   /// synced elapsed, duration preview, and start-next-round CTA.
   Widget _buildHostBetweenRoundsBody(
     BuildContext context, {
@@ -2089,18 +2101,27 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Text('Incremento por ronda (s): $increment'),
-          Slider(
-            key: betweenRoundsIncrementSliderKey,
-            value: increment.toDouble(),
-            min: RoomConfig.minRoundIncrementSeconds.toDouble(),
-            max: RoomConfig.maxRoundIncrementSeconds.toDouble(),
-            divisions: RoomConfig.maxRoundIncrementSeconds > 0
-                ? RoomConfig.maxRoundIncrementSeconds
-                : null,
-            onChanged: (value) {
-              controller.setRoundIncrement(value.round());
-            },
+          Wrap(
+            spacing: 16,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TurnSettingStepper(
+                id: turnDurationStepperId,
+                label: _turnDurationStepperLabel,
+                value: room.turnState.currentRoundDurationSeconds,
+                min: RoomConfig.minTurnDurationSeconds,
+                max: RoomConfig.maxTurnDurationSeconds,
+                onStep: controller.adjustRoundDuration,
+              ),
+              TurnSettingStepper(
+                id: roundIncrementStepperId,
+                label: _roundIncrementStepperLabel,
+                value: increment,
+                min: RoomConfig.minRoundIncrementSeconds,
+                max: RoomConfig.maxRoundIncrementSeconds,
+                onStep: controller.adjustRoundIncrement,
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           FilledButton(
@@ -2220,6 +2241,8 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             );
           },
           exitActionLabel: 'Salir partida',
+          roundDurationSeconds: _clientRoundDurationSeconds(state),
+          roundIncrementSeconds: state?['roundIncrementSeconds'] as int?,
           onPass: () {
             client?.sendPassTurn(playerId: localPlayerId!);
           },
@@ -2239,7 +2262,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   /// Client view-only between-rounds body: same list / elapsed / increment
-  /// readout as host, without reorder, slider, or start CTA.
+  /// readout as host, without reorder, step buttons, or start CTA.
   Widget _buildClientBetweenRoundsBody(
     BuildContext context, {
     required ClientSyncState sync,
@@ -2315,7 +2338,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Text('Incremento por ronda (s): $increment'),
+          Wrap(
+            spacing: 16,
+            children: [
+              TurnSettingStepper(
+                id: turnDurationStepperId,
+                label: _turnDurationStepperLabel,
+                value: room.turnState.currentRoundDurationSeconds,
+                min: RoomConfig.minTurnDurationSeconds,
+                max: RoomConfig.maxTurnDurationSeconds,
+              ),
+              TurnSettingStepper(
+                id: roundIncrementStepperId,
+                label: _roundIncrementStepperLabel,
+                value: increment,
+                min: RoomConfig.minRoundIncrementSeconds,
+                max: RoomConfig.maxRoundIncrementSeconds,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2351,6 +2392,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required VoidCallback onPass,
     required Future<void> Function() onExit,
     Widget? betweenRoundsBody,
+    int? roundDurationSeconds,
+    int? roundIncrementSeconds,
+    bool Function(int deltaSeconds)? onAdjustRoundDuration,
+    bool Function(int deltaSeconds)? onAdjustRoundIncrement,
     List<Player> skipTogglePlayers = const [],
     bool Function(String playerId, bool disabled)? onSetPlayerDisabled,
   }) {
@@ -2644,6 +2689,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             statusText: statusText,
             exitActionLabel: exitActionLabel,
             onExit: onExit,
+            roundDurationSeconds: roundDurationSeconds,
+            roundIncrementSeconds: roundIncrementSeconds,
+            onAdjustRoundDuration: onAdjustRoundDuration,
+            onAdjustRoundIncrement: onAdjustRoundIncrement,
             skipTogglePlayers: skipTogglePlayers,
             onSetPlayerDisabled: onSetPlayerDisabled,
           ),
@@ -2714,6 +2763,10 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     required String statusText,
     required String exitActionLabel,
     required Future<void> Function() onExit,
+    int? roundDurationSeconds,
+    int? roundIncrementSeconds,
+    bool Function(int deltaSeconds)? onAdjustRoundDuration,
+    bool Function(int deltaSeconds)? onAdjustRoundIncrement,
     List<Player> skipTogglePlayers = const [],
     bool Function(String playerId, bool disabled)? onSetPlayerDisabled,
   }) {
@@ -2734,9 +2787,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   color: const Color(0xFF1A1A1A),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    // Scrolls on short viewports (landscape) now that the
+                    // turn steppers add height to the card.
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
                       children: [
                         Row(
                           children: [
@@ -2796,6 +2851,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                           statusText,
                           style: const TextStyle(color: Colors.white70),
                         ),
+                        if (roundDurationSeconds != null ||
+                            roundIncrementSeconds != null)
+                          _buildPanelSteppers(
+                            roundDurationSeconds: roundDurationSeconds,
+                            roundIncrementSeconds: roundIncrementSeconds,
+                            onAdjustRoundDuration: onAdjustRoundDuration,
+                            onAdjustRoundIncrement: onAdjustRoundIncrement,
+                          ),
                         if (skipTogglePlayers.isNotEmpty &&
                             onSetPlayerDisabled != null) ...[
                           const SizedBox(height: 16),
@@ -2848,6 +2911,62 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
       ),
     );
+  }
+
+  /// Duration and increment rows for the dark info panel. Read-only when the
+  /// matching callback is null (clients).
+  Widget _buildPanelSteppers({
+    required int? roundDurationSeconds,
+    required int? roundIncrementSeconds,
+    required bool Function(int deltaSeconds)? onAdjustRoundDuration,
+    required bool Function(int deltaSeconds)? onAdjustRoundIncrement,
+  }) {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        iconButtonTheme: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            foregroundColor: Colors.white,
+            disabledForegroundColor: Colors.white24,
+          ),
+        ),
+      ),
+      child: DefaultTextStyle.merge(
+        style: const TextStyle(color: Colors.white70),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (roundDurationSeconds != null)
+                TurnSettingStepper(
+                  id: turnDurationStepperId,
+                  label: _turnDurationStepperLabel,
+                  value: roundDurationSeconds,
+                  min: RoomConfig.minTurnDurationSeconds,
+                  max: RoomConfig.maxTurnDurationSeconds,
+                  onStep: onAdjustRoundDuration,
+                ),
+              if (roundIncrementSeconds != null)
+                TurnSettingStepper(
+                  id: roundIncrementStepperId,
+                  label: _roundIncrementStepperLabel,
+                  value: roundIncrementSeconds,
+                  min: RoomConfig.minRoundIncrementSeconds,
+                  max: RoomConfig.maxRoundIncrementSeconds,
+                  onStep: onAdjustRoundIncrement,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Live round duration from the newest client `GAME_STATE`, if present.
+  int? _clientRoundDurationSeconds(Map<String, dynamic>? state) {
+    final duration = state?['currentRoundTurnDurationSeconds'] ??
+        state?['currentRoundDurationSeconds'];
+    return duration is int ? duration : null;
   }
 
   void _openInfoPanel() {
