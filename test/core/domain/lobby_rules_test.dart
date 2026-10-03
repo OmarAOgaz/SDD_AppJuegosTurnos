@@ -313,8 +313,7 @@ void main() {
       expect(breakRoom.config.roundIncrementSeconds, 15);
     });
 
-    test('trySetRoundIncrement rejects inGame; lobby mutators stay lobby-only',
-        () {
+    GameRoom startedRoom() {
       final room = _hostRoom();
       LobbyRules.tryJoin(
         room: room,
@@ -326,9 +325,60 @@ void main() {
       );
       expect(LobbyRules.tryStartGame(room), isTrue);
       expect(room.gamePhase, GameRoomPhase.inGame);
+      return room;
+    }
 
-      expect(LobbyRules.trySetRoundIncrement(room, 20), isFalse);
+    test('tryAdjustRoundIncrement steps by one inGame and betweenRounds', () {
+      final room = startedRoom();
+      room.config.roundIncrementSeconds = 5;
+      expect(LobbyRules.tryAdjustRoundIncrement(room, 1), isTrue);
+      expect(room.config.roundIncrementSeconds, 6);
+      expect(LobbyRules.tryAdjustRoundIncrement(room, -1), isTrue);
+      expect(room.config.roundIncrementSeconds, 5);
+
+      final breakRoom = _enterBetweenRounds();
+      expect(LobbyRules.tryAdjustRoundIncrement(breakRoom, 1), isTrue);
+      expect(breakRoom.config.roundIncrementSeconds, 1);
+    });
+
+    test('tryAdjustRoundIncrement rejects zero delta and out-of-range steps',
+        () {
+      final room = startedRoom();
+      room.config.roundIncrementSeconds = 0;
+      expect(LobbyRules.tryAdjustRoundIncrement(room, 0), isFalse);
+      expect(LobbyRules.tryAdjustRoundIncrement(room, -1), isFalse);
+      expect(room.config.roundIncrementSeconds, 0);
+
+      room.config.roundIncrementSeconds = 120;
+      expect(LobbyRules.tryAdjustRoundIncrement(room, 1), isFalse);
+      expect(room.config.roundIncrementSeconds, 120);
+      expect(LobbyRules.tryAdjustRoundIncrement(room, -1), isTrue);
+      expect(room.config.roundIncrementSeconds, 119);
+    });
+
+    test('tryAdjustRoundIncrement rejects ended phase', () {
+      final room = startedRoom();
+      room.gamePhase = GameRoomPhase.ended;
+      expect(LobbyRules.tryAdjustRoundIncrement(room, 1), isFalse);
+      expect(room.config.roundIncrementSeconds, 0);
+    });
+
+    test('trySetRoundIncrement allows inGame, rejects ended', () {
+      final room = startedRoom();
+      expect(LobbyRules.trySetRoundIncrement(room, 20), isTrue);
+      expect(room.config.roundIncrementSeconds, 20);
+
+      room.gamePhase = GameRoomPhase.ended;
+      expect(LobbyRules.trySetRoundIncrement(room, 30), isFalse);
+      expect(room.config.roundIncrementSeconds, 20);
+    });
+
+    test('other lobby mutators stay lobby-only inGame', () {
+      final room = startedRoom();
+      final durationBefore = room.config.turnDurationSeconds;
+
       expect(LobbyRules.trySetTurnDuration(room, 90), isFalse);
+      expect(room.config.turnDurationSeconds, durationBefore);
       expect(LobbyRules.trySetVariableTurnOrder(room, false), isFalse);
       expect(
         LobbyRules.tryReorderTurnSequence(room, const ['p2', 'host-1']),

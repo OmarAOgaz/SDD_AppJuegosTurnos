@@ -1,6 +1,7 @@
 import '../models/game_phase.dart';
 import '../models/game_room.dart';
 import '../models/player.dart';
+import '../models/room_config.dart';
 import '../models/turn_state.dart';
 import 'lobby_rules.dart';
 
@@ -369,6 +370,28 @@ class TurnEngine {
       room,
       orderedPlayerIds,
     );
+  }
+
+  /// Host step on the live round duration (no snap to 5, no clamp).
+  ///
+  /// Only [GameRoomPhase.inGame] and [GameRoomPhase.betweenRounds]. Rejects a
+  /// zero delta and any step that would cross the 15–600 s bounds. A value
+  /// already above the maximum (accumulated increments) may still step down.
+  /// Does not touch [TurnState.turnStartedAtMs], the base duration, or the
+  /// lobby [RoomConfig.turnDurationSeconds]; the caller refreshes the phase.
+  static bool tryAdjustRoundDuration(GameRoom room, int deltaSeconds) {
+    if (room.gamePhase != GameRoomPhase.inGame &&
+        room.gamePhase != GameRoomPhase.betweenRounds) {
+      return false;
+    }
+    final next = room.turnState.currentRoundDurationSeconds + deltaSeconds;
+    if (deltaSeconds == 0 ||
+        (deltaSeconds > 0 && next > RoomConfig.maxTurnDurationSeconds) ||
+        (deltaSeconds < 0 && next < RoomConfig.minTurnDurationSeconds)) {
+      return false;
+    }
+    room.turnState.currentRoundDurationSeconds = next;
+    return true;
   }
 
   /// Next-round turn duration: current round duration + match increment.
