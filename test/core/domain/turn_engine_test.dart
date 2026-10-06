@@ -849,6 +849,37 @@ void main() {
       expect(room.turnState.currentRoundDurationSeconds, 67);
     });
 
+    test('in-game increment step is what the next round adds', () {
+      final room = startedRoom();
+      expect(room.config.roundIncrementSeconds, 5);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
+
+      expect(LobbyRules.tryAdjustRoundIncrement(room, 1), isTrue);
+      expect(room.config.roundIncrementSeconds, 6);
+
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 1_000,
+        ),
+        isTrue,
+      );
+      expect(
+        TurnEngine.tryPassTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: start + 21_000,
+        ),
+        isTrue,
+      );
+
+      expect(room.turnState.currentRound, 2);
+      expect(room.gamePhase, GameRoomPhase.inGame);
+      expect(room.turnState.currentRoundDurationSeconds, 66);
+      expect(room.config.roundIncrementSeconds, 6);
+    });
+
     test('rejects lobby and ended phases', () {
       final lobby = _roomWithTwoPlayers();
       expect(TurnEngine.tryAdjustRoundDuration(lobby, 1), isFalse);
@@ -1235,6 +1266,56 @@ void main() {
         ),
         isTrue,
       );
+    });
+
+    test(
+        'later duration edit does not rewrite lastPass; return restores it',
+        () {
+      final room = _roomWithTwoPlayers();
+      const start = 1_000_000;
+      TurnEngine.startGame(room, start);
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'host-1',
+        serverNowMs: start + 1_000,
+      );
+      TurnEngine.tryPassTurn(
+        room: room,
+        senderPlayerId: 'p2',
+        serverNowMs: start + 21_000,
+      );
+
+      expect(room.turnState.currentRound, 2);
+      expect(room.turnState.currentRoundDurationSeconds, 65);
+      expect(room.turnState.lastPass!.durationSeconds, 60);
+
+      for (var i = 0; i < 15; i++) {
+        expect(TurnEngine.tryAdjustRoundDuration(room, 1), isTrue);
+      }
+
+      expect(room.turnState.currentRoundDurationSeconds, 80);
+      expect(room.turnState.lastPass!.durationSeconds, 60);
+
+      expect(
+        TurnEngine.tryRequestReturnTurn(
+          room: room,
+          senderPlayerId: 'host-1',
+          serverNowMs: start + 31_000,
+        ),
+        isTrue,
+      );
+      expect(
+        TurnEngine.tryRespondReturnTurn(
+          room: room,
+          senderPlayerId: 'p2',
+          serverNowMs: start + 32_000,
+          response: ReturnTurnResponse.accept,
+        ),
+        isTrue,
+      );
+
+      expect(room.turnState.currentRound, 1);
+      expect(room.turnState.currentRoundDurationSeconds, 60);
     });
 
     test('variable-order round close nulls lastPass', () {

@@ -641,6 +641,33 @@ void main() {
       );
     });
 
+    test('client SET_TURN_DURATION and SET_ROUND_INCREMENT are ignored',
+        () async {
+      final fixture = await _inGameFixture();
+      final room = fixture.controller.room!;
+      final duration = room.turnState.currentRoundDurationSeconds;
+      final increment = room.config.roundIncrementSeconds;
+
+      fixture.controller.debugDispatchMessage(
+        'client-session-1',
+        const WsEnvelope(
+          type: MessageTypes.setTurnDuration,
+          payload: {'seconds': 90},
+        ),
+      );
+      fixture.controller.debugDispatchMessage(
+        'client-session-1',
+        const WsEnvelope(
+          type: MessageTypes.setRoundIncrement,
+          payload: {'seconds': 30},
+        ),
+      );
+
+      expect(fixture.server.broadcasts, isEmpty);
+      expect(room.turnState.currentRoundDurationSeconds, duration);
+      expect(room.config.roundIncrementSeconds, increment);
+    });
+
     test('adjust* without hosting authority neither mutate nor broadcast',
         () async {
       final fixture = await _inGameFixture();
