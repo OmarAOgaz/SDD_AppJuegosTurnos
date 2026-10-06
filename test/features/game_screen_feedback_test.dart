@@ -9,6 +9,7 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 import 'package:audioplayers/audioplayers.dart';
 import 'package:turnos_juegos/core/audio/sound_preview_service.dart';
 import 'package:turnos_juegos/core/catalogs/color_catalog.dart';
+import 'package:turnos_juegos/core/constants/message_types.dart';
 import 'package:turnos_juegos/core/domain/lobby_rules.dart';
 import 'package:turnos_juegos/core/domain/turn_engine.dart';
 import 'package:turnos_juegos/core/domain/turn_feedback.dart';
@@ -19,6 +20,7 @@ import 'package:turnos_juegos/core/models/game_room.dart';
 import 'package:turnos_juegos/core/models/player.dart';
 import 'package:turnos_juegos/core/models/room_config.dart';
 import 'package:turnos_juegos/core/models/turn_state.dart';
+import 'package:turnos_juegos/core/models/ws_envelope.dart';
 import 'package:turnos_juegos/core/network/game_socket_client.dart';
 import 'package:turnos_juegos/core/providers/network_providers.dart';
 import 'package:turnos_juegos/core/sensors/motion_sensor_source.dart';
@@ -744,6 +746,7 @@ Widget _wrapHostRoutedWithLiveSync(
 Widget _wrapClient({
   required GameSocketClient client,
   required ClientSyncState syncState,
+  ClientSyncNotifier? syncNotifier,
   MotionSensorSource? motionSensorSource,
   ImmersiveSystemUi? immersiveSystemUi,
   DateTime Function()? now,
@@ -753,8 +756,9 @@ Widget _wrapClient({
   return ProviderScope(
     overrides: [
       gameSocketClientProvider.overrideWith((ref) => client),
-      clientSyncProvider
-          .overrideWith((ref) => _FixedClientSyncNotifier(syncState)),
+      clientSyncProvider.overrideWith(
+        (ref) => syncNotifier ?? _FixedClientSyncNotifier(syncState),
+      ),
     ],
     // role defaults to 'client'; host/port stay null so `_ensureClientConnected`
     // no-ops instead of attempting a real socket connection.
@@ -2801,6 +2805,47 @@ void main() {
       expect(find.byKey(stepperPlusKey(turnDurationStepperId)), findsNothing);
       expect(
           find.byKey(stepperMinusKey(roundIncrementStepperId)), findsNothing);
+      expect(find.byKey(stepperPlusKey(roundIncrementStepperId)), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('open client panel follows a later GAME_STATE', (tester) async {
+      final notifier = _FixedClientSyncNotifier(
+        _fixedSync(activePlayerId: _hostId, remainingSeconds: 30),
+      );
+      await _mount(
+        tester,
+        _wrapClient(
+          client: _clientAs(_clientId),
+          syncState: notifier.state,
+          syncNotifier: notifier,
+        ),
+      );
+
+      await _longPressOpenPanel(tester);
+      expect(find.text('Duración turno (s): 60'), findsOneWidget);
+      expect(find.text('Incremento por ronda (s): 5'), findsOneWidget);
+
+      final updated = Map<String, dynamic>.from(notifier.state.lastGameState!);
+      updated['currentRoundDurationSeconds'] = 61;
+      updated['currentRoundTurnDurationSeconds'] = 61;
+      updated['roundIncrementSeconds'] = 6;
+      updated['serverNow'] = _serverNow + 1_000;
+      notifier.applyEnvelope(
+        WsEnvelope(type: MessageTypes.gameState, payload: updated),
+      );
+      await tester.pump();
+
+      expect(_infoPanel, findsOneWidget);
+      expect(find.text('Duración turno (s): 61'), findsOneWidget);
+      expect(find.text('Incremento por ronda (s): 6'), findsOneWidget);
+      expect(find.byKey(stepperMinusKey(turnDurationStepperId)), findsNothing);
+      expect(find.byKey(stepperPlusKey(turnDurationStepperId)), findsNothing);
+      expect(
+        find.byKey(stepperMinusKey(roundIncrementStepperId)),
+        findsNothing,
+      );
       expect(find.byKey(stepperPlusKey(roundIncrementStepperId)), findsNothing);
 
       await tester.pumpWidget(const SizedBox());
