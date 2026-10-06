@@ -2578,6 +2578,66 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('host own row hides Color/Sound controls between rounds',
+        (tester) async {
+      final room = _buildHostBetweenRoundsRoom();
+      final controller = _FakeHostRoomController(room);
+      await _mount(tester, _wrapHost(controller));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
+      expect(find.byKey(const Key('lobby-color-button')), findsNothing);
+      expect(find.byKey(const Key('lobby-sound-button')), findsNothing);
+      expect(find.textContaining('(Tú)'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'break screen lists every seat in turnSequence order, including a disconnected seat, with no Color/Sound controls',
+        (tester) async {
+      const guestId = 'guest-1';
+      const guestName = 'Invitado';
+      final room = _buildHostBetweenRoundsRoom(
+        clientConnected: true,
+        turnSequence: [_hostId, guestId, _clientId],
+      );
+      room.playersById[_hostId]!.slotNumber = 1;
+      room.playersById[_clientId]!.slotNumber = 3;
+      room.playersById[guestId] = Player(
+        playerId: guestId,
+        displayName: guestName,
+        colorId: 'color_3',
+        soundId: 'sound_3',
+        deviceId: 'device-guest',
+        slotNumber: 2,
+        connected: false,
+      );
+      final controller = _FakeHostRoomController(room);
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await _mount(tester, _wrapHost(controller));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
+      expect(find.text('Jugador 1 (Tú)'), findsOneWidget);
+      expect(find.text('Jugador 2'), findsOneWidget);
+      expect(find.text('Jugador 3'), findsOneWidget);
+      expect(find.text(_hostName), findsOneWidget);
+      expect(find.text(guestName), findsOneWidget);
+      expect(find.text(_clientName), findsOneWidget);
+
+      final hostDy = tester.getTopLeft(find.text(_hostName)).dy;
+      final guestDy = tester.getTopLeft(find.text(guestName)).dy;
+      final clientDy = tester.getTopLeft(find.text(_clientName)).dy;
+      expect(hostDy, lessThan(guestDy));
+      expect(guestDy, lessThan(clientDy));
+
+      expect(find.byKey(const Key('lobby-color-button')), findsNothing);
+      expect(find.byKey(const Key('lobby-sound-button')), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('variable-only: inGame host does not show between-rounds body',
         (tester) async {
       final controller = _FakeHostRoomController(
@@ -2625,6 +2685,23 @@ void main() {
       final elapsed = tester.widget<Text>(find.byKey(betweenRoundsElapsedKey));
       expect(elapsed.data, 'Tiempo de pausa: 12s');
       expect(sync.betweenRoundsElapsedSeconds(), 12);
+
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'connected client own row hides Color/Sound controls between rounds',
+        (tester) async {
+      // The own seat must be connected; a disconnected seat already hides
+      // the controls and would make this assertion vacuous.
+      final sync = _fixedBetweenRoundsSync(clientConnected: true);
+      final client = _clientAs(_clientId);
+      await _mount(tester, _wrapClient(client: client, syncState: sync));
+
+      expect(find.byKey(betweenRoundsBodyKey), findsOneWidget);
+      expect(find.byKey(const Key('lobby-color-button')), findsNothing);
+      expect(find.byKey(const Key('lobby-sound-button')), findsNothing);
+      expect(find.textContaining('(Tú)'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox());
     });
