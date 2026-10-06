@@ -13,6 +13,8 @@ import 'sound_picker_sheet.dart';
 
 /// Shared host/client player row. Only the local connected seat is editable.
 /// Host-only reorder controls render when [showHostAdminSlot] is true.
+/// The own-row Color/Sound controls can be hidden with
+/// [showOwnAppearanceControls] (for example between rounds).
 class LobbyPlayerRow extends StatelessWidget {
   const LobbyPlayerRow({
     super.key,
@@ -29,6 +31,7 @@ class LobbyPlayerRow extends StatelessWidget {
     this.takenColorIds = const {},
     this.takenSoundIds = const {},
     this.previewService,
+    this.showOwnAppearanceControls = true,
   });
 
   final Player player;
@@ -45,8 +48,12 @@ class LobbyPlayerRow extends StatelessWidget {
   final Set<String> takenSoundIds;
   final SoundPreviewService? previewService;
 
+  /// When false, the own-row Color/Sound controls are not rendered.
+  final bool showOwnAppearanceControls;
+
   bool get _isEditable => isSelf && player.connected && onNameChanged != null;
-  bool get _ownRowControlsVisible => isSelf && player.connected;
+  bool get _ownRowControlsVisible =>
+      showOwnAppearanceControls && isSelf && player.connected;
 
   @override
   Widget build(BuildContext context) {

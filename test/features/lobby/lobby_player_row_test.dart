@@ -33,11 +33,13 @@ Future<void> _pump(
   Set<String> takenColorIds = const {},
   Set<String> takenSoundIds = const {},
   SoundPreviewService? previewService,
+  bool showOwnAppearanceControls = true,
 }) {
   final row = LobbyPlayerRow(
     player: player,
     isSelf: isSelf,
     showHostAdminSlot: showHostAdminSlot,
+    showOwnAppearanceControls: showOwnAppearanceControls,
     onNameChanged: onNameChanged,
     onColorChanged: onColorChanged,
     onSoundChanged: onSoundChanged,
@@ -176,6 +178,46 @@ void main() {
     expect(color, findsNothing);
     expect(sound, findsNothing);
     await preview.dispose();
+  });
+
+  testWidgets(
+      'showOwnAppearanceControls false hides Color and Sound on connected self row',
+      (tester) async {
+    final preview =
+        SoundPreviewService(player: _Noop(), audioContext: AudioContext());
+    addTearDown(preview.dispose);
+    await _pump(
+      tester,
+      _player(),
+      isSelf: true,
+      showHostAdminSlot: false,
+      onColorChanged: (_) {},
+      onSoundChanged: (_) {},
+      previewService: preview,
+      showOwnAppearanceControls: false,
+    );
+    expect(find.byKey(const Key('lobby-color-button')), findsNothing);
+    expect(find.byKey(const Key('lobby-sound-button')), findsNothing);
+    expect(find.textContaining('(Tú)'), findsOneWidget);
+  });
+
+  testWidgets('default flag keeps Color and Sound on connected self row',
+      (tester) async {
+    final preview =
+        SoundPreviewService(player: _Noop(), audioContext: AudioContext());
+    addTearDown(preview.dispose);
+    await _pump(
+      tester,
+      _player(),
+      isSelf: true,
+      showHostAdminSlot: false,
+      onColorChanged: (_) {},
+      onSoundChanged: (_) {},
+      previewService: preview,
+    );
+    expect(find.byKey(const Key('lobby-color-button')), findsOneWidget);
+    expect(find.byKey(const Key('lobby-sound-button')), findsOneWidget);
+    expect(find.textContaining('(Tú)'), findsOneWidget);
   });
 
   testWidgets('Color opens sheet and reports selection', (tester) async {
